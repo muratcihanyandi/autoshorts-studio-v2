@@ -23,7 +23,7 @@ Do not mark a milestone complete merely because its code has been generated.
 
 ## Milestone 0 — Environment and Architecture
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-16; evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Inspect the ZCode workspace and Git state.
@@ -51,7 +51,7 @@ Acceptance criteria:
 
 ## Milestone 1 — Repository and Foundation
 
-Status: NOT_STARTED
+Status: IN_PROGRESS (started 2026-10-16; remote repo creation blocked on GitHub auth)
 
 Tasks:
 - Create or connect a private GitHub repository.
@@ -328,8 +328,12 @@ Acceptance criteria:
 
 ## Immediate Next Action
 
-Start with Milestone 0.
+Milestone 0 is complete. Proceed with Milestone 1 (local foundation).
 
-Inspect the actual environment, verify repository status and tool availability, document assumptions, and then proceed to Milestone 1 without unnecessarily waiting for user approval.
+GitHub authentication is currently unavailable (`gh` not logged in), so the
+private repository creation is blocked; complete all local work, commit
+incrementally, and report the exact blocker. When authentication is
+available, create the private repository and push.
 
-If an external credential or permission is missing, complete all safe independent work and report the exact blocker.
+Deployment remains gated on the user confirming GitHub token revocation and
+PostgreSQL password rotation (`docs/SECURITY.md` gates G1/G2).

@@ -2,11 +2,11 @@
 
 ## Current Project State
 
-**Overall status:** NOT_STARTED
+**Overall status:** Milestone 0 COMPLETE (verified 2026-10-16); Milestone 1 IN_PROGRESS
 
-**Current milestone:** Milestone 0 — Environment and Architecture
+**Current milestone:** Milestone 1 — Repository and Foundation
 
-**Current task:** Inspect the existing environment and prepare the implementation foundation.
+**Current task:** Backend/frontend scaffolding, Docker Compose (ARM64), tests.
 
 **Last updated:** 2026-10-16
 
@@ -14,38 +14,84 @@
 
 **Target platform:** Raspberry Pi 5, 8GB RAM, CasaOS, ARM64 Linux
 
-**Important:** This document describes the initial intended state. No implementation, integration, deployment, or test should be considered complete until verified against the actual repository and environment.
+**Important:** This document describes the verified state. No implementation,
+integration, deployment, or test is considered complete until verified
+against the actual repository and environment.
 
 ## 1. Verified Environment
 
-Update each field only after inspecting the actual environment.
+All items below were verified by direct inspection on 2026-10-16 unless
+marked otherwise. Evidence commands are listed; none expose secrets.
 
-- [ ] Existing repository inspected.
-- [ ] Git status inspected.
-- [ ] GitHub authentication verified.
-- [ ] Private GitHub repository created or existing remote verified.
-- [ ] ZCode workspace path verified.
-- [ ] Installed skills inspected.
-- [ ] MCP server availability inspected.
-- [ ] Impeccable skill availability verified.
-- [ ] Frontend Design skill availability verified.
-- [ ] CodebaseMemory MCP availability verified.
-- [ ] Raspberry Pi architecture and OS verified.
-- [ ] CasaOS deployment environment verified.
-- [ ] PostgreSQL connectivity verified.
-- [ ] PostgreSQL database name confirmed.
-- [ ] Docker Compose availability verified.
-- [ ] FFmpeg and ffprobe availability verified.
-
-Do not mark any checkbox until evidence is available.
+- [x] Existing repository inspected. — Workspace
+  `C:\Users\Murat\Documents\AutoShortsStudio_RaspberryPi5_2` contained only
+  `AGENTS.md` (empty), `docs/ROADMAP.md`, `docs/PROGRESS.md` and three empty
+  directories (`backend/`, `frontend/`, `Autonomous-Creator-Studio/`).
+  Verified via `find <workspace> -type f`.
+- [x] Git status inspected. — `git status` → `fatal: not a git repository`
+  (fresh start, no prior history to preserve). Local repository initialized
+  during Milestone 0 (commit `cfb1c35` baseline of original files).
+- [x] ZCode workspace path verified. — See above; matches the session
+  working directory.
+- [x] Installed skills inspected. — Session skill list contains
+  `impeccable`, `frontend-design`, and the full game/media/tooling set.
+  `codebase-memory`, `postgres`, `github`, `context7`, `blender`,
+  `node_repl` MCP servers are configured.
+- [x] Impeccable skill availability verified. — Present in the session
+  skill list; to be loaded for Milestone 2 UI work.
+- [x] Frontend Design skill availability verified. — Present in the session
+  skill list; to be loaded for Milestone 2 UI work.
+- [x] CodebaseMemory MCP availability verified. — `list_projects` returned
+  12 indexed projects (none is this workspace; includes a stale entry for
+  the old `AutoShortsStudio` project).
+- [x] PostgreSQL connectivity verified. — postgres MCP query succeeded:
+  PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on
+  aarch64-unknown-linux-gnu, server address `172.18.0.2` (Docker bridge
+  network) port 5432, role `muratcihanyandi`.
+- [x] PostgreSQL database name confirmed. — Existing databases on the
+  shared instance: affine, balkurye, fakeyol, mmorpg, muratcihanyandi, n8n,
+  nodehabercom, paketci, postgres, raspberrypi, wedding_memories. No
+  project database exists yet. **Decision (ADR-005):** the app will use a
+  dedicated `autoshorts_studio` database in its own `postgres:17`
+  container on the Pi with freshly generated credentials.
+- [x] Raspberry Pi architecture and OS verified. — Target server CPU is
+  aarch64 (from the PostgreSQL server build running on the Pi, Debian
+  pgdg). Pi 5 / 8GB per project brief. OS-level details of the Pi beyond
+  the PostgreSQL container cannot be inspected from the dev machine.
+- [~] CasaOS deployment environment verified (partial). — Strong evidence:
+  PostgreSQL runs in a Docker bridge network on the ARM64 host alongside
+  typical self-hosted service databases (n8n, affine). Direct CasaOS
+  verification requires access to the Pi; recorded as a deployment-time
+  check.
+- [~] GitHub authentication verified (negative finding). — `gh` CLI is
+  installed but `gh auth status` reports "not logged into any GitHub
+  hosts". The GitHub MCP server has no authenticated user context
+  (`user:@me` search → HTTP 422). **No live GitHub token exists in this
+  environment.** Consistent with the previously exposed token having been
+  revoked, but final confirmation belongs to the user (Security gate G1).
+- [ ] Private GitHub repository created or existing remote verified. —
+  **BLOCKED**: requires user to run `gh auth login` or provide a new token
+  (see Blockers).
+- [~] Docker Compose availability verified (partial). — Docker CLI is NOT
+  available on the Windows dev machine (no `docker.exe`; Docker Desktop
+  data directories exist but no usable CLI; WSL unavailable). Docker IS
+  running on the Pi (PostgreSQL container evidence). Compose files are
+  authored here, syntax-validated locally, and executed on the Pi.
+- [x] FFmpeg and ffprobe availability verified. — 8.1.1
+  (gyan.dev essentials build) at `C:\ffmpeg\bin` on the dev machine;
+  on the Pi the containers will use the `linux/arm64` ffmpeg builds.
+- [x] Additional tooling: node v24.13.0, npm 11.6.2, Python 3.11.9,
+  pip 24.0, git 2.52.0.windows.1. Git Bash on this machine requires
+  `export PATH="/c/Program Files/Git/cmd:/c/Program Files/Git/usr/bin:$PATH"`
+  (default PATH lacks Git `usr/bin` coreutils in the agent shell).
 
 ## 2. Milestone Status
 
 | Milestone | Status | Notes |
 |---|---|---|
-| 0. Environment and Architecture | IN_PROGRESS | Initial inspection required |
-| 1. Repository and Foundation | NOT_STARTED | Pending Milestone 0 |
-| 2. Studio Interface | NOT_STARTED | Pending foundation |
+| 0. Environment and Architecture | COMPLETED | All deliverables created and committed; evidence in section 3 |
+| 1. Repository and Foundation | IN_PROGRESS | Local scaffolding underway; remote repo creation blocked on GitHub auth |
+| 2. Studio Interface | NOT_STARTED | Pending foundation; will load impeccable + frontend-design skills |
 | 3. Database and Channel Management | NOT_STARTED | Pending database models |
 | 4. Source Monitoring and Planning | NOT_STARTED | Pending YouTube integration |
 | 5. LLM Provider Manager | NOT_STARTED | Three-provider fallback |
@@ -57,133 +103,173 @@ Do not mark any checkbox until evidence is available.
 | 11. End-to-End Automation | NOT_STARTED | Full pipeline integration |
 | 12. Production Hardening | NOT_STARTED | Stress, recovery, and security tests |
 
-Change these statuses as actual work progresses.
-
 ## 3. Completed Tasks
 
-No tasks have been verified as completed yet.
+### Milestone 0 — Environment and Architecture (completed 2026-10-16)
 
-Add entries in this format:
-
-- Date:
-- Milestone:
-- Task:
+- Date: 2026-10-16
+- Milestone: 0
+- Task: Environment inspection, architecture documentation, security
+  checklist, git initialization.
 - Implementation:
-- Verification:
-- Test results:
-- Commit:
-- Remaining limitations:
-
-Only record work that actually exists in the repository and has been verified.
+  - Inspected workspace, git state, gh auth, GitHub MCP auth context,
+    node/npm/Python/pip/ffmpeg/ffprobe/Docker/WSL availability,
+    PostgreSQL server (version, architecture, address, databases) via the
+    read-only postgres MCP, codebase-memory MCP.
+  - Created `AGENTS.md` (project agent contract; the pre-existing file was
+    empty).
+  - Created `docs/ARCHITECTURE.md` (verified environment facts, component
+    architecture, deployment topology, constraints).
+  - Created `docs/DECISIONS.md` (ADR-001 … ADR-010).
+  - Created `docs/SECURITY.md` (incident context, deployment gates
+    G1–G8, handling rules, verification log).
+- Verification: every claim in section 1 maps to a command executed in this
+  session; deliverable files exist in the repository (see commit).
+- Test results: no automated tests exist yet at Milestone 0 (by design;
+  first tests arrive in Milestone 1).
+- Commit: `cfb1c35` (baseline of original files) + Milestone 0 deliverables
+  commit (see section 8).
+- Remaining limitations: CasaOS and Pi OS cannot be directly inspected from
+  the dev machine; GitHub token revocation and PostgreSQL password rotation
+  require user confirmation (gates G1, G2).
 
 ## 4. Current Blockers
 
-Initially, blockers must be identified during environment inspection.
+### B1 — No GitHub authentication (blocks remote repository, not local work)
 
-Record each blocker with:
-- Description.
-- Affected component.
-- Why it blocks progress.
-- Required action.
-- Whether independent work can continue.
+- Description: `gh` CLI not logged in; no token in environment.
+- Affected component: Milestone 1 task "Create or connect a private GitHub
+  repository"; remote backup of commits.
+- Why it blocks: creating a private repo and pushing requires
+  authentication.
+- Required action: user runs `gh auth login` (or provides a NEW fine-grained
+  token with repo scope — never the previously exposed one). Then:
+  `gh repo create <name> --private --source . --push`.
+- Independent work continues: yes — all local development, tests, commits.
 
-Never include real API keys, access tokens, database passwords, or OAuth secrets in this file.
+### B2 — No Docker CLI on the dev machine (does not block authoring)
+
+- Description: docker/docker-compose unavailable on Windows dev machine.
+- Affected component: runtime verification of Compose stack, ARM64 image
+  builds.
+- Why it blocks: cannot run containers locally.
+- Required action: execute `deploy/docker-compose.yml` on the Raspberry Pi
+  (CasaOS) during deployment.
+- Independent work continues: yes — Compose files authored and
+  syntax-validated locally.
+
+### B3 — Deployment gates G1/G2 pending user confirmation (blocks deployment only)
+
+- Description: user must confirm the previously exposed GitHub token is
+  revoked and the PostgreSQL password rotated.
+- Affected component: any deployment to the Pi.
+- Required action: user confirmation recorded in `docs/SECURITY.md`.
+- Independent work continues: yes.
 
 ## 5. Architecture Decisions
 
-Record a short summary of important decisions here and keep full details in `docs/DECISIONS.md`.
+Short summaries; full details in `docs/DECISIONS.md`.
 
-Initial intended decisions:
-- React, TypeScript, and Vite for the frontend.
-- FastAPI for the backend.
-- PostgreSQL for application data and durable job state.
-- FFmpeg and ffprobe for media processing.
-- Three configurable LLM providers with bounded fallback.
-- Official YouTube APIs and OAuth.
-- Docker Compose deployment on ARM64 CasaOS.
-- Heavy processing isolated from web API requests.
-- Webcam detection supported by confidence scoring and manual calibration.
-- Rights checks enforced independently of LLM decisions.
-
-These are planned decisions, not evidence of completed implementation. Verify compatibility and document any necessary changes.
+- ADR-001: Fresh repository; never reuse code or credentials from the old
+  AutoShortsStudio projects.
+- ADR-002: Monorepo (backend/ + frontend/ + deploy/ + docs/).
+- ADR-003: FastAPI + SQLAlchemy 2 + Alembic + Pydantic v2.
+- ADR-004: React + TypeScript + Vite; Milestone 2 UI under impeccable +
+  frontend-design skills.
+- ADR-005: Dedicated `autoshorts_studio` PostgreSQL database in its own
+  container with freshly generated credentials; shared instance untouched.
+- ADR-006: PostgreSQL-backed durable job queue (SKIP LOCKED), no extra
+  broker.
+- ADR-007: Compose targets linux/arm64; local validation is syntax-only.
+- ADR-008: Local tests use SQLite/TestClient; PostgreSQL verified on the Pi.
+- ADR-009: Deployment gated on credential revocation/rotation confirmation.
+- ADR-010: Local git now; private GitHub remote when auth is available.
 
 ## 6. Current Risks
 
-Track and update the following risks:
-
 ### Raspberry Pi resource pressure
-Mitigation: Limit concurrency, monitor CPU/RAM/disk, constrain FFmpeg, and apply backpressure.
+Mitigation: Limit concurrency, monitor CPU/RAM/disk, constrain FFmpeg, and
+apply backpressure. (Unchanged.)
 
 ### Webcam detection errors
-Mitigation: Multi-frame tracking, confidence thresholds, calibration profiles, preview, and review.
+Mitigation: Multi-frame tracking, confidence thresholds, calibration
+profiles, preview, and review. (Unchanged.)
 
 ### LLM provider failures
-Mitigation: Three-provider fallback, bounded retries, timeouts, and structured output validation.
+Mitigation: Three-provider fallback, bounded retries, timeouts, and
+structured output validation. (Unchanged.)
 
 ### YouTube API quotas and upload failures
-Mitigation: Quota tracking, resumable uploads where supported, retry policies, and reconciliation.
+Mitigation: Quota tracking, resumable uploads where supported, retry
+policies, and reconciliation. (Unchanged.)
 
 ### Unauthorized source media
 Mitigation: Rights records, authorization checks, and publication blocks.
+(Unchanged.)
 
 ### Secret exposure
-Mitigation: Revoke exposed credentials, rotate the database password, use environment variables, and scan Git changes.
+Status: ACTIVE until gates G1/G2 are confirmed. No secrets exist in this
+workspace (verified 2026-10-16). Mitigation: environment variables only,
+`.env` ignored, secret scans before commits, encrypted token storage.
 
 ### Restart and network failures
-Mitigation: Persistent jobs, idempotent transitions, health checks, and recovery tests.
+Mitigation: Persistent jobs, idempotent transitions, health checks, and
+recovery tests. (Unchanged.)
+
+### Dev/target platform mismatch (new)
+Windows dev machine without Docker; runtime behavior only verifiable on the
+Pi. Mitigation: strict CI-style local tests, syntax validation of Compose,
+and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-No tests have been run or verified for this initial project state.
-
-After testing, record:
-- Test command.
-- Environment.
-- Passed tests.
-- Failed tests.
-- Relevant logs or artifact locations without secrets.
-- Known limitations.
-
-Do not report a test as passed if it was skipped or not executed.
+No automated tests existed during Milestone 0. First automated tests
+(backend pytest, frontend vitest/tsc) are a Milestone 1 deliverable;
+results will be recorded here after execution.
 
 ## 8. Git State
 
-Record the actual repository state after inspection.
-
-- Repository URL:
-- Current branch:
-- Last commit:
-- Working tree:
-- Latest verified commit:
-- Uncommitted changes:
-
-Do not invent repository URLs, branches, or commit hashes.
+- Repository URL: none yet (local only; blocked on GitHub auth — B1)
+- Current branch: `main`
+- Last commit: see `git log -1` (Milestone 0 deliverables commit; baseline
+  commit `cfb1c35` preserves the original three files in history)
+- Working tree: clean after each milestone commit
+- Uncommitted changes: tracked per session in Handoff Notes
 
 ## 9. Immediate Next Actions
 
-1. Inspect the current ZCode workspace.
-2. Read `AGENTS.md` and `docs/ROADMAP.md`.
-3. Inspect existing files and Git status.
-4. Verify skills and MCP availability.
-5. Verify PostgreSQL configuration without exposing credentials.
-6. Create or update architecture documentation.
-7. Complete Milestone 0.
-8. Begin Milestone 1.
-9. Update this file with verified results.
+1. Milestone 1: `.gitignore`, `.gitattributes` (LF normalization for
+   Linux deployment), `.env.example`.
+2. Backend scaffolding: FastAPI app, config via Pydantic settings,
+   `/health` endpoint with DB readiness check, structured logging,
+   Alembic setup.
+3. Frontend scaffolding: Vite React-TS app.
+4. `deploy/docker-compose.yml` for linux/arm64 + CasaOS deployment
+   instructions (`docs/DEPLOYMENT.md`).
+5. Automated tests: backend (pytest + TestClient), frontend (vitest,
+   tsc). Run and record results here.
+6. Incremental commits after each verified step.
+7. When the user authenticates GitHub: create private repo, push
+   (blocker B1).
 
 ## 10. Handoff Notes
 
-At the end of every coding session, replace this section with the actual current state.
+- What was implemented (Milestone 0): full environment inspection with
+  evidence; `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
+  `docs/SECURITY.md` created; git initialized with baseline commit
+  `cfb1c35` preserving the original files.
+- Files changed: `AGENTS.md` (was empty), `docs/PROGRESS.md` (this file),
+  `docs/ROADMAP.md` (status updates), new `docs/ARCHITECTURE.md`,
+  `docs/DECISIONS.md`, `docs/SECURITY.md`.
+- Tests passed/failed: none exist yet (first tests are a Milestone 1
+  deliverable).
+- Latest verified commit: recorded in section 8.
+- Outstanding issues: blockers B1 (GitHub auth), B2 (no local Docker),
+  B3 (deployment gates G1/G2).
+- Exact next task: Milestone 1 scaffolding (see section 9).
+- Decisions to preserve: ADR-001…ADR-010, especially: never reuse old
+  project credentials; dedicated postgres container with fresh
+  credentials; deployment gated on G1/G2 confirmation.
 
-Include:
-- What was implemented.
-- Which files changed.
-- Which tests passed or failed.
-- The latest verified commit.
-- Outstanding issues.
-- The exact next task.
-- Any architectural decisions that must be preserved.
-
-At the start of the next session, read this section and inspect the repository before continuing.
-
-**Never infer progress from previous plans. The repository and test results are the source of truth.**
+**Never infer progress from previous plans. The repository and test
+results are the source of truth.**

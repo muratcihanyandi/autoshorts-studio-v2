@@ -1,0 +1,69 @@
+# Security Checklist — Autonomous Creator Studio
+
+Living document. Every gate must be re-checked before deployment. Never
+store real secrets in this file or any committed file.
+
+## 1. Incident Context
+
+A previous project lineage (`Documents\AutoShortsStudio`,
+`Documents\AutoShortsStudio_RaspberryPi5_`) exposed a GitHub token and a
+PostgreSQL password. This repository is a clean restart
+(see `docs/DECISIONS.md` ADR-001).
+
+Standing rules:
+
+- Never read, copy, print, or reuse credentials from those old projects,
+  their `.env` files, their git history, or any MCP server configuration.
+- Never extract the credential stored inside the ZCode postgres MCP
+  configuration; that connection is for read-only inspection only.
+- Never commit `.env` files or any file containing a real secret.
+
+## 2. Deployment Gates (must all be YES before deployment)
+
+| # | Gate | Status | Evidence / action |
+|---|---|---|---|
+| G1 | Previously exposed GitHub token revoked | **PENDING user confirmation** | User must verify in GitHub → Settings → Developer settings → Token (classic / fine-grained). Agent verified no live token exists in the current environment (`gh auth status`: not logged in; GitHub MCP `user:@me` → HTTP 422, no authenticated context). Absence here is consistent with revocation but is not proof of it. |
+| G2 | PostgreSQL password rotated | **PENDING user confirmation** | User must change the password of the shared PostgreSQL instance (and any place it is stored). The postgres MCP currently connects successfully with a stored credential; whether that stored password is the old (exposed) one or a rotated one cannot be determined from the agent side. |
+| G3 | New app credentials freshly generated | Not yet applicable | `autoshorts_studio` database role/password will be generated at deployment; never copied from old projects. |
+| G4 | `.env` excluded from git | Planned (Milestone 1) | Enforced via `.gitignore` + pre-commit secret scan (G7). |
+| G5 | OAuth tokens and LLM API keys encrypted at rest | Planned (Milestones 3/5) | Application-level encryption; key delivered via environment variable. |
+| G6 | Secrets never returned by API responses | Planned | API schemas exclude secret fields; tests assert masked output. |
+| G7 | Secret scan of Git changes | Planned (Milestone 1) | Automated pattern scan (API-key formats, `postgres://user:pass`, tokens) before each commit / in CI. |
+| G8 | Rights records enforced before publication | Planned (Milestones 4/10) | Publication blocked without a recorded rights record for the source. |
+
+## 3. Handling Rules
+
+### Secret storage
+
+- All runtime secrets arrive via environment variables (`.env` on the Pi,
+  never committed; `.env.example` documents the keys without values).
+- YouTube OAuth refresh tokens and LLM provider keys are stored encrypted
+  in PostgreSQL; the encryption key itself comes from the environment.
+- Logs must never contain secret values; structured logging includes a
+  redaction filter for known secret-bearing fields.
+
+### Access
+
+- The backend API must not be exposed to the public internet without
+  authentication (CasaOS local network by default).
+- Database port is not published beyond the Docker network unless the user
+  explicitly chooses otherwise.
+- YouTube API usage: official Data API and OAuth 2.0 only; no scraping, no
+  ToS-violating source acquisition. Source media requires recorded
+  authorization.
+
+### Backups
+
+- PostgreSQL volume + media volumes are backed up (Milestone 12).
+- Backups must not contain plaintext secrets beyond what the database
+  already encrypts.
+
+## 4. Verification Log
+
+| Date | Check | Result |
+|---|---|---|
+| 2026-10-16 | No secrets in the three pre-existing workspace files (`AGENTS.md` was empty, `docs/ROADMAP.md`, `docs/PROGRESS.md` are documentation) | Pass (manual review) |
+| 2026-10-16 | `gh auth status` | Not logged into any GitHub hosts — no token present in environment |
+| 2026-10-16 | GitHub MCP authenticated context (`user:@me`) | HTTP 422 — no authenticated user; consistent with revoked/absent token |
+| 2026-10-16 | Workspace `.env` / secret files | None exist (`find` over workspace shows only the three documentation files) |
+| 2026-10-16 | PostgreSQL exposure | Server reachable via MCP with stored credential; rotation status unknown → Gate G2 pending |
