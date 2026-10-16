@@ -24,7 +24,7 @@ services:
     environment:
       APP_ENV: production
       LOG_LEVEL: info
-      DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/muratcihanyandi
+      DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
 
   frontend:
     image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
