@@ -34,6 +34,17 @@ PLACEHOLDER_MARKERS = ("CHANGE_ME", "CHANGE-ME", "<your", "example", "XXX")
 # (synthetic values only, never real credentials).
 LINE_ALLOW_MARKER = "# secret-scan-ok"
 
+# Compose-style variable references are not literal secrets. Expand them
+# before matching: ${VAR:-default} keeps its default (a real secret hidden
+# as a default is still caught), plain ${VAR} becomes empty.
+DEFAULT_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
+ANY_VAR_RE = re.compile(r"\$\{[^}]*\}")
+
+
+def expand_vars(line: str) -> str:
+    line = DEFAULT_VAR_RE.sub(lambda m: m.group(2), line)
+    return ANY_VAR_RE.sub("", line)
+
 
 def list_files() -> list[str]:
     out = subprocess.run(
@@ -75,8 +86,9 @@ def main() -> int:
                 continue
             if any(marker in line for marker in PLACEHOLDER_MARKERS):
                 continue
+            effective = expand_vars(line)
             for pattern, label in PATTERNS:
-                if re.search(pattern, line):
+                if re.search(pattern, effective):
                     findings.append(f"{rel}:{lineno}: possible {label}: {line.strip()[:100]}")
 
     tracked = subprocess.run(

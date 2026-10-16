@@ -1,0 +1,59 @@
+name: autoshorts-studio
+
+# Target: Raspberry Pi 5 (linux/arm64) under CasaOS.
+# The shared PostgreSQL instance already running on the host is NOT used;
+# this stack provisions its own isolated database (ADR-005).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autoshorts}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (generate fresh, never reuse old credentials)}
+      POSTGRES_DB: ${POSTGRES_DB:-autoshorts_studio}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autoshorts} -d ${POSTGRES_DB:-autoshorts_studio}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - studio-net
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autoshorts}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autoshorts_studio}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - studio-net
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      - studio-net
+
+volumes:
+  postgres_data:
+
+networks:
+  studio-net:

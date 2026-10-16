@@ -1,0 +1,25 @@
+# Build context is the repository root (see deploy/docker-compose.yml).
+# .env is never part of any image.
+.env
+.env.*
+!.env.example
+
+.git
+.gitattributes
+.gitignore
+.venv
+**/__pycache__
+**/*.pyc
+docs
+tools
+*.md
+
+frontend/node_modules
+frontend/dist
+frontend/.oxlintrc.json
+
+media
+media_cache
+media_out
+logs
+*.log
