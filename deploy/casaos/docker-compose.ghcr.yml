@@ -1,0 +1,36 @@
+# Autonomous Creator Studio — CasaOS, GHCR imajlari (Pi'de derleme YOK)
+#
+# Bu dosya, GitHub Actions'in GHCR'a yayinladigi imajlari ceker.
+# ON KOSUL: repoyu GitHub'a push etmis ve build-images workflow'unun
+# ilk calismasini tamamlamis olmak (Actions -> build-images).
+#
+# KULLANIM: 'kullanici-adin' yazan 2 yeri KUCUK HARFLI GitHub hesap/org
+# adinizla degistirin (GHCR imaj yollari kucuk harf olmak zorundadir),
+# DB_SIFRE_BURAYA yazan 1 yeri veritabani sifresiyle degistirin.
+#
+# Paketler private kalirsa Pi'de bir kez GHCR girisi gerekir:
+#   echo <read:packages PAT> | docker login ghcr.io -u <kullanici-adin> --password-stdin
+# Paket ayarlarindan visibility=public yaparsaniz giris gerekmez.
+
+name: autoshorts-studio
+
+services:
+  backend:
+    image: ghcr.io/kullanici-adin/autoshorts-studio/backend:latest
+    platform: linux/arm64
+    container_name: autoshorts-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/muratcihanyandi
+
+  frontend:
+    image: ghcr.io/kullanici-adin/autoshorts-studio/frontend:latest
+    platform: linux/arm64
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
