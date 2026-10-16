@@ -2,11 +2,13 @@
 
 ## Current Project State
 
-**Overall status:** Milestone 0 COMPLETE (verified 2026-10-16); Milestone 1 IN_PROGRESS
+**Overall status:** Milestone 0 COMPLETE; Milestone 1 COMPLETE (local work;
+private GitHub remote blocked on user authentication — blocker B1)
 
-**Current milestone:** Milestone 1 — Repository and Foundation
+**Current milestone:** Milestone 2 — Studio Interface (not started)
 
-**Current task:** Backend/frontend scaffolding, Docker Compose (ARM64), tests.
+**Current task:** Milestone 2 planning; the GitHub remote (B1) can be
+created at any time once the user authenticates.
 
 **Last updated:** 2026-10-16
 
@@ -90,8 +92,8 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | Milestone | Status | Notes |
 |---|---|---|
 | 0. Environment and Architecture | COMPLETED | All deliverables created and committed; evidence in section 3 |
-| 1. Repository and Foundation | IN_PROGRESS | Local scaffolding underway; remote repo creation blocked on GitHub auth |
-| 2. Studio Interface | NOT_STARTED | Pending foundation; will load impeccable + frontend-design skills |
+| 1. Repository and Foundation | COMPLETED (local) | All local acceptance criteria verified (section 3, section 7); private GitHub remote pending user auth (B1) |
+| 2. Studio Interface | NOT_STARTED | Pending start; will load impeccable + frontend-design skills first |
 | 3. Database and Channel Management | NOT_STARTED | Pending database models |
 | 4. Source Monitoring and Planning | NOT_STARTED | Pending YouTube integration |
 | 5. LLM Provider Manager | NOT_STARTED | Three-provider fallback |
@@ -124,14 +126,79 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   - Created `docs/SECURITY.md` (incident context, deployment gates
     G1–G8, handling rules, verification log).
 - Verification: every claim in section 1 maps to a command executed in this
-  session; deliverable files exist in the repository (see commit).
-- Test results: no automated tests exist yet at Milestone 0 (by design;
-  first tests arrive in Milestone 1).
-- Commit: `cfb1c35` (baseline of original files) + Milestone 0 deliverables
-  commit (see section 8).
+  session; deliverable files exist in the repository (commits `cfb1c35`,
+  `0f37870`).
+- Test results: no automated tests existed at Milestone 0 (by design;
+  first tests arrived in Milestone 1).
+- Commit: `cfb1c35` (baseline preserving the original three files) +
+  `0f37870` (Milestone 0 deliverables).
 - Remaining limitations: CasaOS and Pi OS cannot be directly inspected from
   the dev machine; GitHub token revocation and PostgreSQL password rotation
   require user confirmation (gates G1, G2).
+
+### Milestone 1 — Repository and Foundation (completed 2026-10-16, local work)
+
+- Date: 2026-10-16
+- Milestone: 1
+- Task: Repository foundation, backend, frontend, ARM64 Compose, tests.
+- Implementation (commits `20ffb5e`, `754ed5c`, `36f6dff`, `3b17ad3`):
+  - `.gitignore` (env/secrets, venv, node_modules, media), `.gitattributes`
+    (LF normalization for the Linux target), `.env.example` (keys only,
+    placeholders marked CHANGE_ME), `.dockerignore` (keeps `.env` and docs
+    out of images).
+  - `tools/scan_secrets.py`: pattern-based secret guard (GitHub/OpenAI/AWS
+    keys, DB URLs with credentials, private keys, assigned secrets,
+    tracked .env check) with compose `${VAR}` expansion so variable
+    references pass while secret defaults still fail; self-tested.
+  - Backend (`backend/`): FastAPI app factory with lifespan-managed async
+    SQLAlchemy engine; Pydantic v2 settings from environment; JSON
+    structured logging with secret redaction; `/api/health` liveness and
+    `/api/health/ready` readiness (DB round-trip, error class only — no
+    connection details leaked); Alembic async env + initial `app_meta`
+    migration; frozen `requirements.txt` (venv+pip per dependency rules);
+    `requirements-dev.txt`.
+  - Frontend (`frontend/`): Vite react-ts scaffold (React 19, Vite 8,
+    TypeScript 6); minimal dark studio shell with Turkish microcopy and
+    backend health wiring (loading/ok/error+retry, cancellation-safe
+    effect); typed API client; dev proxy `/api` → `127.0.0.1:8000`;
+    vitest + testing-library; oxlint clean.
+  - Deployment: `backend/Dockerfile` (python:3.11-slim, migrations before
+    API start), `frontend/Dockerfile` (node:24-alpine build → nginx:alpine
+    serve + `/api` proxy), `deploy/docker-compose.yml` (linux/arm64,
+    dedicated `postgres:17-alpine`, healthcheck-gated startup, required
+    fresh `POSTGRES_PASSWORD`, only the frontend port published),
+    `docs/DEPLOYMENT.md` (CasaOS: security gates, setup, verify, update,
+    backup, troubleshooting).
+- Verification:
+  - Backend pytest: 10/10 passed (health liveness/readiness incl. error
+    path, settings, logging redaction, offline migration SQL up+down).
+  - Frontend: vitest 2/2 passed, oxlint 0 warnings/errors,
+    `tsc -b && vite build` succeeded.
+  - Live HTTP: uvicorn served `/api/health` (200), `/api/health/ready`
+    (503 degraded, correct without DATABASE_URL), `/openapi.json` (200);
+    Vite dev server served the page (200, correct title/root) and its
+    `/api` proxy reached the backend (health 200, ready 503).
+  - Compose: YAML parse + structural validation passed (arm64 platform
+    pins, internal-only postgres, healthcheck dependency, password
+    required, .env excluded from context).
+  - Secret scan over tracked+untracked files: clean.
+- Test results: section 7.
+- Commit: `20ffb5e`, `754ed5c`, `36f6dff`, `3b17ad3` (+ final progress
+  commit).
+- Remaining limitations:
+  - Private GitHub remote not created (B1: user must authenticate; exact
+    commands in section 4).
+  - Compose stack never executed (B2: no Docker on dev machine); first
+    execution and app-level PostgreSQL connectivity verification happen
+    on the Pi per `docs/DEPLOYMENT.md` section 4.
+  - Migrations verified via offline SQL generation only; live `alembic
+    upgrade head` runs in the container at deployment.
+  - Server-level PostgreSQL connectivity IS verified (postgres MCP query
+    to the Pi's PostgreSQL 17.10, Milestone 0 evidence); app-level
+    readiness check implemented and unit-tested but not yet pointed at
+    the production database (requires user-provisioned `.env`).
+  - starlette TestClient emits a deprecation warning suggesting httpx2;
+    dev-only, tests pass, recorded for later follow-up.
 
 ## 4. Current Blockers
 
@@ -223,53 +290,89 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-No automated tests existed during Milestone 0. First automated tests
-(backend pytest, frontend vitest/tsc) are a Milestone 1 deliverable;
-results will be recorded here after execution.
+Verified 2026-10-16 on the dev machine (Windows 11, Python 3.11.9,
+Node 24.13.0). Commands run from the stated directories.
+
+- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
+  - Passed: 10 (test_health 4, test_config 2, test_logging 2,
+    test_migrations 2)
+  - Failed: 0
+  - Skipped: 0
+  - 1 warning: starlette TestClient deprecation notice suggesting httpx2
+    (dev-only; tests pass; follow up when the ecosystem settles).
+- Frontend — `cd frontend && npm run test`
+  - Passed: 2 (App status render, App error+retry state)
+  - Failed: 0
+- Frontend lint — `cd frontend && npm run lint` (oxlint): 0 warnings,
+  0 errors.
+- Frontend build — `cd frontend && npm run build` (`tsc -b && vite
+  build`): succeeded (dist generated).
+- Secret scan — `python tools/scan_secrets.py` from repository root:
+  clean.
+- Live HTTP verification (dev machine):
+  - uvicorn (port 8123, no DATABASE_URL): `/api/health` 200,
+    `/api/health/ready` 503 `not_configured` (expected), `/openapi.json`
+    200.
+  - uvicorn (port 8000) + Vite dev server (port 5173): page 200 with
+    correct title; `/api/health` via Vite proxy 200; `/api/health/ready`
+    via proxy 503 (expected without DB).
+- Compose validation — YAML parse + structural assertions
+  (linux/arm64 pins, internal postgres, healthcheck gating, required
+  password, .env excluded): passed.
+- Known limitations: no container runtime on the dev machine — the
+  Compose stack, live `alembic upgrade head`, and app-level PostgreSQL
+  connectivity are verified at deployment time on the Pi
+  (`docs/DEPLOYMENT.md` section 4).
 
 ## 8. Git State
 
 - Repository URL: none yet (local only; blocked on GitHub auth — B1)
 - Current branch: `main`
-- Last commit: see `git log -1` (Milestone 0 deliverables commit; baseline
-  commit `cfb1c35` preserves the original three files in history)
-- Working tree: clean after each milestone commit
-- Uncommitted changes: tracked per session in Handoff Notes
+- Commit history (oldest first):
+  - `cfb1c35` baseline: original three files preserved
+  - `0f37870` Milestone 0 deliverables
+  - `20ffb5e` Milestone 1 repo foundation
+  - `754ed5c` Milestone 1 backend
+  - `36f6dff` Milestone 1 frontend
+  - `3b17ad3` Milestone 1 deployment layer
+  - final Milestone 1 progress-documentation commit (this change)
+- Working tree: clean after the final commit
+- Uncommitted changes: none after each milestone commit
 
 ## 9. Immediate Next Actions
 
-1. Milestone 1: `.gitignore`, `.gitattributes` (LF normalization for
-   Linux deployment), `.env.example`.
-2. Backend scaffolding: FastAPI app, config via Pydantic settings,
-   `/health` endpoint with DB readiness check, structured logging,
-   Alembic setup.
-3. Frontend scaffolding: Vite React-TS app.
-4. `deploy/docker-compose.yml` for linux/arm64 + CasaOS deployment
-   instructions (`docs/DEPLOYMENT.md`).
-5. Automated tests: backend (pytest + TestClient), frontend (vitest,
-   tsc). Run and record results here.
-6. Incremental commits after each verified step.
-7. When the user authenticates GitHub: create private repo, push
-   (blocker B1).
+1. User (any time): authenticate GitHub and create the private remote
+   (blocker B1): `gh auth login`, then `gh repo create <name> --private
+   --source . --push`. Update the git identity email from the
+   `murat@example.com` placeholder first (ADR-010).
+2. Milestone 2: load the `impeccable` and `frontend-design` skills, then
+   establish design tokens and the studio UI screens.
+3. At deployment time (Pi): execute `docs/DEPLOYMENT.md` after gates G1/G2
+   are confirmed.
 
 ## 10. Handoff Notes
 
-- What was implemented (Milestone 0): full environment inspection with
-  evidence; `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`,
-  `docs/SECURITY.md` created; git initialized with baseline commit
-  `cfb1c35` preserving the original files.
-- Files changed: `AGENTS.md` (was empty), `docs/PROGRESS.md` (this file),
-  `docs/ROADMAP.md` (status updates), new `docs/ARCHITECTURE.md`,
-  `docs/DECISIONS.md`, `docs/SECURITY.md`.
-- Tests passed/failed: none exist yet (first tests are a Milestone 1
-  deliverable).
-- Latest verified commit: recorded in section 8.
-- Outstanding issues: blockers B1 (GitHub auth), B2 (no local Docker),
-  B3 (deployment gates G1/G2).
-- Exact next task: Milestone 1 scaffolding (see section 9).
-- Decisions to preserve: ADR-001…ADR-010, especially: never reuse old
-  project credentials; dedicated postgres container with fresh
-  credentials; deployment gated on G1/G2 confirmation.
+- What was implemented: Milestone 0 (inspection, architecture, decisions,
+  security gates, agent contract) and Milestone 1 (repo foundation,
+  FastAPI backend with health endpoints/structured logging/Alembic,
+  React+TS+Vite frontend with health wiring, ARM64 Compose stack, CasaOS
+  deployment guide, automated tests, secret-scan guard).
+- Files: everything under `AGENTS.md`, `docs/`, `backend/`, `frontend/`,
+  `deploy/`, `tools/`, `.gitignore`, `.gitattributes`, `.env.example`,
+  `.dockerignore`. The pre-existing empty `Autonomous-Creator-Studio/`
+  directory was left untouched.
+- Tests: backend 10/10 passed; frontend 2/2 passed, lint clean, build OK;
+  secret scan clean; live HTTP checks recorded in section 7.
+- Latest verified commit: section 8 (working tree clean).
+- Outstanding issues: B1 GitHub auth (remote repo), B2 no local Docker
+  (runtime verification on Pi), B3 deployment gates G1/G2 (user
+  confirmation of token revocation and password rotation).
+- Exact next task: Milestone 2 kickoff — load impeccable +
+  frontend-design skills, design tokens, then screens.
+- Decisions to preserve: ADR-001…ADR-010 (fresh repo, monorepo, FastAPI,
+  React/Vite, dedicated postgres with fresh credentials, PG job queue,
+  arm64 compose, SQLite-based local tests, deployment gates, git
+  identity/remote plan).
 
 **Never infer progress from previous plans. The repository and test
 results are the source of truth.**

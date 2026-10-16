@@ -25,10 +25,10 @@ Standing rules:
 | G1 | Previously exposed GitHub token revoked | **PENDING user confirmation** | User must verify in GitHub → Settings → Developer settings → Token (classic / fine-grained). Agent verified no live token exists in the current environment (`gh auth status`: not logged in; GitHub MCP `user:@me` → HTTP 422, no authenticated context). Absence here is consistent with revocation but is not proof of it. |
 | G2 | PostgreSQL password rotated | **PENDING user confirmation** | User must change the password of the shared PostgreSQL instance (and any place it is stored). The postgres MCP currently connects successfully with a stored credential; whether that stored password is the old (exposed) one or a rotated one cannot be determined from the agent side. |
 | G3 | New app credentials freshly generated | Not yet applicable | `autoshorts_studio` database role/password will be generated at deployment; never copied from old projects. |
-| G4 | `.env` excluded from git | Planned (Milestone 1) | Enforced via `.gitignore` + pre-commit secret scan (G7). |
+| G4 | `.env` excluded from git | **In place, verified** | `.gitignore` + `.dockerignore` (also excluded from images); `tools/scan_secrets.py` fails if any `.env*` (except `.env.example`) is tracked. Scan clean on 2026-10-16. |
 | G5 | OAuth tokens and LLM API keys encrypted at rest | Planned (Milestones 3/5) | Application-level encryption; key delivered via environment variable. |
 | G6 | Secrets never returned by API responses | Planned | API schemas exclude secret fields; tests assert masked output. |
-| G7 | Secret scan of Git changes | Planned (Milestone 1) | Automated pattern scan (API-key formats, `postgres://user:pass`, tokens) before each commit / in CI. |
+| G7 | Secret scan of Git changes | **Basic guard in place** | `tools/scan_secrets.py` scans tracked+untracked files for common secret patterns (GitHub/OpenAI/AWS keys, credentialed DB URLs, private keys, assigned secrets) with compose `${VAR}` expansion; run before each commit. It is a pragmatic guard, not a guarantee. |
 | G8 | Rights records enforced before publication | Planned (Milestones 4/10) | Publication blocked without a recorded rights record for the source. |
 
 ## 3. Handling Rules
@@ -67,3 +67,6 @@ Standing rules:
 | 2026-10-16 | GitHub MCP authenticated context (`user:@me`) | HTTP 422 — no authenticated user; consistent with revoked/absent token |
 | 2026-10-16 | Workspace `.env` / secret files | None exist (`find` over workspace shows only the three documentation files) |
 | 2026-10-16 | PostgreSQL exposure | Server reachable via MCP with stored credential; rotation status unknown → Gate G2 pending |
+| 2026-10-16 | Secret scan before each Milestone 1 commit (`tools/scan_secrets.py`) | Clean on every run; flagged synthetic test fixtures were annotated with `# secret-scan-ok`; compose variable references are expanded, literal secrets and secret defaults still fail (self-tested) |
+| 2026-10-16 | `.env` tracked in git | Not tracked (`git ls-files` via scanner check); `.gitignore` and `.dockerignore` both exclude it |
+| 2026-10-16 | Deployment stack secret handling | `deploy/docker-compose.yml` requires a fresh `POSTGRES_PASSWORD` (fails fast if unset), keeps PostgreSQL on an internal Docker network only, and publishes only the frontend port |

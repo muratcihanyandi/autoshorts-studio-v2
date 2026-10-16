@@ -51,7 +51,7 @@ Acceptance criteria:
 
 ## Milestone 1 — Repository and Foundation
 
-Status: IN_PROGRESS (started 2026-10-16; remote repo creation blocked on GitHub auth)
+Status: COMPLETED (local work verified 2026-10-16; private GitHub remote pending user authentication — see `docs/PROGRESS.md` blocker B1)
 
 Tasks:
 - Create or connect a private GitHub repository.
@@ -328,12 +328,12 @@ Acceptance criteria:
 
 ## Immediate Next Action
 
-Milestone 0 is complete. Proceed with Milestone 1 (local foundation).
+Milestones 0 and 1 are complete (all local acceptance criteria verified;
+evidence in `docs/PROGRESS.md` sections 3 and 7). Begin Milestone 2 by
+loading the `impeccable` and `frontend-design` skills.
 
-GitHub authentication is currently unavailable (`gh` not logged in), so the
-private repository creation is blocked; complete all local work, commit
-incrementally, and report the exact blocker. When authentication is
-available, create the private repository and push.
-
-Deployment remains gated on the user confirming GitHub token revocation and
-PostgreSQL password rotation (`docs/SECURITY.md` gates G1/G2).
+Two external items remain open and can be resolved by the user at any
+time: GitHub authentication for the private remote repository (B1), and
+the deployment gates G1/G2 (token revocation and password rotation
+confirmation, `docs/SECURITY.md`). Deployment itself follows
+`docs/DEPLOYMENT.md`.
