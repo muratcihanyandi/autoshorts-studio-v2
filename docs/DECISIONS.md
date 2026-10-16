@@ -47,7 +47,18 @@ revisited only with cause; changes are recorded as new ADRs.
 
 ## ADR-005: Dedicated PostgreSQL database, fresh credentials, no shared-instance dependency
 
-- **Status:** Accepted (2026-10-16, planned)
+- **Status:** Accepted (2026-10-16, planned). **Addendum 2026-10-16:** the
+  user selected the documented alternative — reuse the *server* (the
+  existing PostgreSQL 17.10 on the Pi at `192.168.2.170:5432`) instead of a
+  dedicated container, to save RAM. Conditions unchanged and mandatory: a
+  dedicated least-privilege role (`autoshorts_app`) owning a dedicated
+  `autoshorts_studio` database with a freshly generated password. The
+  shared admin role (`muratcihanyandi`) must never be used by the app, and
+  its password (exposed in chat on 2026-10-16) must not be reused.
+  Implementation: `deploy/casaos/docker-compose.external-db.yml` (no
+  postgres service; backend points at the external instance). The bundled
+  container variant remains available as
+  `deploy/casaos/docker-compose.casaos.yml`.
 - **Context:** The Pi already runs a shared PostgreSQL 17.10 (Docker network
   172.18.0.2) hosting several service databases, all owned by a single
   role. Its credentials are part of the exposed-credential lineage and must

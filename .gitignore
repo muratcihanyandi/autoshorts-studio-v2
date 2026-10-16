@@ -3,6 +3,13 @@
 .env.*
 !.env.example
 
+# --- CasaOS local deployment artifacts (may contain credentials) ---
+deploy/casaos/docker-compose.generated.yml
+deploy/casaos/.generated-password
+
+# --- Transfer bundle (build artifact) ---
+/autoshorts-studio-src.zip
+
 # --- Python ---
 __pycache__/
 *.py[cod]

@@ -1,0 +1,59 @@
+# Autonomous Creator Studio — CasaOS kurulum sablonu, PAKET ICI PostgreSQL (Raspberry Pi 5, ARM64)
+#
+# Bu varyant kendi izole postgres:17 konteynerini kurar (paylasilan
+# sunucuya dokunmaz). Veri: /DATA/AppData/autoshorts-studio/pgdata
+#
+# KULLANIM: Asagidaki __GENERATED_PASSWORD__ yazan IKI yeri, taze uretilmis
+# guclu bir sifreyle degistirin, sonra bu dosyanin tamamini CasaOS'a
+# yapistirin. Sifre uretimi:  openssl rand -hex 24
+#
+# Harici PostgreSQL (Pi'de zaten calisan sunucu) kullanmak isterseniz
+# docker-compose.external-db.yml dosyasina bakin.
+#
+# Gelistirici notu: yerel imajlar (pull_policy: never), sadece frontend
+# portu disari acik.
+
+name: autoshorts-studio
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    platform: linux/arm64
+    container_name: autoshorts-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: autoshorts
+      POSTGRES_PASSWORD: __GENERATED_PASSWORD__
+      POSTGRES_DB: autoshorts_studio
+    volumes:
+      - /DATA/AppData/autoshorts-studio/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoshorts -d autoshorts_studio"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    image: autoshorts-studio-backend:local
+    platform: linux/arm64
+    pull_policy: never
+    container_name: autoshorts-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql+asyncpg://autoshorts:__GENERATED_PASSWORD__@postgres:5432/autoshorts_studio
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: autoshorts-studio-frontend:local
+    platform: linux/arm64
+    pull_policy: never
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"

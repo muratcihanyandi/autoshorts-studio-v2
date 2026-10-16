@@ -22,6 +22,7 @@ PATTERNS: list[tuple[str, str]] = [
     (r"sk-[A-Za-z0-9]{20,}", "OpenAI-style API key"),
     (r"(?i)postgres(ql)?(\+asyncpg|\+psycopg)?://[^\s/:@]+:[^\s/@]+@", "DB URL with credentials"),
     (r"(?i)\b(password|passwd|secret|api_key|apikey|access_token|refresh_token)\b[\"']?\s*[:=]\s*[\"']?[^\s\"']{8,}", "assigned secret"),
+    (r"(?i)\bpassword\s+'[^']{8,}'", "SQL password literal"),
     (r"AKIA[0-9A-Z]{16}", "AWS access key id"),
     (r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "private key material"),
 ]
@@ -29,7 +30,15 @@ PATTERNS: list[tuple[str, str]] = [
 # Files where these patterns appear as documentation of the scanner itself
 # or as documented placeholders.
 SELF_EXCLUDE = {Path("tools/scan_secrets.py").as_posix()}
-PLACEHOLDER_MARKERS = ("CHANGE_ME", "CHANGE-ME", "<your", "example", "XXX")
+PLACEHOLDER_MARKERS = (
+    "CHANGE_ME",
+    "CHANGE-ME",
+    "<your",
+    "example",
+    "XXX",
+    "BURAYA",
+    "__GENERATED_PASSWORD__",
+)
 # Inline marker for lines that intentionally contain a fake secret fixture
 # (synthetic values only, never real credentials).
 LINE_ALLOW_MARKER = "# secret-scan-ok"

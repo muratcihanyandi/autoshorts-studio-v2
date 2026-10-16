@@ -1,0 +1,39 @@
+# Autonomous Creator Studio — CasaOS kurulumu, HARICI PostgreSQL (Raspberry Pi 5, ARM64)
+#
+# Bu dosya, Pi'de zaten calisan PostgreSQL sunucusunu (192.168.2.170:5432)
+# kullanir. Kendi postgres konteynerini KURMAZ.
+#
+# KULLANIM: Asagidaki DB_SIFRE_BURAYA yazan TEK yeri (DATABASE_URL icinde),
+# taze uretilmis (asla eski/ifsa olmus olmayan) sifreyle degistirin, sonra
+# bu dosyanin tamamini CasaOS'a yapistirin.
+#
+# Sifre uretimi ornegi (Pi uzerinde):  openssl rand -hex 24
+#
+# On kosul: autoshorts_studio veritabani ve autoshorts_app rolu olusturulmus
+# olmali (bkz. deploy/casaos/README.md adim 2). Imajlar: build-on-pi.sh.
+
+name: autoshorts-studio
+
+services:
+  backend:
+    image: autoshorts-studio-backend:local
+    platform: linux/arm64
+    pull_policy: never
+    container_name: autoshorts-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql+asyncpg://autoshorts_app:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
+
+  frontend:
+    image: autoshorts-studio-frontend:local
+    platform: linux/arm64
+    pull_policy: never
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # Port catismasi olursa soldaki degeri degistirin (or. 8090).
+      - "8080:80"
