@@ -1,0 +1,20 @@
+# Normalize line endings: repository stores LF, working copy uses LF.
+# The deployment target is Linux (Raspberry Pi / CasaOS); CRLF would break
+# shell scripts and Docker builds.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.zip binary
+*.gz binary

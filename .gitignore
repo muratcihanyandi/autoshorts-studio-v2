@@ -1,0 +1,43 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/node_modules/
+*.tsbuildinfo
+
+# --- Media pipeline working data (runtime, not source) ---
+media/
+media_cache/
+media_out/
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.part
+*.tmp
+
+# --- Logs / runtime ---
+*.log
+logs/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
