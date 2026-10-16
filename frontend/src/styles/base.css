@@ -1,0 +1,82 @@
+/* Temel: tarayıcı yüzeyleri de bu dünyanın mürekkebini taşır. */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink-ground);
+}
+
+body {
+  background: var(--ink-ground);
+  color: var(--cream-text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--cobalt);
+  color: var(--paper-white);
+}
+
+:focus-visible {
+  outline: 2px solid var(--cobalt-on-dark);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--cobalt-on-dark);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ince mürekkep kaydırma çubuğu */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-border) var(--ink-ground);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--ink-border);
+}
+*::-webkit-scrollbar-track {
+  background: var(--ink-ground);
+}
+
+/* veri sayıları hep tabular */
+.nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--cobalt);
+  color: var(--paper-white);
+  padding: var(--space-2) var(--space-4);
+  z-index: 100;
+}
+.skip-link:focus {
+  left: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

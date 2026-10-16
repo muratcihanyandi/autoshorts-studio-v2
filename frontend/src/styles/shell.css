@@ -1,0 +1,129 @@
+/* Kabuk: sol nav rayı + içerik alanı; dar ekranda üst çubuğa döner. */
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.rail {
+  width: 208px;
+  flex-shrink: 0;
+  background: var(--ink-deep);
+  border-right: 1px solid var(--ink-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-brand {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  color: var(--cream-text);
+  padding: 22px 20px 16px;
+  border-bottom: 1px solid var(--ink-border);
+  margin-bottom: var(--space-3);
+}
+
+.rail-brand em {
+  font-style: normal;
+  color: var(--amber);
+}
+
+.rail nav {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail nav a {
+  display: block;
+  padding: 10px 20px;
+  color: var(--muted-on-dark);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+
+.rail nav a:hover {
+  color: var(--cream-text);
+}
+
+.rail nav a.active {
+  background: var(--cobalt);
+  color: var(--paper-white);
+  font-weight: 600;
+}
+
+.rail-foot {
+  margin-top: auto;
+  padding: 16px 20px;
+  border-top: 1px solid var(--ink-border);
+  font-size: 11.5px;
+  color: var(--faint-on-dark);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-5) var(--space-6);
+}
+
+.screen-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.screen-head h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: 0.03em;
+  color: var(--cream-text);
+}
+
+.screen-sub {
+  font-size: 12.5px;
+  color: var(--faint-on-dark);
+}
+
+@media (max-width: 900px) {
+  .shell {
+    flex-direction: column;
+  }
+  .rail {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--ink-border);
+  }
+  .rail-brand {
+    padding: 14px 16px 10px;
+    margin-bottom: 0;
+    border-bottom: none;
+  }
+  .rail nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 8px 10px;
+  }
+  .rail nav a {
+    padding: 7px 12px;
+    white-space: nowrap;
+    border: 1px solid var(--ink-border);
+    margin-right: var(--space-2);
+  }
+  .rail nav a.active {
+    border-color: var(--cobalt);
+  }
+  .rail-foot {
+    display: none;
+  }
+  .content {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+  .screen-head h1 {
+    font-size: 20px;
+  }
+}

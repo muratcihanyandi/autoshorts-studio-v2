@@ -1,0 +1,45 @@
+/* Yeşilçam Baskı Odası — tasarım token'ları.
+   Palet: koyu mürekkep zemini, krem afiş levhası, poster mürekkepleri
+   durum işi yapar (kırmızı kritik, hardal uyarı, yeşil sağlıklı, kobalt seçim). */
+:root {
+  /* zemin ve levhalar */
+  --ink-ground: #171b26;
+  --ink-deep: #10131c;
+  --ink-panel: #1e2330;
+  --ink-border: #2c3244;
+  --plate: #f2ecdd;
+  --plate-line: #c9c1ac;
+  --plate-ink: #1c1b17;
+
+  /* metin */
+  --cream-text: #ede6d3;
+  --muted-on-dark: #b9b29e;
+  --faint-on-dark: #8d8672;
+
+  /* poster mürekkepleri */
+  --red: #c93a2e;
+  --red-on-plate: #b02f24;
+  --amber: #d9a036;
+  --amber-on-plate: #8f5e0f;
+  --amber-on-dark: #d9a036;
+  --green: #2e7f6f;
+  --green-on-plate: #1f5b4e;
+  --green-on-dark: #4fa391;
+  --cobalt: #3550c4;
+  --cobalt-on-dark: #7d92e8;
+  --paper-white: #fffdf6;
+
+  /* tipografi */
+  --font-display: 'Anton', 'Arial Narrow', sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* ölçek */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 14px;
+  --space-4: 20px;
+  --space-5: 28px;
+  --space-6: 40px;
+
+  --radius-plate: 4px;
+}

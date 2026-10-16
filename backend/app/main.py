@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app import __version__
 from app.api.routes.health import router as health_router
+from app.api.routes.overview import router as overview_router
+from app.api.routes.system import router as system_router
 from app.config import Settings, get_settings
 from app.db import create_engine_and_sessionmaker
 from app.logging_config import setup_logging
@@ -27,6 +30,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.sessionmaker = sessionmaker
         app.state.settings = settings
+        app.state.started_at = time.time()
+        # Seed the psutil CPU baseline so the first /api/system poll is real.
+        try:
+            import psutil
+
+            psutil.cpu_percent(interval=None)
+        except Exception:  # noqa: BLE001 - measurement only
+            pass
         yield
         if engine is not None:
             await engine.dispose()
@@ -37,6 +48,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router, prefix="/api")
+    app.include_router(overview_router, prefix="/api")
+    app.include_router(system_router, prefix="/api")
     return app
 
 
