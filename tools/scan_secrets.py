@@ -30,6 +30,9 @@ PATTERNS: list[tuple[str, str]] = [
 # or as documented placeholders.
 SELF_EXCLUDE = {Path("tools/scan_secrets.py").as_posix()}
 PLACEHOLDER_MARKERS = ("CHANGE_ME", "CHANGE-ME", "<your", "example", "XXX")
+# Inline marker for lines that intentionally contain a fake secret fixture
+# (synthetic values only, never real credentials).
+LINE_ALLOW_MARKER = "# secret-scan-ok"
 
 
 def list_files() -> list[str]:
@@ -68,6 +71,8 @@ def main() -> int:
         except OSError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
+            if LINE_ALLOW_MARKER in line:
+                continue
             if any(marker in line for marker in PLACEHOLDER_MARKERS):
                 continue
             for pattern, label in PATTERNS:
