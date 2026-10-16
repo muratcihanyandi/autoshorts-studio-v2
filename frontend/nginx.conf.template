@@ -5,9 +5,14 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # API proxy: the SPA reaches the backend through the same origin.
+    # API proxy: same origin. The upstream host comes from BACKEND_HOST
+    # (docker service name by default; the nginx image substitutes it at
+    # container start). DNS resolution happens per request via Docker's
+    # embedded DNS, so nginx starts even while backend is still coming up.
     location /api/ {
-        proxy_pass http://backend:8000;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $upstream http://${BACKEND_HOST}:8000;
+        proxy_pass $upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

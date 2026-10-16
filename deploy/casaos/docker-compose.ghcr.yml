@@ -12,6 +12,10 @@
 # Paketler private kalirsa Pi'de bir kez GHCR girisi gerekir:
 #   echo <read:packages PAT> | docker login ghcr.io -u muratcihanyandi --password-stdin
 # Paket ayarlarindan visibility=public yaparsaniz giris gerekmez.
+#
+# Ag: nginx BACKEND_HOST uzerinden (varsayilan: servis adi "backend") istek
+# aninda DNS cozumler; iki konteyner ayni autoshorts-net agindadir.
+# /api 502 verirse BACKEND_HOST'u sunucu IP'sine cevirin (backend 8000'te yayinda).
 
 name: autoshorts-studio
 
@@ -25,6 +29,10 @@ services:
       APP_ENV: production
       LOG_LEVEL: info
       DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
+    ports:
+      - "8000:8000"
+    networks:
+      - autoshorts-net
 
   frontend:
     image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
@@ -33,5 +41,13 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    environment:
+      BACKEND_HOST: backend
     ports:
       - "1478:80"
+    networks:
+      - autoshorts-net
+
+networks:
+  autoshorts-net:
+    name: autoshorts-net
