@@ -6,9 +6,11 @@ layer (see docs/SECURITY.md: secrets stay out of API responses).
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 
 from app.schemas import ChannelCreate, ChannelOut, ChannelUpdate, ChannelsOut
 from app.services.channel_service import ChannelService
+from app.services.oauth_service import OAuthError, OAuthService
 
 router = APIRouter(tags=["channels"])
 
@@ -21,6 +23,16 @@ def _service(request: Request) -> ChannelService:
             detail="Veritabanı yapılandırılmadı; kanal yönetimi kapalı.",
         )
     return ChannelService(sessionmaker)
+
+
+def _oauth_service(request: Request) -> OAuthService:
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı; kanal yönetimi kapalı.",
+        )
+    return OAuthService(sessionmaker, request.app.state.settings)
 
 
 def _out_or_404(channel) -> ChannelOut:
@@ -75,3 +87,50 @@ async def delete_channel(request: Request, channel_id: int) -> None:
 async def disconnect_channel(request: Request, channel_id: int) -> ChannelOut:
     service = _service(request)
     return _out_or_404(await service.disconnect_channel(channel_id))
+
+
+@router.post("/channels/{channel_id}/oauth/start")
+async def oauth_start(request: Request, channel_id: int) -> dict:
+    oauth = _oauth_service(request)
+    try:
+        return await oauth.start(channel_id)
+    except OAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/channels/{channel_id}/oauth/callback")
+async def oauth_callback(
+    request: Request,
+    channel_id: int,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    """Google lands the browser here after consent.
+
+    Success/failure redirect to the frontend channels screen when its base
+    URL is configured; otherwise the result is plain JSON (API clients).
+    """
+    frontend = request.app.state.settings.frontend_base_url.rstrip("/")
+    oauth = _oauth_service(request)
+    try:
+        channel = await oauth.callback(channel_id, code, state, error)
+    except OAuthError as exc:
+        if frontend:
+            return RedirectResponse(
+                f"{frontend}/kanallar?oauth=hata", status_code=307
+            )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if frontend:
+        return RedirectResponse(f"{frontend}/kanallar?oauth=basarili", status_code=307)
+    return ChannelOut.model_validate(channel)
+
+
+@router.post("/channels/{channel_id}/oauth/refresh")
+async def oauth_refresh(request: Request, channel_id: int) -> dict:
+    oauth = _oauth_service(request)
+    try:
+        refreshed = await oauth.refresh_if_needed(channel_id)
+    except OAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {"channel_id": channel_id, "refreshed": refreshed}

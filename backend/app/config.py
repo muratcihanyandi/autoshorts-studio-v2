@@ -21,6 +21,24 @@ class Settings(BaseSettings):
     log_level: str = "info"
     database_url: str = ""
 
+    # Google/YouTube OAuth (all optional: the flow reports "not configured"
+    # until the user supplies their own client credentials).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Externally reachable bases; the Pi's LAN address in deployment.
+    oauth_redirect_base: str = ""
+    frontend_base_url: str = ""
+    # Fernet key (urlsafe base64, 32 bytes) encrypting OAuth tokens at rest.
+    token_encryption_key: str = ""
+
+    @property
+    def oauth_configured(self) -> bool:
+        return bool(
+            self.google_client_id
+            and self.google_client_secret
+            and self.token_encryption_key
+        )
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
