@@ -75,7 +75,7 @@ Acceptance criteria:
 
 ## Milestone 2 — Studio Interface
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; superseded by the canon redesign of 2026-10-17 — evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Read the Impeccable and Frontend Design skill instructions.
@@ -96,7 +96,7 @@ Acceptance criteria:
 
 ## Milestone 3 — Database and Channel Management
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Implement channel, OAuth credential, source channel, and publishing profile models.
@@ -116,7 +116,7 @@ Acceptance criteria:
 
 ## Milestone 4 — Source Monitoring and Planning
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Integrate official YouTube metadata APIs.
@@ -137,7 +137,7 @@ Acceptance criteria:
 
 ## Milestone 5 — LLM Provider Manager
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Implement main provider configuration.
@@ -159,7 +159,7 @@ Acceptance criteria:
 
 ## Milestone 6 — Durable Job Queue and Resource Management
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
 
 Tasks:
 - Implement persistent job states.

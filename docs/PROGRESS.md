@@ -2,15 +2,16 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–3 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–6 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
-to GHCR; the Pi runs the app (M2 interface verified live); the M3 image is
-on GHCR awaiting a CasaOS restart by the user.
+to GHCR (every run green, latest `39010166549`). The user deployed the stack
+on the Pi via CasaOS (UI/API/database verified from the user's logs); the app
+database lives in its own `postgres:17` container (ADR-005).
 
-**Current milestone:** Milestone 4 — Source Monitoring and Planning
+**Current milestone:** Milestone 7 — Horizontal Video Processing
 
-**Current task:** M4 kickoff — source-channel registration, YouTube
-metadata integration, quota tracking, durable planning.
+**Current task:** M7 kickoff — authorized media-source adapters, sequential
+downloads with bandwidth limits, media integrity validation.
 
 **Last updated:** 2026-10-17
 
@@ -97,9 +98,9 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 1. Repository and Foundation | COMPLETED (local) | All local acceptance criteria verified (section 3, section 7); private GitHub remote pending user auth (B1) |
 | 2. Studio Interface | COMPLETED | Yeşilçam Baskı Odası world; finish review `ship`; DESIGN.md recorded (2026-10-17) |
 | 3. Database and Channel Management | COMPLETED | Migration 0002 applied on Pi DB; OAuth handshake with Fernet-encrypted tokens; channels UI; Pi restart pending (2026-10-17) |
-| 4. Source Monitoring and Planning | IN_PROGRESS | Started 2026-10-17 |
-| 5. LLM Provider Manager | NOT_STARTED | Three-provider fallback |
-| 6. Job Queue and Resource Management | NOT_STARTED | Persistent background jobs |
+| 4. Source Monitoring and Planning | COMPLETED | Source registration + rights records, quota-gated cached YouTube discovery with dedupe, filter rules, durable planning ledger (2026-10-17) |
+| 5. LLM Provider Manager | COMPLETED | Bounded three-provider fallback, encrypted masked keys, request log (2026-10-17) |
+| 6. Job Queue and Resource Management | COMPLETED | Persistent SKIP LOCKED queue, worker + heartbeat + stale recovery, token-bucket limit, disk guard, tmp cleanup (2026-10-17) |
 | 7. Horizontal Video Processing | NOT_STARTED | Authorized media pipeline |
 | 8. Vertical Studio and Webcam Detection | NOT_STARTED | Tracking and calibration |
 | 9. Subtitles and Metadata | NOT_STARTED | Turkish correction |
@@ -305,6 +306,145 @@ marked otherwise. Evidence commands are listed; none expose secrets.
     `OAUTH_REDIRECT_BASE`, `FRONTEND_BASE_URL`). Without them the Bağla
     button returns an explanatory 503; nothing else degrades.
 
+### Milestone 4 — Source Monitoring and Planning (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 4
+- Task: source-channel registration with rights records, official YouTube
+  metadata integration, quota tracking and caching, duplicate prevention,
+  filter/exclusion rules, durable planning.
+- Implementation (commits `2edc878`, `1c00ebc`, `7e1e1bb`):
+  - Slice 1 — source registration + rights records: `/api/channels/{id}/sources`
+    CRUD over the existing `source_channels` model; permission status
+    (pending/authorized/rejected) with authorization notes and timestamps;
+    only authorized sources are polled. Migration `0003` (`source_videos`).
+  - Slice 2 — YouTube discovery: `app/services/youtube_client.py` — Data
+    API v3 reader gated by a daily quota ledger (`quota_usage` table);
+    `QuotaBudgetExceeded` raised before the request so polling can never
+    silently burn past the limit; TTL response cache. `discovery_service.py`
+    polls channel uploads and inserts new videos into `source_videos` with
+    a unique (channel, video) constraint — duplicate discovery cannot
+    create duplicate rows or duplicate jobs.
+  - Slice 3 — filter rules + planning: `source_rules.py` (per-source
+    duration bounds, title patterns, exclusion rules), `planning_service.py`
+    + migration `0004` (`planning`): durable planning ledger — every
+    decision recorded (planned/skipped) with its reason, so planning is
+    auditable.
+- Verification: 19 new tests (test_sources 7, test_discovery 5,
+  test_planning 7); YouTube endpoints mocked via httpx MockTransport;
+  quota overshoot rejected and dedupe asserted in tests; CI run for
+  slice 3 `38997282380`: success. Secret scan clean.
+- Remaining limitations: polling real YouTube requires user-provided
+  credentials (YouTube API key / OAuth client values — the site-managed
+  settings below provide the entry path; B4); polling cadence runs on the
+  M6 worker.
+
+### Site-managed settings + brand identity (user-directed interlude, 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: user-requested work between M4 and M5
+- Task: every setting editable from the site (including YouTube API
+  keys); AutoShorts Studio brand kit applied everywhere.
+- Implementation (commits `9011398`, `2100eec`):
+  - Brand kit: brand palette tokens, self-hosted brand fonts (Noto Sans
+    Display, Google Sans, Noto Sans — full Turkish glyph coverage
+    verified via fontTools cmap), logos (full + icon, light/dark
+    variants), and the "AutoShorts Studio" name across page titles,
+    favicon, UI copy, and Docker/CasaOS labels.
+  - Runtime settings: `settings_service.py` — overrides stored in
+    `app_meta` under `runtime_settings` (database over environment;
+    empty string reverts to the env value), masked GET `/api/settings`
+    (secrets never returned), authenticated PUT; Ayarlar screen with
+    masked secret inputs; YouTube API key, OAuth client values, and
+    base URLs editable at runtime.
+- Verification: test_settings 10 (masking, DB-over-env precedence,
+  revert-to-env, update round trip); secret scan clean; CI runs
+  `38998768270` (brand) and `38999691672` (settings): success.
+
+### Milestone 5 — LLM Provider Manager (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 5
+- Task: configurable providers with bounded fallback, masked API key
+  management, timeout/retry/rate-limit handling, structured response
+  validation, latency and error categories.
+- Implementation (commits `63ca3eb`, `100876c`):
+  - `app/services/llm_service.py` (ADR-011): up to 3 providers
+    (`MAX_PROVIDERS = 3`) with order, model IDs, endpoints, per-provider
+    timeout; a completion tries `1 + max_retries` times per provider
+    (retries only for network/timeout errors), then falls to the next
+    provider — bounded, no infinite retries; invalid structured
+    responses are rejected safely and recorded by error category;
+    per-request latency and error category recorded (Son İstekler
+    panel); provider API keys Fernet-encrypted at rest and masked in
+    every API response and log.
+  - Migration `0005` (`llm_providers`); `/api/llm/providers` CRUD +
+    connection test + request log; LLM Sağlayıcıları screen.
+- Verification: test_llm 18 (main failure triggers fallback; invalid
+  JSON rejected; bounded retries; secrets never logged — log redaction
+  asserted); CI runs `39000726932` / `39000791274`: success.
+- Remaining limitations: real provider calls need user-entered keys (via
+  site settings or env); the fallback contract is covered by
+  simulated-failure tests.
+
+### Milestone 6 — Durable Job Queue and Resource Management (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 6
+- Task: persistent job states, worker heartbeat, retry and cancellation,
+  restart recovery, configurable concurrency, download bandwidth limits,
+  disk-space checks, CPU/memory monitoring, safe temporary-file cleanup.
+- Implementation (commit `548d793`):
+  - `app/services/job_service.py`: job rows in PostgreSQL (migration
+    `0006`), claim via `SELECT … FOR UPDATE SKIP LOCKED` (single consumer
+    per job; sqlite runs the same code path in tests), worker heartbeat +
+    attempt counters, stale running jobs reclaimed past the heartbeat
+    threshold (restart recovery), cancel semantics, deduped enqueue (the
+    same job_type + payload does not double-queue), configurable worker
+    concurrency.
+  - `app/worker.py`: background worker task (`WORKER_ENABLED` env), busy
+    loop with concurrency limit, periodic `source_discover` scheduling
+    per channel, hourly tmp cleanup.
+  - Resource management: `rate_limiter.py` token bucket (download
+    bandwidth limit), disk-space guard refuses unsafe new jobs, psutil
+    CPU/RAM/disk monitoring via `/api/system`, safe temp-file cleanup
+    (`temp_cleanup.py`), labelled media tree (`media_storage.py`:
+    downloads/edited/clips/stock/tmp under MEDIA_ROOT).
+  - Otomasyon screen: job queue list with status pills + cancel.
+- Verification: test_jobs 16, test_media 7, test_resources 6 (29 new:
+  restart recovery, dedupe, cancel consistency, disk guard, token
+  bucket, tmp cleanup); CI run `39003038671`: success.
+
+### Deployment polish + canon redesign (2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: post-M6 deployment hardening and theme change (user-directed)
+- Task: CasaOS-facing deployment polish; theme switched to the
+  "Kategori Standardı" catalog direction.
+- Implementation (commits `1bab11b`, `f3ea1af`, `e816bd4`, `c8f2fbb`,
+  `f091f24`, `121e175`):
+  - Light-logo favicon + Docker/CasaOS app name and branding
+    (`1bab11b`); GHCR compose template duplicate name fix (`f3ea1af`);
+    frontend listed first in compose so the CasaOS app card opens the UI
+    (`e816bd4`); labelled media tree volumes under
+    `/mnt/usb/Autoshorts_Studio` + PNG favicon (`c8f2fbb`); backend
+    container runs as UID/GID 1000 instead of root (`f091f24`).
+  - Canon redesign (`121e175`): the "Kategori Standardı" catalog mock's
+    structure applied with the AutoShorts Studio brand — ivory page,
+    white cards with 1px border + single soft shadow, dark navy rail
+    with dot indicators, 4-card stat grid, title-bar table panels, soft
+    status pills, 6px round meters; screen titles converted to sentence
+    case; the Yeşilçam marquee/stamp/bill-row components removed;
+    `DESIGN.md` rewritten for the new direction.
+- Verification: frontend vitest 10/10, oxlint 0 errors, `tsc -b` clean,
+  production build ok; DOM audits of 4 screens via headless Edge (stat
+  cards, panels, pills, meters present; no legacy classes); CI runs
+  through `39010166549`: success.
+- Deployment note (2026-10-17, read-only postgres MCP): the shared
+  PostgreSQL instance contains an EMPTY `autoshorts_studio` database — a
+  leftover; the deployed stack uses its own `postgres:17` container per
+  ADR-005. Cleanup decision belongs to the user.
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -407,35 +547,36 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 on the dev machine (Windows 11, Python 3.11.9 venv,
-Node 24.13.0). Commands run from the stated directories.
+Verified 2026-10-17 (post-M6 + canon redesign session) on the dev machine
+(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
+stated directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: 39 (test_health 4, test_config 2, test_logging 2,
-    test_migrations 2, test_overview 2, test_system 1, test_channels 9,
-    test_security 3, test_oauth 14 — collected per file)
+  - Passed: 115 (test_llm 18, test_jobs 16, test_oauth 14, test_settings
+    10, test_channels 9, test_sources 7, test_planning 7, test_media 7,
+    test_resources 6, test_discovery 5, test_health 4, test_security 3,
+    test_overview 2, test_migrations 2, test_logging 2, test_config 2,
+    test_system 1 — collected per file)
   - Failed: 0; Skipped: 0
   - sqlite test connections enforce foreign keys (production parity).
-  - 1 warning: starlette TestClient deprecation notice (dev-only).
+  - 2 warnings: starlette TestClient deprecation notice (dev-only) and a
+    pytest unhandled-thread-exception notice from a worker test.
 - Frontend — `cd frontend && npx vitest run`
-  - Passed: 4 (shell+overview from mocked API, error+retry, rail href,
-    channels screen list + form)
+  - Passed: 10 (App 4, SettingsScreen 3, AutomationScreen 3)
   - Failed: 0
-- Frontend lint — `npx oxlint src`: 0 warnings, 0 errors.
+- Frontend lint — `npx oxlint`: 0 errors (1 React Compiler advisory note).
 - Frontend build — `npm run build` (`tsc -b && vite build`): succeeded.
-- Impeccable detector — `impeccable detect --json --target
-  frontend/src/App.tsx`: `[]` (clean).
 - Secret scan — `python tools/scan_secrets.py` from repository root:
-  clean (all OAuth token-handling lines carry justified
-  `# secret-scan-ok` markers; synthetic test fixtures marked).
-- Real-Postgres integration (2026-10-17, local uvicorn → Pi database):
-  channels create → list → patch → delete round trip 201/200/200/204;
-  `/api/overview` reported live totals and phase before/after.
-- CI — GitHub Actions `build-images` on `main`: latest run
-  `38993105069` (M3 slice 3) completed `success`; images on GHCR.
-- Live deployment — Pi (http://192.168.2.170:1478/): M2 interface
-  verified live (DOM/computed-style audits at two viewports); the M3
-  image awaits the user's CasaOS restart.
+  clean (token/key-handling lines carry justified `# secret-scan-ok`
+  markers; synthetic test fixtures marked).
+- CI — GitHub Actions `build-images` on `main`: every run since the last
+  record completed `success` (verified via `gh run list` 2026-10-17;
+  latest `39010166549` for commit `121e175`).
+- Live deployment — Pi (CasaOS): stack deployed by the user; UI, API,
+  and migrated database verified from the user's logs (2026-10-17).
+  Note: the app database lives in the stack's own `postgres:17`
+  container; the empty `autoshorts_studio` on the shared instance is an
+  unused leftover (see the deployment-polish record).
 
 ## 8. Git State
 
@@ -451,47 +592,62 @@ Node 24.13.0). Commands run from the stated directories.
   - `66f3301` Milestone 3 slice 1: channel model, migration 0002, CRUD API
   - `b38fa7f` Milestone 3 slice 2: OAuth handshake + encrypted tokens
   - `a5c261d` Milestone 3 slice 3: channels screen, overview ribbons, FK parity
+  - `2edc878` / `1c00ebc` / `7e1e1bb` Milestone 4 slices 1–3
+  - `9011398` AutoShorts Studio brand kit; `2100eec` site-managed runtime settings
+  - `63ca3eb` / `100876c` Milestone 5 (+ secret-scanner fixture marks)
+  - `548d793` Milestone 6: durable job queue and resource management
+  - `1bab11b` / `f3ea1af` / `e816bd4` / `c8f2fbb` / `f091f24` deployment polish
+  - `121e175` canon "Kategori Standardı" redesign with studio brand
 - Working tree: clean after the final commit
 - Uncommitted changes: none after each milestone commit
 
 ## 9. Immediate Next Actions
 
-1. Milestone 4 (in progress): source-channel registration API on the
-   existing `source_channels` model (rights records), YouTube metadata
-   client with quota tracking and caching, source-video discovery with
-   duplicate prevention, filtering/exclusion rules, durable planning
-   service.
-2. User (any time): restart the app in CasaOS to pick up the M3 image
-   (GHCR `latest`; DB migration already applied).
-3. User (to connect a real YouTube channel): provide the Google Cloud
-   OAuth client values + Fernet key via compose env vars (B4).
-4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
+1. Milestone 7 (next): authorized media-source adapters — a download job
+   handler on the M6 queue (token-bucket bandwidth limit, sequential
+   downloads into the labelled media tree), media integrity validation
+   via ffprobe/ffmpeg.
+2. User (to connect a real YouTube channel): enter the Google Cloud
+   OAuth client values + Fernet key via the site settings screen or
+   compose env vars (B4).
+3. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
+4. User (optional): decide whether to drop the empty leftover
+   `autoshorts_studio` database on the shared PostgreSQL instance.
 
 ## 10. Handoff Notes
 
-- What was implemented: Milestones 0–3. M2: the Yeşilçam Baskı Odası
-  studio interface (monitoring-first dashboard, marquee plate + phase
-  stamp, jenerik bill rows, gauges, 8 screens, polling with stale-data
-  retention) with a fully documented finish review ending `ship`, plus
-  `DESIGN.md` + `.impeccable/design.json`. M3: channel domain (6 models,
-  migration 0002 applied on the Pi DB), repository/service/audit layers,
-  channel CRUD + OAuth handshake (single-use states, Fernet-encrypted
-  tokens, refresh, frontend redirect), Kanallar screen and Overview
-  ribbon list, sqlite FK parity in tests.
-- Tests: backend 39/39, frontend 4/4, lint/build/detector clean, secret
-  scan clean, real-Postgres round trip verified, CI success on all
-  pushes (latest `38993105069`).
-- Deployment state: the Pi runs the app (M2 verified live); the M3 image
-  is on GHCR and arrives with a CasaOS restart (no DB step needed).
-- Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth env vars),
-  ghp_ token exposed in chat should stay revoked.
-- Exact next task: Milestone 4 slice 1 — source-channel registration API
-  (`/api/channels/{id}/sources` CRUD + rights records) with tests; then
-  the YouTube metadata client with quota tracking.
-- Decisions to preserve: ADR-001…ADR-010 plus the M2/M3 implementation
-  contracts (Yeşilçam Baskı Odası design system in `DESIGN.md`; OAuth
-  tokens encrypted at rest and never in API responses; audit trail
-  append-only).
+- What was implemented: Milestones 0–6. M4: source registration with
+  rights records, quota-gated cached YouTube discovery with dedupe,
+  filter rules, durable auditable planning ledger. Interlude: the
+  AutoShorts Studio brand kit applied everywhere and site-managed
+  runtime settings (masked secrets, DB-over-env precedence, revert on
+  empty). M5: bounded three-provider LLM fallback (ADR-011) with
+  Fernet-encrypted keys, latency/error-category request log. M6:
+  PostgreSQL SKIP LOCKED job queue with heartbeat, stale-job recovery,
+  dedupe and cancel; worker with concurrency limit, periodic source
+  discovery and hourly tmp cleanup; token-bucket download limit;
+  disk-space guard; labelled media tree. Post-M6: CasaOS deployment
+  polish (frontend first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio`
+  volumes, branding) and the canon "Kategori Standardı" redesign (stat
+  cards, title-bar table panels, soft pills, round meters) with
+  `DESIGN.md` rewritten.
+- Tests: backend 115/115, frontend 10/10, oxlint/tsc/build clean, secret
+  scan clean, CI green on every push (latest run `39010166549`).
+- Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
+  the app database is in the stack's own `postgres:17` container; the
+  empty `autoshorts_studio` on the shared instance is an unused
+  leftover flagged for a user cleanup decision.
+- Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
+  for a real YouTube connection — site settings now provide the entry
+  path); the ghp_ token exposed in chat must stay revoked.
+- Exact next task: Milestone 7 slice 1 — the authorized media-source
+  download handler as an M6 job (bandwidth-limited, sequential,
+  integrity-checked into `downloads/`).
+- Decisions to preserve: ADR-001…ADR-011 plus the implementation
+  contracts: OAuth tokens and LLM keys encrypted at rest and never in
+  API responses; audit trail append-only; job claim via SKIP LOCKED
+  with heartbeat-driven recovery; runtime settings override env only
+  with explicit non-empty values; canon design system per `DESIGN.md`.
 
 **Never infer progress from previous plans. The repository and test
 results are the source of truth.**
