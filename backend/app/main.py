@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app import __version__
+from app.api.routes.channels import router as channels_router
 from app.api.routes.health import router as health_router
 from app.api.routes.overview import router as overview_router
 from app.api.routes.system import router as system_router
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(overview_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
+    app.include_router(channels_router, prefix="/api")
     return app
 
 

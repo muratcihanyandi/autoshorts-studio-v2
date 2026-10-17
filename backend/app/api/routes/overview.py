@@ -1,8 +1,7 @@
 """Overview endpoint: the studio's real, current state.
 
-Counts are honest: domain features arrive with their milestones, so the
-numbers start at zero. `phase` drives the frontend marquee stamp:
-setup -> awaiting_channels -> running.
+Channel counts come from the channels table (Milestone 3). `phase` drives
+the frontend marquee stamp: setup -> awaiting_channels -> running.
 """
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app import __version__
+from app.services.channel_service import ChannelService
 
 router = APIRouter(tags=["overview"])
 
@@ -28,13 +28,28 @@ async def _database_state(request: Request) -> str:
     return "reachable"
 
 
+async def _channels_connected(request: Request, database: str) -> tuple[int, int]:
+    """(total, connected); a schema behind its migration reads as zero."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return 0, 0
+    try:
+        service = ChannelService(sessionmaker)
+        channels = await service.list_channels()
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return 0, 0
+    connected = sum(1 for c in channels if c.status.value == "connected")
+    return len(channels), connected
+
+
 @router.get("/overview")
 async def overview(request: Request) -> dict:
     database = await _database_state(request)
     started_at = getattr(request.app.state, "started_at", None)
     uptime_seconds = round(time.time() - started_at) if started_at else None
 
-    channels_connected = 0
+    channels_total, channels_connected = await _channels_connected(request, database)
+
     sources_monitored = 0
     llm_providers_configured = 0
     jobs_active = 0
@@ -55,7 +70,7 @@ async def overview(request: Request) -> dict:
         "uptime_seconds": uptime_seconds,
         "phase": phase,
         "database": database,
-        "channels": {"connected": channels_connected},
+        "channels": {"connected": channels_connected, "total": channels_total},
         "sources": {"monitored": sources_monitored},
         "llm_providers": {"configured": llm_providers_configured},
         "jobs": {"active": jobs_active, "queued": jobs_queued},
