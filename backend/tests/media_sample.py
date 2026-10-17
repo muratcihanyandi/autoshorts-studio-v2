@@ -54,15 +54,20 @@ ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 FACE_IMAGE = ASSETS_DIR / "face_pd.jpg"
 
 
-def make_face_stream_video(path: str | Path, duration: int = 8) -> Path:
+def make_face_stream_video(
+    path: str | Path, duration: int = 8, jitter_x: int = 6, jitter_y: int = 5
+) -> Path:
     """'Yayinci' senaryosu: kamu malı yüz fotoğrafı, koyu zemin üzerinde
-    üst-sol köşeye yerleştirilmiş, hafif salınımlı, sesli video.
+    üst-sol köşeye yerleştirilmiş, salınımlı, sesli video.
 
     Yüz ~ (280, 155, 85, 85) bölgesinde 1280x720 karede; çok kareli
     tespit + kümeleme bunu yakalamalı (tek kare kaçırmalar normal).
+    jitter parametreleri salınım genliğini kontrol eder (0 = sabit).
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    crop_w = 460 - 2 * max(0, jitter_x - 10)
+    crop_h = 580 - 2 * max(0, jitter_y - 10)
     cmd = [
         FFMPEG_BIN,
         "-y", "-hide_banner", "-loglevel", "error",
@@ -73,7 +78,8 @@ def make_face_stream_video(path: str | Path, duration: int = 8) -> Path:
         f"sine=frequency=440:sample_rate=8000:duration={duration}",
         "-filter_complex",
         "[0:v]scale=480:600[jit];"
-        "[jit]crop=460:580:x='10+6*sin(t)':y='10+5*cos(1.2*t)'[face];"
+        f"[jit]crop={crop_w}:{crop_h}"
+        f":x='10+{jitter_x}*sin(t)':y='10+{jitter_y}*cos(1.2*t)'[face];"
         "[1:v][face]overlay=40:40:shortest=1[v]",
         "-map", "[v]",
         "-map", "2:a",

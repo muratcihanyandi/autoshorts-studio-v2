@@ -101,6 +101,11 @@ class MediaPipelineService:
         asset_id = await self._ensure_asset(
             source_video_id, import_path is not None
         )
+        # Acik import_path her zaman yeni giris demektir: yarim kalmis
+        # bir varlikta indirme asamasi bastan kosar (bozuk dosya
+        # uzerinde tekrar deneme hatasi onlenir).
+        if import_path is not None:
+            await self._reset_to_download(asset_id)
         while True:
             async with self._sessionmaker() as session:
                 asset = await session.get(MediaAsset, asset_id)
@@ -160,6 +165,18 @@ class MediaPipelineService:
                 session.add(asset)
                 await session.commit()
             return asset.id
+
+    async def _reset_to_download(self, asset_id: int) -> None:
+        """Tamamlanmamis varligi indirme asamasina dondur (M12)."""
+        async with self._sessionmaker() as session:
+            asset = await session.get(MediaAsset, asset_id)
+            if asset is None or asset.status == "processed":
+                return
+            if asset.stage != "download":
+                asset.stage = "download"
+                asset.status = "downloading"
+                asset.last_error = None
+            await session.commit()
 
     async def _mark_failed(self, asset_id: int, exc: Exception) -> None:
         async with self._sessionmaker() as session:
