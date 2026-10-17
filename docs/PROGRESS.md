@@ -2,7 +2,7 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–9 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–10 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
 to GHCR (every run green, latest `39019597052`). The user deployed the stack
 on the Pi via CasaOS (UI/API/database verified from the user's logs); the
@@ -10,10 +10,11 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 10 — YouTube Upload and Publishing
+**Current milestone:** Milestone 11 — End-to-End Automation
 
-**Current task:** M10 kickoff — resumable uploads through the channel
-OAuth tokens, schedules, approval controls.
+**Current task:** M11 kickoff — connect the full chain
+(discovery -> planning -> processing -> render -> content -> publishing)
+with daily targets, stock monitoring, and operational summaries.
 
 **Last updated:** 2026-10-17
 
@@ -106,7 +107,7 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 7. Horizontal Video Processing | COMPLETED | Stage-gated media pipeline on the queue: adapters, ffprobe integrity, transcripts, silence/scene/energy analysis, scored candidates with similarity checks (2026-10-17) |
 | 8. Vertical Studio and Webcam Detection | COMPLETED | OpenCV multi-frame detection + calibration + 9:16 render with review semantics (2026-10-17) |
 | 9. Subtitles and Metadata | COMPLETED | LLM subtitle correction (timestamps preserved, uncertainty flagged), channel templates, revisioned metadata (2026-10-17) |
-| 10. Upload and Publishing | NOT_STARTED | Private uploads and schedules |
+| 10. Upload and Publishing | COMPLETED | Resumable private-first uploads with rights/approval guards, timezone-aware schedules, reconciliation (2026-10-17) |
 | 11. End-to-End Automation | NOT_STARTED | Full pipeline integration |
 | 12. Production Hardening | NOT_STARTED | Stress, recovery, and security tests |
 
@@ -635,6 +636,56 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   test). LLM interactions are tested through MockTransport per the
   M5 chain contract; real-provider behavior is site configuration.
 
+### Milestone 10 — YouTube Upload and Publishing (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 10
+- Task: official API uploads (resumable), private upload handling,
+  YouTube video ID storage, per-channel publishing schedules,
+  timezone-aware planning, visibility checks, retry/reconciliation,
+  publication approval controls.
+- Implementation:
+  - Schema (migration `0010`): `published_videos` — unique
+    clip_candidate_id (structural duplicate prevention), channel,
+    youtube_video_id, visibility private/public, status
+    uploading/uploaded/verified/failed, resumable session URI (kept so
+    interrupted uploads reconcile instead of restarting), published_at.
+  - `publishing_schedule.py` (pure): publish-time slots from the
+    publishing profile (`settings.publish_times`, default three),
+    timezone-aware next-due computation via zoneinfo (tzdata pinned in
+    requirements — Windows needs the package; Debian ships it).
+  - `youtube_upload.py`: resumable protocol client — POST metadata
+    (snippet + status private) -> session URI, PUT media bytes ->
+    video id, videos.list?part=status verification. Access tokens come
+    from a new `OAuthService.access_token()` (refresh-first, decrypted
+    in-memory only). All calls through an injectable httpx client.
+  - `publishing_service.py`: guards before any upload — source rights
+    authorized (enforced in code), render exists and succeeded,
+    approved metadata (or channel profile `auto_approve_metadata`),
+    never published before. Private-first upload + visibility
+    verification; failures mark the row failed with a Turkish reason
+    and the job retries, reusing the stored session URI.
+    `approve_metadata`, `due_channels`, `next_ready_candidate`.
+  - Worker: `publish_clip` + `publish_due` job types;
+    `enqueue_publish_jobs` interval-gated feed
+    (`publish_check_interval_minutes`, default 10) for connected
+    channels whose slot arrived.
+  - API: POST `/api/clips/{id}/publish`, POST `/api/clips/{id}/approve`,
+    GET `/api/channels/{id}/published`.
+- Verification (2026-10-17): backend suite **223 passed, 0 failed,
+  0 skipped** (M10 adds 13: schedule parsing/timezone/due rules;
+  full private-verified publish, duplicate skip, rights guard,
+  approval guard + approve-then-publish, auto-approve profile, render
+  guard, failed-upload reconciliation on the same row with the stored
+  session URI, worker publish_due e2e through a mock transport, worker
+  feed, API roundtrip). Migration 0010 offline SQL passes. Acceptance
+  criteria: uploads succeed (mock), duplicates prevented (unique row +
+  skip), private visibility verified (videos.list check asserted),
+  scheduling tested (timezone-aware pure functions), rights checks
+  before publication (guard test), failed uploads recovered
+  (reconciliation test). Live YouTube API verification is a Pi-time
+  step gated on B4 (OAuth values).
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -737,13 +788,13 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M9 session) on the dev machine (Windows 11,
+Verified 2026-10-17 (post-M10 session) on the dev machine (Windows 11,
 Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
 directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: **210** (test_subtitle_correction 6, test_metadata 9,
-    test_media_pipeline 19, test_media_probe 9,
+  - Passed: **223** (test_publishing 13, test_subtitle_correction 6,
+    test_metadata 9, test_media_pipeline 19, test_media_probe 9,
     test_media_analysis 10, test_media_transcript 7, test_clip_candidates
     10, test_llm 18, test_jobs 18, test_oauth 14, test_settings 10,
     test_channels 9, test_sources 7, test_planning 7, test_media 7,
@@ -807,8 +858,8 @@ directories.
 
 ## 9. Immediate Next Actions
 
-1. Milestone 10 (next): YouTube upload and publishing (resumable
-   uploads, schedules, approval controls).
+1. Milestone 11 (next): end-to-end automation (auto-plan wiring,
+   daily targets, stock monitoring, summaries).
 2. User (to exercise M7/M8 on the Pi): pull the new image (includes
    ffmpeg + yt-dlp + OpenCV + fonts), run `alembic upgrade head`
    (migrations 0007+0008), and optionally import authorized test media
@@ -848,9 +899,9 @@ directories.
   first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio` volumes, branding)
   and the canon "Kategori Standardı" redesign (stat cards, title-bar
   table panels, soft pills, round meters) with `DESIGN.md` rewritten.
-- Tests: backend 210/210 (57 M7 + 23 M8 + 15 M9 tests incl.
+- Tests: backend 223/223 (57 M7 + 23 M8 + 15 M9 + 13 M10 tests incl.
   real-ffmpeg and real-OpenCV e2e), frontend 10/10, oxlint/tsc/build
-  clean, secret scan clean (re-verified 2026-10-17 post-M9).
+  clean, secret scan clean (re-verified 2026-10-17 post-M10).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
   the app's live database is `autoshorts_studio` on the shared
   PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
@@ -861,10 +912,10 @@ directories.
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.
-- Exact next task: Milestone 10 — YouTube upload and publishing:
-  resumable uploads via the channel OAuth tokens, private visibility,
-  per-channel schedules with timezone-aware planning, duplicate
-  prevention, retry/reconciliation, publication approval controls.
+- Exact next task: Milestone 11 — end-to-end automation: connect
+  monitoring to planning (auto-plan), wire daily targets and stock
+  levels into the publishing gate, add operational summaries and
+  pause/resume safety.
 - Decisions to preserve: ADR-001…ADR-013 (M9 added no new ADR — it
   composes ADR-011's chain under a stricter response contract) plus the
   implementation

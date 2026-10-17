@@ -258,7 +258,10 @@ Acceptance criteria:
 
 ## Milestone 10 — YouTube Upload and Publishing
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+Upload protocol, guards, schedules, and reconciliation verified against
+a faithful mock of the official API; live-API verification runs on the
+Pi once OAuth credentials are connected (B4).)
 
 Tasks:
 - Implement official API uploads.
