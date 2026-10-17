@@ -48,3 +48,43 @@ def make_test_media(path: str | Path) -> Path:
     )
     assert result.returncode == 0, result.stderr
     return target
+
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+FACE_IMAGE = ASSETS_DIR / "face_pd.jpg"
+
+
+def make_face_stream_video(path: str | Path, duration: int = 8) -> Path:
+    """'Yayinci' senaryosu: kamu malı yüz fotoğrafı, koyu zemin üzerinde
+    üst-sol köşeye yerleştirilmiş, hafif salınımlı, sesli video.
+
+    Yüz ~ (280, 155, 85, 85) bölgesinde 1280x720 karede; çok kareli
+    tespit + kümeleme bunu yakalamalı (tek kare kaçırmalar normal).
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        FFMPEG_BIN,
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-loop", "1", "-r", "15", "-t", str(duration), "-i", str(FACE_IMAGE),
+        "-f", "lavfi", "-i",
+        f"color=c=0x224466:s=1280x720:r=15:d={duration}",
+        "-f", "lavfi", "-i",
+        f"sine=frequency=440:sample_rate=8000:duration={duration}",
+        "-filter_complex",
+        "[0:v]scale=480:600[jit];"
+        "[jit]crop=460:580:x='10+6*sin(t)':y='10+5*cos(1.2*t)'[face];"
+        "[1:v][face]overlay=40:40:shortest=1[v]",
+        "-map", "[v]",
+        "-map", "2:a",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-c:a", "aac",
+        "-shortest",
+        str(target),
+    ]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, timeout=120
+    )
+    assert result.returncode == 0, result.stderr
+    return target
