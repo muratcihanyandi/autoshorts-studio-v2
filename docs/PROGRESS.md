@@ -2,7 +2,7 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–10 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–11 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
 to GHCR (every run green, latest `39019597052`). The user deployed the stack
 on the Pi via CasaOS (UI/API/database verified from the user's logs); the
@@ -10,11 +10,11 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 11 — End-to-End Automation
+**Current milestone:** Milestone 12 — Production Hardening
 
-**Current task:** M11 kickoff — connect the full chain
-(discovery -> planning -> processing -> render -> content -> publishing)
-with daily targets, stock monitoring, and operational summaries.
+**Current task:** M12 kickoff — fault-injection tests, backup/restore
+validation, security scans, repeated full-suite runs, deployment
+verification on the Pi.
 
 **Last updated:** 2026-10-17
 
@@ -108,7 +108,7 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 8. Vertical Studio and Webcam Detection | COMPLETED | OpenCV multi-frame detection + calibration + 9:16 render with review semantics (2026-10-17) |
 | 9. Subtitles and Metadata | COMPLETED | LLM subtitle correction (timestamps preserved, uncertainty flagged), channel templates, revisioned metadata (2026-10-17) |
 | 10. Upload and Publishing | COMPLETED | Resumable private-first uploads with rights/approval guards, timezone-aware schedules, reconciliation (2026-10-17) |
-| 11. End-to-End Automation | NOT_STARTED | Full pipeline integration |
+| 11. End-to-End Automation | COMPLETED | Auto-plan chaining, target/stock/pause-aware publishing, channel isolation, ops summaries (2026-10-17) |
 | 12. Production Hardening | NOT_STARTED | Stress, recovery, and security tests |
 
 ## 3. Completed Tasks
@@ -686,6 +686,42 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   (reconciliation test). Live YouTube API verification is a Pi-time
   step gated on B4 (OAuth values).
 
+### Milestone 11 — End-to-End Automation (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 11
+- Task: connect monitoring to planning, planning to the media queue (M7),
+  media completion to review/publishing (M8-M10 feeds), configurable
+  daily targets, stock-level monitoring, schedule-aware prioritization,
+  notifications and operational summaries.
+- Implementation:
+  - `automation_service.py`: `publish_for_channel` — pause flag first,
+    then daily target (published-today >= daily_clip_target waits for
+    the next slot), then stock check (empty stock publishes NOTHING and
+    records `publish.stock_low`); `stock_level` / `daily_published_count`
+    (local-midnight aware); `operational_summary` (stage counts + stock +
+    target, audited as `ops.summary`).
+  - Worker: `source_discover` now chains auto-planning (monitoring ->
+    planning connection); `publish_due` uses the target/stock/pause-aware
+    flow; new `ops_summary` job type enqueued once per local day per
+    connected channel (`enqueue_summary_jobs`, payload-day dedupe).
+  - `publishing_service.due_channels` skips paused channels.
+  - API: GET/PUT `/api/channels/{id}/publishing` (target, publish times,
+    auto-approve, pause), GET `/api/channels/{id}/summary`.
+- Verification (2026-10-17): backend suite **230 passed, 0 failed,
+  0 skipped** in 43.1s (M11 adds 7: the full-chain e2e — real ffmpeg
+  media through media_process -> clip_render -> subtitle_correct ->
+  metadata_generate -> publish_due with mocked LLM/YouTube, every job
+  succeeded and every stage row verified; empty stock publishes nothing
+  (+ audit event); daily target reached returns a reason; paused channel
+  skipped (and excluded from due list); channel failure isolated (one
+  channel's publish failure doesn't block the other — verified with a
+  failing OAuth-less channel next to a succeeding one); auto-plan after
+  discovery (both discovered videos planned); profile API roundtrip).
+  Note: full-suite runs must be foreground on this machine — backgrounded
+  runs hung twice at an unrelated worker test (environment quirk recorded
+  in agent memory, not a code defect; foreground runs are stable).
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -788,12 +824,13 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M10 session) on the dev machine (Windows 11,
+Verified 2026-10-17 (post-M11 session) on the dev machine (Windows 11,
 Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
 directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: **223** (test_publishing 13, test_subtitle_correction 6,
+  - Passed: **230** (test_automation 7, test_publishing 13,
+    test_subtitle_correction 6,
     test_metadata 9, test_media_pipeline 19, test_media_probe 9,
     test_media_analysis 10, test_media_transcript 7, test_clip_candidates
     10, test_llm 18, test_jobs 18, test_oauth 14, test_settings 10,
@@ -858,8 +895,8 @@ directories.
 
 ## 9. Immediate Next Actions
 
-1. Milestone 11 (next): end-to-end automation (auto-plan wiring,
-   daily targets, stock monitoring, summaries).
+1. Milestone 12 (next): production hardening (fault injection, backups,
+   repeated test runs, Pi verification).
 2. User (to exercise M7/M8 on the Pi): pull the new image (includes
    ffmpeg + yt-dlp + OpenCV + fonts), run `alembic upgrade head`
    (migrations 0007+0008), and optionally import authorized test media
@@ -899,9 +936,9 @@ directories.
   first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio` volumes, branding)
   and the canon "Kategori Standardı" redesign (stat cards, title-bar
   table panels, soft pills, round meters) with `DESIGN.md` rewritten.
-- Tests: backend 223/223 (57 M7 + 23 M8 + 15 M9 + 13 M10 tests incl.
-  real-ffmpeg and real-OpenCV e2e), frontend 10/10, oxlint/tsc/build
-  clean, secret scan clean (re-verified 2026-10-17 post-M10).
+- Tests: backend 230/230 (57 M7 + 23 M8 + 15 M9 + 13 M10 + 7 M11 tests
+  incl. real-ffmpeg and real-OpenCV e2e), frontend 10/10, oxlint/tsc/
+  build clean, secret scan clean (re-verified 2026-10-17 post-M11).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
   the app's live database is `autoshorts_studio` on the shared
   PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
@@ -912,10 +949,10 @@ directories.
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.
-- Exact next task: Milestone 11 — end-to-end automation: connect
-  monitoring to planning (auto-plan), wire daily targets and stock
-  levels into the publishing gate, add operational summaries and
-  pause/resume safety.
+- Exact next task: Milestone 12 — production hardening: fault-injection
+  tests (DB disconnect, LLM outage, disk exhaustion, worker restart,
+  upload interruption), backup/restore validation, security scans,
+  repeated full-suite runs, Pi deployment verification.
 - Decisions to preserve: ADR-001…ADR-013 (M9 added no new ADR — it
   composes ADR-011's chain under a stricter response contract) plus the
   implementation

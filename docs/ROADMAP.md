@@ -284,7 +284,9 @@ Acceptance criteria:
 
 ## Milestone 11 — End-to-End Automation
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+The full chain runs on authorized test content through the real worker
+queue with real ffmpeg media and mocked LLM/YouTube transports.)
 
 Tasks:
 - Connect source monitoring to the planning engine.
