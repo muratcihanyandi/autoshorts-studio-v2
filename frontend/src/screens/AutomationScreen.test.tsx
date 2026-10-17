@@ -56,7 +56,7 @@ describe('AutomationScreen', () => {
     )
     render(<AutomationScreen />)
 
-    expect(await screen.findByText('İŞ KUYRUĞU')).toBeInTheDocument()
+    expect(await screen.findByText('İş Kuyruğu')).toBeInTheDocument()
     expect(screen.getAllByText('Kaynak yoklaması').length).toBe(2)
     expect(screen.getByText('kuyrukta')).toBeInTheDocument()
     expect(screen.getByText('başarısız')).toBeInTheDocument()

@@ -1,13 +1,14 @@
 ---
 name: AutoShorts Studio
-description: Raspberry Pi 5 üzerindeki otonom YouTube klip stüdyosunun durum panosu — AutoShorts Studio kurumsal marka kiti, Modern Sinematik & Prestij
+description: Raspberry Pi 5 üzerindeki otonom YouTube klip stüdyosunun durum panosu — "Kategori Standardı" izleme panosu yapısı + AutoShorts Studio marka kimliği
 colors:
+  page-bg: "#f0f4f8"
   ink-ground: "#0b192c"
   ink-deep: "#081322"
   ink-panel: "#12233c"
   ink-border: "#24354f"
-  plate: "#f0f4f8"
-  plate-line: "#c7d2de"
+  plate: "#ffffff"
+  plate-line: "#dfe5ec"
   plate-ink: "#0b192c"
   cream-text: "#f0f4f8"
   muted-on-dark: "#94a3b8"
@@ -17,45 +18,44 @@ colors:
   accent: "#15f5ba"
   accent-ink: "#0b192c"
   accent-deep: "#0a8f6d"
-  accent-soft: "#a7f5dd"
+  accent-soft: "#cff9ec"
   red: "#d64545"
   red-on-plate: "#b91c1c"
+  red-soft: "#fde3e3"
   amber: "#e8a33d"
   amber-on-plate: "#92610a"
-  amber-on-dark: "#e8a33d"
+  amber-soft: "#fdf0d7"
   green: "#0e9f6e"
   green-on-plate: "#047857"
-  green-on-dark: "#34d399"
+  green-soft: "#d6f5e8"
   paper-white: "#ffffff"
 typography:
-  display:
-    fontFamily: "'Noto Sans Display', 'Segoe UI', sans-serif"
-    fontWeight: 800
-    fontSize: "clamp(64px, 8vw, 116px)"
-    lineHeight: 0.92
-  headline:
-    fontFamily: "'Noto Sans Display', 'Segoe UI', sans-serif"
-    fontWeight: 800
-    fontSize: "24px"
-    letterSpacing: "0.03em"
-  title:
+  screen-title:
     fontFamily: "'Noto Sans Display', 'Segoe UI', sans-serif"
     fontWeight: 700
-    fontSize: "20px"
-    letterSpacing: "0.03em"
+    fontSize: "21px"
+    letterSpacing: "0.01em"
+  stat-value:
+    fontFamily: "'Noto Sans Display', 'Segoe UI', sans-serif"
+    fontWeight: 700
+    fontSize: "26px"
+    lineHeight: 1.2
+  panel-title:
+    fontFamily: "'Google Sans', 'Noto Sans', system-ui, sans-serif"
+    fontWeight: 600
+    fontSize: "13px"
   body:
     fontFamily: "'Google Sans', 'Noto Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
     fontSize: "14px"
     lineHeight: 1.5
   label:
-    fontFamily: "'Google Sans', 'Noto Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontWeight: 600
-    fontSize: "11.5px"
-    letterSpacing: "0.12em"
+    fontFamily: "'Google Sans', 'Noto Sans', system-ui, sans-serif"
+    fontWeight: 500
+    fontSize: "12px"
 rounded:
-  print: "12px"
-  panel: "8px"
-  control: "6px"
+  print: "10px"
+  panel: "10px"
+  control: "8px"
 spacing:
   space-1: "4px"
   space-2: "8px"
@@ -63,190 +63,198 @@ spacing:
   space-4: "20px"
   space-5: "28px"
   space-6: "40px"
+shadow:
+  card: "0 1px 3px rgba(11, 25, 44, 0.08)"
 components:
-  plate:
+  stat-card:
     backgroundColor: "{colors.plate}"
-    textColor: "{colors.plate-ink}"
+    borderColor: "{colors.plate-line}"
     rounded: "{rounded.print}"
-    padding: "28px 28px 20px"
-  ink-panel:
-    backgroundColor: "{colors.ink-panel}"
-    textColor: "{colors.cream-text}"
+    shadow: "{shadow.card}"
+    padding: "16px 18px"
+  panel:
+    backgroundColor: "{colors.plate}"
+    borderColor: "{colors.plate-line}"
     rounded: "{rounded.panel}"
-    padding: "20px 28px"
-  stamp-live:
-    typography: "{typography.display}"
-    textColor: "{colors.red-on-plate}"
-    padding: "8px 12px"
+    shadow: "{shadow.card}"
   rail-link-active:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.accent-ink}"
-    padding: "10px 20px"
-  plate-action:
-    backgroundColor: "{colors.plate-ink}"
-    textColor: "{colors.plate}"
+  btn:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.accent-ink}"
     rounded: "{rounded.control}"
     padding: "9px 18px"
+  pill:
+    padding: "4px 12px"
+    borderRadius: "99px"
   gauge-fill:
     backgroundColor: "{colors.accent}"
-    height: "10px"
+    height: "6px"
 ---
 
 # Design System: AutoShorts Studio
 
 ## Overview
 
-**Creative North Star: "Modern Sinematik & Prestij" — AutoShorts Studio marka kiti**
+**Creative North Star: "Kategori Standardı" izleme panosu yapısı + AutoShorts
+Studio marka kimliği** (2026-10-17 yön değişimi)
 
-Stüdyo panosu, marka kitinin kurumsal dünyasıdır: Zengin Geceyarısı Mavisi
-masasının üstünde günün çıktısı Fildişi Beyazı levhalar olarak sunulur.
-Canlı Okyanus Yeşili tek vurgudur — eylem, seçim ve canlılığın rengi; rozet
-filmi andıran sinematik imzadır. Kullanım dengesi marka rehberinden gelir:
-%60 açık zemin (levhalar), %30 koyu zemin (kabuk ve paneller), %10 vurgu.
+Stüdyo panosu, tema kataloğundan seçilen "Kategori Standardı" dilinin
+yapısını taşır: açık zemin üstünde beyaz kartlar, dörtlü stat kartı grid'i,
+başlık şeritli tablo panelleri, yumuşak zeminli durum hapları ve ince
+yuvarlak meter'lar. Bu nötr izleme panosu iskeleti, AutoShorts Studio marka
+kitinin kimliğiyle giydirilir: sayfa zemini Fildişi Beyazı (#f0f4f8), sol
+nav rayı Zengin Geceyarısı Mavisi'nde (marka logosu burada yaşar), tek vurgu
+Canlı Okyanus Yeşili. Kullanım dengesi 60/30/10'dur: fildişi zemin + beyaz
+kartlar, geceyarısı nav, okyanus vurgu.
 
-Yoğunluk ve felsefe durum-izleme ağırlıklıdır: kullanıcı ilk viewport'ta 5
-saniyede "sorun var mı, ne oluyor" cevabını alır. Süs yok; tek koreografi
-edilmiş hareket damganın basılışıdır, başka hiçbir öğe kendi kendine
-kıpırdamaz. Malzeme düz ve gölgesizdir — derinlik ton farkıyla verilir,
-levha fildişi kâğıdı gibi geceyarısı zemininin üstünde fiziksel olarak
-durur.
+Yoğunluk ve felsefe durum-izlemeye odaklıdır: kullanıcı ilk viewport'ta 5
+saniyede "sorun var mı, ne oluyor" cevabını alır — üstte durum hapı, altında
+dört stat kartı, altında kanallar ve boru hattı tabloları. Süs yok; hiçbir
+öğe kendi kendine kıpırdamaz. Yeşilçam afiş anlatısının imza bileşenleri
+(marquee dev sayısı, damga, jenerik blok) bu dilden çıktı; yerini stat
+kartları, başlık şeritli paneller ve haplar aldı.
 
 **Key Characteristics:**
-- Geceyarısı mavisi zemin üstünde fildişi levhalar; Okyanus Yeşili tek vurgu
-- Noto Sans Display ExtraBold yalnız başlıklarda, dev sayılarda ve etiketlerde
-- Google Sans + Noto Sans gövde ikilisi; tam Türkçe glif desteği self-hosted
-- Düz yüzeyler, gölge yok, tonal katmanlama
-- Tek imza hareketi: damganın basılışı (450 ms)
+- Fildişi sayfa zemini üstünde beyaz kart/panel: 1px çizgi + 10px köşe +
+  ölçülü gölge (0 1px 3px rgba(11,25,44,.08))
+- Sol 216px geceyarısı nav: marka logosu + nokta göstergeli linkler;
+  aktif hedef okyanus yeşili blok + sağda 3px şerit
+- Noto Sans Display yalnız ekran başlığında (21px, cümle case) ve stat
+  değerinde (26px); gövde Google Sans + Noto Sans, self-hosted
+- Durumlar yumuşak zeminli haplarla: ok/yeşil, warn/hardal, run/okyanus,
+  idle/arduvaz, error/kızıl — koyu metinle
+- Meter'lar 6px yuvarlak dolgu çubukları (oluk #e2e8f0)
 - Veri sayıları her zaman tabular-nums
-- Marka logosu (koyu zemin varyantı) sol rayda; ikon favicon'da
-- Türkçe mikrocopy; boş veri katmanları yönlendirici empty-state'lerle temsil edilir
+- Türkçe mikrocopy; boş veri katmanları yönlendirici empty-state'lerle
 
 ## Colors
 
 Palet, AutoShorts Studio kurumsal renk paletidir (marka kiti
-`2_Renk_Paleti/Renk_Paleti_ve_Kodlar.txt`, 2026-10-17).
+`2_Renk_Paleti/Renk_Paleti_ve_Kodlar.txt`); zemin/kart rolleri "Kategori
+Standardı" yapısına göre yeniden atanmıştır.
 
 ### Primary
-- **Fildişi Beyazı** (#f0f4f8): her ekranın ana anlatım yüzeyi — `plate`
-  token'ı. Dev sayı (marquee), jenerik blok, durum kutuları ve
-  empty-state'ler bu levhaya basılır; %60 kullanım oranı.
+- **Fildişi Beyazı** (#f0f4f8): sayfa zemini (`page-bg`) — sahne, kartların
+  altındaki açık zemin.
+- **Beyaz** (#ffffff): kart ve panel yüzeyi (`plate`), input zeminleri —
+  fildişi zemin üstünde ton farkıyla kalkar.
 
 ### Accent
-- **Canlı Okyanus Yeşili** (#15f5ba): eylem ve seçim — CTA, aktif nav bloğu,
-  odak halkası, metin seçimi, normal gösterge dolgusu, logo film şeridi
-  rozeti; %10 kullanım oranı.
+- **Canlı Okyanus Yeşili** (#15f5ba): eylem ve seçim — CTA butonu, aktif nav
+  bloğu, odak halkası, normal meter dolgusu; %10 kullanım oranı.
 
-### Secondary (durum renkleri — işlevsel, marka nötr temelli)
-- **Kızıl** (#d64545; levhada #b91c1c): kritik durum ve canlı yayın imzası —
-  "ŞİMDİ YAYINDA" damgası, hata kutusu konturu.
-- **Hardal** (#e8a33d; levhada #92610a): uyarı ve kurulum aşaması — bekleyen
-  uyarılar, sıcaklık/disk baskısı, bayat veri notu.
-- **Yeşim** (#0e9f6e; levhada #047857, koyuda #34d399): sağlıklı durum —
-  veritabanı bağlı, kaynaklar normal. Vurgudan ayrışır: okyanus yeşilinin
-  saturation-parlaması taşıyıcı yüzeyde, yeşimin tonu durum bildirimdedir.
+### Secondary (durum renkleri — yumuşak zemin + koyu metin hapları)
+- **Yeşim** (zemin #d6f5e8 `green-soft`, metin #047857 `green-on-plate`):
+  sağlıklı durum — `pill--ok`.
+- **Hardal** (zemin #fdf0d7 `amber-soft`, metin #92610a `amber-on-plate`):
+  uyarı ve kurulum aşaması — `pill--warn`, `stat-card.warn` değeri.
+- **Okyanus yumuşak** (zemin #cff9ec `accent-soft`, metin #0a8f6d
+  `accent-deep`): sürüyor/bilgi durumu — `pill--run`.
+- **Kızıl** (zemin #fde3e3 `red-soft`, metin #b91c1c `red-on-plate`): kritik
+  durum ve hata — `pill--error`, hata kutusu konturu.
 
 ### Neutral
-- **Zengin Geceyarısı Mavisi** (#0b192c): sayfanın zemini (`ink-ground`),
-  ana koyu mürekkep ve levha üstü metin (`plate-ink`); %30 kullanım oranı.
-- **Derin Geceyarısı** (#081322): sol nav rayı ve gösterge olukları (`ink-deep`).
-- **Panel Mavisi** (#12233c): koyu panellerin yüzeyi (`ink-panel`).
-- **Mavi Kenar** (#24354f): 1px panel/kenar çizgileri, kaydırma çubuğu (`ink-border`).
-- **Fildişi Metin** (#f0f4f8): koyu zeminde ana metin (`cream-text`) — marka
-  rehberi koyu zemindeki logo/metin rengi olarak tanımlar.
-- **Arduvaz Grisi** (#64748b): levha üstü alt metin ve ikincil öğeler
-  (`plate-muted`) — markanın nötr rengi; koyu zemin açık varyantları
-  #94a3b8 (`muted-on-dark`) / #7c8ba1 (`faint-on-dark`).
-- **Gövde Mürekkebi** (#334155): levha üstü açıklama metni (`plate-body-ink`).
-- **Levha Çizgisi** (#c7d2de): levha üstü ince ayraç çizgileri (`plate-line`).
-- **Beyaz** (#ffffff): input zeminleri (`paper-white`).
+- **Zengin Geceyarısı Mavisi** (#0b192c): sol nav rayının rengi, kart üstü
+  ana metin (`plate-ink`) ve vurgu üstü metin (`accent-ink`).
+- **Derin Geceyarısı** (#081322): nav'ın en koyu katmanı (`ink-deep`).
+- **Panel Mavisi** (#12233c): koyu iç yüzeyler (`ink-panel`).
+- **Mavi Kenar** (#24354f): koyu zemin çizgileri (`ink-border`).
+- **Arduvaz Grisi** (#64748b): kart üstü alt metin, tablo başlıkları, boş
+  durum hapı metni (`plate-muted`); koyu zemin açık varyantları #94a3b8 /
+  #7c8ba1.
+- **Gövde Mürekkebi** (#334155): kart üstü açıklama metni
+  (`plate-body-ink`).
+- **Kart Çizgisi** (#dfe5ec): beyaz kartın 1px konturu (`plate-line`);
+  tablo satır ayraçları #eef2f6, meter oluğu #e2e8f0.
 
 ### Named Rules
 **Vurgu İş Görür Kuralı.** Okyanus Yeşili yalnız eylem ve seçim işi yapar:
-CTA, aktif nav, odak, seçim, canlı gösterge. Hiçbir yerde dekoratif dolgu
-olarak kullanılmaz; vurgu levhanın kendisidir.
+CTA, aktif nav, odak, seçim, normal meter dolgusu. Dekoratif dolgu olarak
+kullanılmaz.
 
 **Vurgu Üstü Koyu Metin Kuralı.** Okyanus Yeşili üstünde metin daima
 Zengin Geceyarısı Mavisi'dir (#0b192c), asla beyaz değil — marka rehberi
 kuralı. Metin kontrastı her eşleşmede en az 4.5:1.
 
-**Zemin Lehçesi Kuralı.** Durum renkleri, üstünde durduğu zeminin varyantını
-kullanır: fildişi levhada `-on-plate` tonu, koyu zeminde `-on-dark` tonu.
-Ham hardal (#e8a33d) fildişi levha üstünde metin olarak yasak (kontrast
-yetersiz); levhada daima #92610a.
+**Hap Yumuşak Zemin Kuralı.** Durum hapları ham renkle değil, yumuşak
+zemin + koyu metin çiftiyle kurulur (`green-soft`/`green-on-plate` gibi).
+Ham hardal (#e8a33d) beyaz kart üstünde metin olarak yasak.
 
 ## Typography
 
-**Display Font:** Noto Sans Display (ExtraBold 800 + Bold 700; self-hosted
-TTF, marka kitinden — başlık ve logo fontu)
+**Display Font:** Noto Sans Display (Bold 700; self-hosted TTF, marka
+kitinden) — ekran başlığı ve stat kartı değeri
 **Body Font:** Google Sans (Regular) + Noto Sans (Regular/SemiBold) yığını
 (self-hosted TTF; latin-ext dahil tam Türkçe glif desteği fontTools cmap
 kontrolüyle doğrulandı)
 
-**Character:** Noto Sans Display ExtraBold prestij sıkılığı — modern,
-geniş, güven veren başlık harfi. Gövde Google Sans arayüz metnidir;
-Türkçe karakterler her iki ailede de birinci sınıftır.
+**Character:** Noto Sans Display Bold panonun sayı ve başlık sesidir —
+güven veren, modern, geniş. Gövde Google Sans arayüz metnidir; Türkçe
+karakterler her iki ailede de birinci sınıftır.
 
 ### Hierarchy
-- **Display** (Noto Sans Display 800, clamp(64px, 8vw, 116px), 0.92 satır):
-  marquee dev sayısı. 1440px'te 115.2px, 390px'te 64px'e ölçüldü.
-- **Headline** (Noto Sans Display 800, 24px, 0.03em; ≤900px'te 20px): ekran
-  başlıkları (h1).
-- **Title** (Noto Sans Display 700, 20px, 0.03em): durum kutusu başlıkları;
-  jenerik satırı etiketleri 15px/0.05em; damga 15px/0.08em.
-- **Body** (Google Sans/Noto Sans 400, 14px, 1.5): tüm okuma metni;
+- **Ekran başlığı** (Noto Sans Display 700, 21px, 0.01em, cümle case): h1 —
+  "Genel Bakış", "Kanallar"… Yanında 12.5px arduvaz alt bilgi.
+- **Stat değeri** (Noto Sans Display 700, 26px, 1.2 satır): stat kartının
+  sayısı; `warn` durumunda hardal tonu.
+- **Panel başlığı** (Google Sans 600, 13px): başlık şeridindeki h2.
+- **Gövde** (Google Sans/Noto Sans 400, 14px, 1.5): tüm okuma metni;
   empty-state açıklamaları 13.5px, en fazla ~52ch satır.
-- **Label** (600, 11.5px, 0.12em, uppercase): panel başlıkları, tablo
-  başlıkları, gösterge etiketleri üstü.
+- **Etiket** (500–600, 12px): stat kartı etiketi, tablo başlığı (th),
+  gösterge etiketi — uppercase yok, doğal case.
 
 ### Named Rules
 **Rakam Düz Durur Kuralı.** Veri sayıları her zaman tabular-nums
 (`font-variant-numeric: tabular-nums`); akan rakam yok.
 
-**Display Başlıkta Kalır Kuralı.** Noto Sans Display yalnız başlıkta, dev
-sayıda ve kısa etiketlerde; paragraf metninde asla.
+**Display Sayıda ve Başlıkta Kalır Kuralı.** Noto Sans Display yalnız h1,
+stat değeri ve kısa etikette; paragraf metninde asla.
 
 ## Layout
 
-Sol tarafta 208px sabit nav rayı (marka logosu + 8 hedef + alt bilgi),
-sağında içerik alanı (dolgular 28px üst/alt, 40px yan). İlk viewport
-formülü: solda fildişi marquee levhası (dev sayı + sağ üstte damga +
-jenerik blok), sağda iki koyu panel (Pi kaynak göstergeleri, kanal
-kurdeleleri) — two-col grid 1.35fr/1fr.
+Sol tarafta 216px sabit geceyarısı nav rayı (marka logosu + nokta göstergeli
+8 hedef), sağında fildişi zeminli içerik alanı (dolgular 28px üst/alt, 40px
+yan). Genel Bakış ilk viewport formülü: üst satır (h1 + sağda faz durum
+hapı), altında dörtlü stat kartı grid'i (Bugün yayınlanan / Özel stok /
+Bağlı kanal / İş kuyruğu), altında iki kolon (1.4fr/1fr) — solda Kanallar
+tablo paneli + Boru hattı tablo paneli dikte, sağda Pi kaynakları meter
+paneli.
 
-Kırılımlar: ≤1100px'te iki kolon tek kolona döner; ≤900px'te ray üst yatay
-çubuğa döner (nav overflow-x: auto kaydırmalı şerit, halkalar 1px konturlu,
-ray alt bilgisi gizli), içerik dolgusu 20px'e iner, h1 20px.
+Kırılımlar: stat grid'i ≤900px'te 2 kolona, ≤620px'te 1 kolona iner; iki
+kolon ≤1100px'te tek kolona döner; ≤900px'te ray üst yatay hap sekmelerine
+döner (kaydırmalı şerit, aktif hedef okyanus blok + koyu metin), içerik
+dolgusu 20px'e iner, h1 18px.
 
-Boşluk ölçeği: 4 / 8 / 14 / 20 / 28 / 40px. Yoğunluk durum-izleme
-yoğunluğudur: büyük sayılar, sıkı satırlar, bolca hava yok.
+Boşluk ölçeği: 4 / 8 / 14 / 20 / 28 / 40px. Yoğunluk izleme yoğunluğudur:
+stat kartları kısa, tablo satırları sıkı (10px dikey dolgu), bolca hava yok.
 
 ## Elevation & Depth
 
-Gölge yok — sistem tamamen düz ve gölgesizdir (hiçbir kuralda box-shadow
-yoktur). Derinlik tonal katmanlamayla verilir: geceyarısı zeminini (#0b192c)
-panel mavisi (#12233c) ve derin geceyarısı (#081322) katmanları keser; fildişi
-levha, ton farkının tamamını taşıyan fiziksel kâğıt gibi üstünde durur.
-Kenarlar 1px mavi kenar çizgisiyle (#24354f) çizilir.
+Kartlar ölçülü tek gölge taşır: `--card-shadow: 0 1px 3px
+rgba(11,25,44,.08)` — "Kategori Standardı" dilinin kâğıt-üstünde-kâğıt
+hissi. Gölge bu tek değerle sınırlıdır; daha derin kalkma, çok katmanlı
+gölge veya glow yok. Derinlik hiyerarşisi: fildişi zemin → beyaz kart
+(1px #dfe5ec kontur + gölge) → koyu nav (ton katmanı).
 
 ### Named Rules
-**Gölge Yok Kuralı.** Hiçbir yüzeye box-shadow eklenmez; kalkma hissi
-verilecekse ton katmanı veya çizgi kullanılır.
+**Tek Gölge Kuralı.** Box-shadow yalnız `--card-shadow` değeriyle ve kart/
+panel yüzeylerinde kullanılır; başka hiçbir öğe gölge taşımaz.
 
 ## Shapes
 
-Köşe stratejisi modern sinematik prestijdendir: fildişi levha geniş yumuşak
-köşe taşır (12px), koyu paneller orta (8px), küçük kontroller dar (6px).
-İmza formu damgadır: 3px konturlu, -4° döndürülmüş dikdörtgen, kendi
-renginde. Jenerik blok = 2px kalın üst çizgi + 1px ince alt çizgilerle
-ayrılan satırlar. Kesikli kontur sözleşmesi: kesikli çizgi "bekleyen /
-henüz yok" demektir (bekleyen damga, empty-state kutusu); düz kesikli
-çizgiden kalın kontura geçiş durumun sertleşmesidir (hata).
+Köşe stratejisi "Kategori Standardı"ndan gelir: kart ve panel 10px, küçük
+kontroller 8px, haplar ve meter'lar 99px (tam yuvarlak). İnce çizgi dili:
+kart 1px kontur, panel başlık şeridi 1px alt çizgi, tablo satırları 1px
+ayraç (#eef2f6). Kesikli kontur sözleşmesi korunur: kesikli çizgi
+"bekleyen / henüz yok" demektir (empty-state kutusu).
 
 ## Brand Assets
 
 - **Logo:** tam logo (amblem + "AutoShorts STUDIO" yazısı) sol rayın marka
-  bloğunda, koyu zemin varyantı (`logo-dark-bg.svg`, 1600×500 viewBox,
-  148px render genişliği). Açık zemin varyantı (`logo-light-bg.svg`) el altında.
+  bloğunda, koyu zemin varyantı (`logo-dark-bg.svg`, 148px render
+  genişliği). Açık zemin varyantı (`logo-light-bg.svg`) el altında.
 - **İkon:** 512×512 amblem; tarayıcı favicon'u olarak aydınlık zemin
   varyyantı (`icon-light-bg.svg` → `/favicon.svg`).
 - **Amblem anatomisi:** 'A' harfi + sinematik film şeridi rozeti; rozet
@@ -256,79 +264,91 @@ henüz yok" demektir (bekleyen damga, empty-state kutusu); düz kesikli
 
 ## Components
 
-### Signature: Marquee + Damga
-Stüdyonun kimlik bileşeni. Fildişi levhada dev Noto Sans Display 800 sayı
-(clamp 64–116px) + yanında etiket + sağ üstte hafif eğik damga (3px kontur,
-rotate(-4°), 15px Display). Damga varyantları: `--live` kızıl (ŞİMDİ
-YAYINDA), `--setup` hardal (KURULUM), `--wait` kesikli kontur arduvaz
-(KANAL BEKLENİYOR). Tek hareket: `stamp-press` — 450ms
-cubic-bezier(0.19, 1, 0.22, 1), -14°'den 1.6x ölçekle iner; faz değiştiğinde
-damga yeniden basılır (bileşen fazla anahtarlanır), prefers-reduced-motion'da
-kapalı. Müdahale damgası: kullanıcı hattı durdurunca onun damgası panoda
-kalır — Otomasyon empty state'inde kırmızı "DURAKLATILDI" önizlemesi.
+### Stat Kartı (stat-grid + stat-card)
+Panonun özet dili: dörtlü grid (1fr×4 → 2 → 1). Kart = beyaz zemin, 1px
+kontur, 10px köşe, kart gölgesi, 16px/18px dolgu. İçerik: 12px arduvaz
+etiket + 26px Noto Sans Display 700 değer + 11.5px alt not. `warn`
+varyantında değer hardal tonuna döner (Bağlı kanal 0 gibi). Sıfır da
+gerçektir ve öyle gösterilir; veri uydurulmaz.
 
-### Jenerik Blok (bill-row)
-Levhadaki veri satırı: sol tarafta Display 700 15px/0.05em büyük-harf
-etiket, sağda gövde 600 13px değer; satırlar 1px levha çizgisiyle ayrılır,
-blok 2px levha mürekkebi üst çizgisi taşır. Ton sınıfları değeri boyar:
-`tone-red` / `tone-amber` / `tone-green` (on-plate varyantlarıyla).
+### Başlık Şeritli Panel (ink-panel)
+Beyaz kart, içi dolgusuz; üstte h2 başlık şeridi (13px 600, 14px/18px
+dolgu, 1px alt çizgi). Gövde öğeleri (tablo hariç) şeridin altında 18px
+dolgu alır; tablolar panele kenardan kenara dayanır. İki kullanım: tablo
+paneli (Kanallar, Boru hattı) ve meter paneli (Pi kaynakları).
 
-### Gösterge (gauge)
-Koyu panelde 10px dolgu çubuğu: normal okyanus yeşili, `warn` hardal, `ok`
-yeşim; oluk derin geceyarısı. Üstünde 12.5px etiket + yüzde değeri;
-role="meter".
+### Durum Hapı (pill)
+12px 600 metin, 4px/12px dolgu, 99px köşe; yumuşak zemin + koyu metin.
+Varyantlar: `pill--ok` yeşim, `pill--warn` hardal, `pill--run` okyanus
+yumşak, `pill--idle` arduvaz açık (zemin #eef2f6), `pill--error` kızıl.
+Genel Bakış faz hapı aynı bileşendir: Kurulum/Kanal bekleniyor (warn) veya
+Sistem sağlıklı (ok).
 
-### Levha (plate) ve Panel (ink-panel)
-Levha: fildişi yüzey, 12px köşe, 28px/28px/20px dolgu — anlatım yüzeyi.
-Panel: #12233c yüzey, 1px kenar, 8px köşe, 20px/28px dolgu — ölçüm yüzeyi.
-Panel başlığı her ikisinde de 11.5px uppercase label.
+### Tablo (info-table)
+Canon ince tablosu: th 12px 500 arduvaz, sol hizalı; td 13px gövde, 10px/18px
+dolgu, satır ayraçları 1px #eef2f6. Kanal satırında kurdele rengi 10px
+yuvarlak kare + isim th'de, durum habı son kolonda. `job-line` (Otomasyon)
+aynı tablo dilinin satır formudur: sol etiket + sağ durum habı, 1px ayraç.
+
+### Meter (gauge)
+6px yuvarlak dolgu çubuğu: oluk #e2e8f0, normal dolgu okyanus yeşili,
+`warn` (%80 üstü) hardal. Üstünde 12px etiket + yüzde değeri (tabular-nums);
+role="meter" anlambilimi korunur.
+
+### Buton (btn)
+Okyanus yeşili zemin + geceyarısı mavisi metin (vurgu üstü koyu metin
+kuralı), 8px köşe, 9px/18px dolgu, 600 13px. Hover'da bir ton açılır
+(#2ff8c8). İkincil eylem `btn--ghost`: beyaz zemin, 1px kontur, gövde
+mürekkebi.
 
 ### Durum Kutusu (state-box)
-Boş katmanların temsili: kesikli levha çizgisi konturlu fildişi kutu (12px
-köşe), ortada Display 700 20px başlık + 13.5px açıklama (≤52ch, gövde
-mürekkebi) + koyu levha-butonu (#0b192c zemin, fildişi metin, 6px köşe,
-9px/18px). Hata varyantı düz kızıl kontur + kızıl başlık. Empty-state metni
+Boş katmanların temsili: kesikli kart çizgisi konturlu beyaz kutu (10px
+köşe), ortada Display 700 20px başlık + 13.5px açıklama (≤52ch) + okyanus
+butonu. Hata varyantı düz kızıl kontur + kızıl başlık. Empty-state metni
 kullanıcının sıradaki kurulum adımını söyler.
 
 ### Yükleme ve Bayat Veri
-Yükleme: `ink-loading` — koyu panelde 42px'ten 120px'e genişleyen okyanus
-yeşili çubuk (1.1s). Bağlantı koptuğunda: `stale-note` — hardal konturlu,
-hardal metinli ince şerit + tekrar dene butonu; eski veri ekranda kalır,
-gizlenmez.
+Yükleme: kart yüzeyinde ölçülü `loading` göstergesi. Bağlantı koptuğunda:
+`stale-note` — hardal konturlu ince şerit + tekrar dene butonu; eski veri
+ekranda kalır, gizlenmez.
 
 ### Navigation (ray)
-Sol ray: 11.5–13.5px gövde linkleri, arduvaz açık; hover fildişi metin;
-aktif hedef okyanus yeşili blok + geceyarısı mavisi metin (vurgu üstü koyu
-metin kuralı). Mobil: yatay kaydırmalı şerit, halkalar 1px konturlu, aktif
-vurgu konturu. Odak her yerde 2px okyanus yeşili halkası (outline-offset
-2px). Skip-link vurgu blok + koyu metin.
+Sol ray geceyarısı mavisi: marka logosu üstte, altında nokta göstergeli
+linkler (7px nokta #3a4a63). Aktif hedef okyanus yeşili blok + geceyarısı
+metni + sağda 3px koyu şerit. Hover'da metin fildişiye açılır. Mobil: yatay
+kaydırmalı hap sekmeler. Odak her yerde 2px okyanus halkası
+(outline-offset 2px). Skip-link vurgu blok + koyu metin.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** okyanus yeşilini eylem/seçim için kullan: CTA, aktif nav, odak,
-  seçim, canlı gösterge — başka hiçbir amaç için değil.
+  normal meter dolgusu — başka hiçbir amaç için değil.
 - **Do** vurgu üstünde daima geceyarısı mavisi metin kullan; asla beyaz değil.
-- **Do** veri sayılarını tabular-nums ile yaz; değerleri jenerik satırının
-  sağında sağa hizala.
+- **Do** durumları yumuşak zeminli haplarla anlat; ham rengi hap zeminine
+  dökme.
+- **Do** veri sayılarını tabular-nums ile yaz; stat kartı değerini Display
+  700 26px ile ver.
 - **Do** boş veri katmanlarını yönlendirici empty-state'lerle göster;
   sentetik/örnek veri ancak "sentetik" etiketiyle görünür.
 - **Do** Türkçe mikrocopy kullan; Türkçe karakterler UI'da serbesttir (tüm
   marka fontlarında tam glif desteği doğrulandı).
 - **Do** klavye erişimini koru: görünür focus-visible halkası, skip-link,
   role="meter"/role="alert" anlambilimi.
-- **Do** hareketi kullanıcı eylemine bağla; tek istisna damganın ilk
-  basılışıdır ve prefers-reduced-motion'da kapalıdır.
+- **Do** ekran başlıklarını cümle case yaz ("Genel Bakış"); uppercase başlık
+  yok.
 
 ### Don't:
-- **Don't** gradient metin, gölge (box-shadow) veya 1px'den kalın
-  border-left vurgu şeridi kullanma.
-- **Don't** kicker/eyebrow etiketi uydurma; panel başlığı label'ı yeter.
+- **Don't** gradient metin, çok katmanlı gölge veya `--card-shadow` dışında
+  box-shadow kullanma.
+- **Don't** marquee dev sayı, damga veya jenerik blok geri getirme — bu
+  bileşenler 2026-10-17 yön değişimiyle kaldırıldı.
+- **Don't** kicker/eyebrow etiketi uydurma; panel başlığı h2'si yeter.
 - **Don't** Noto Sans Display'i gövde metninde veya uzun paragraflarda
   kullanma.
-- **Don't** ham hardalı (#e8a33d) fildişi levha üstünde metin rengi yapma —
-  levhada #92610a kullan.
+- **Don't** ham hardalı (#e8a33d) beyaz kart üstünde metin rengi yapma —
+  kartta #92610a kullan.
 - **Don't** marka dışı renk veya harici font CDN'i katma; yeni yüzey bu
-  dünyanın malzemesinden (levha, panel, vurgu) olur.
+  dünyanın malzemesinden (kart, panel, hap, meter) olur.
 - **Don't** API'de olmayan veriyi uydurma; sıfır da gerçektir ve öyle
   gösterilir.

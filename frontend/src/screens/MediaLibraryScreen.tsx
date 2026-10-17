@@ -4,7 +4,7 @@ export function MediaLibraryScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>MEDYA KÜTÜPHANESİ</h1>
+        <h1>Medya Kütüphanesi</h1>
         <span className="screen-sub">İndirilen kaynaklar, klipler ve özel stok</span>
       </div>
       <EmptyState title="Kütüphane boş">

@@ -4,7 +4,7 @@ export function CalendarScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>TAKVİM</h1>
+        <h1>Takvim</h1>
         <span className="screen-sub">Yayın planı ve gerçekleşen yayınlar</span>
       </div>
       <EmptyState title="Takvim henüz boş">

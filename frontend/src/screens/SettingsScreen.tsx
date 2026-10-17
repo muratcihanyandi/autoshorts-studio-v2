@@ -176,7 +176,7 @@ export function SettingsScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>AYARLAR</h1>
+        <h1>Ayarlar</h1>
         <span className="screen-sub">Stüdyo yapılandırması ve sistem bilgisi</span>
       </div>
 
@@ -184,7 +184,7 @@ export function SettingsScreen() {
 
       <div className="stack">
         <section className="plate settings-form">
-          <h2 className="panel-title">YOUTUBE &amp; GOOGLE BAĞLANTISI</h2>
+          <h2 className="panel-title">YouTube &amp; Google Bağlantısı</h2>
           {loadError && (
             <div className="action-error" role="alert">
               Ayarlar okunamadı: {loadError}. Veritabanı hazır olduğunda bu
@@ -312,7 +312,7 @@ export function SettingsScreen() {
         )}
         {state.status === 'ok' && (
           <section className="ink-panel" style={{ maxWidth: 720 }}>
-            <h2>SİSTEM</h2>
+            <h2>Sistem</h2>
             <table className="info-table">
               <tbody>
                 <tr>

@@ -1,23 +1,25 @@
-/* AutoShorts Studio tasarım token'ları — marka kiti "Modern Sinematik & Prestij".
-   Palet: Zengin Geceyarısı Mavisi zemin, Fildişi Beyazı levhalar, Canlı Okyanus
-   Yeşili vurgu (%60 açık / %30 koyu / %10 vurgu dengesi), Arduvaz Grisi nötr.
-   Vurgu üstünde metin daima koyu mavi, asla beyaz değil (marka kuralı). */
+/* AutoShorts Studio tasarım token'ları.
+   Yapı: "Kategori Standardı" izleme panosu dilinden (açık zemin, beyaz
+   kartlar, başlık şeritli paneller, ince meter'lar) — kimlik: marka kiti
+   (Geceyarısı Mavisi, Fildişi Beyazı, Canlı Okyanus Yeşili, Arduvaz).
+   Vurgu üstünde metin daima koyu mavi; koyu nav marka logosunu taşır. */
 :root {
-  /* zemin ve levhalar */
+  /* zemin ve yüzeyler */
   --ink-ground: #0b192c;
   --ink-deep: #081322;
   --ink-panel: #12233c;
   --ink-border: #24354f;
-  --plate: #f0f4f8;
-  --plate-line: #c7d2de;
+  --plate: #ffffff;
+  --plate-line: #dfe5ec;
   --plate-ink: #0b192c;
+  --page-bg: #f0f4f8;
 
   /* metin */
   --cream-text: #f0f4f8;
   --muted-on-dark: #94a3b8;
   --faint-on-dark: #7c8ba1;
 
-  /* levha üstü yardımcı mürekkepler (fildişi zeminde >=4.5:1) */
+  /* kart üstü yardımcı mürekkepler (beyaz zeminde >=4.5:1) */
   --plate-muted: #64748b;
   --plate-body-ink: #334155;
 
@@ -25,17 +27,18 @@
   --accent: #15f5ba;
   --accent-ink: #0b192c;
   --accent-deep: #0a8f6d;
-  --accent-soft: #a7f5dd;
+  --accent-soft: #cff9ec;
 
-  /* durum renkleri (işlevsel; marka nötr+vurgu temelli) */
+  /* durum renkleri (işlevsel; yumuşak zemin + koyu metin hapları) */
   --red: #d64545;
   --red-on-plate: #b91c1c;
+  --red-soft: #fde3e3;
   --amber: #e8a33d;
   --amber-on-plate: #92610a;
-  --amber-on-dark: #e8a33d;
+  --amber-soft: #fdf0d7;
   --green: #0e9f6e;
   --green-on-plate: #047857;
-  --green-on-dark: #34d399;
+  --green-soft: #d6f5e8;
   --paper-white: #ffffff;
 
   /* tipografi — marka font paketi */
@@ -51,8 +54,11 @@
   --space-5: 28px;
   --space-6: 40px;
 
-  /* modern sinematik köşeler: levha geniş, panel orta, kontrol dar */
-  --radius-print: 12px;
-  --radius-panel: 8px;
-  --radius-control: 6px;
+  /* kategori standardı yüzeyleri: kart 10px, panel 10px, kontrol 8px */
+  --radius-print: 10px;
+  --radius-panel: 10px;
+  --radius-control: 8px;
+
+  /* ölçülü kart gölgesi (kategori standardı dili) */
+  --card-shadow: 0 1px 3px rgba(11, 25, 44, 0.08);
 }

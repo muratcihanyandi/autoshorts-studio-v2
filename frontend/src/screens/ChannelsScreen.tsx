@@ -129,7 +129,7 @@ function NewChannelForm({
 
   return (
     <section className="plate new-channel" aria-label="Yeni kanal ekle">
-      <h2 className="panel-title">YENİ KANAL</h2>
+      <h2 className="panel-title">Yeni Kanal</h2>
       <form onSubmit={submit}>
         <div className="field">
           <label htmlFor="channel-name">Kanal adı</label>
@@ -184,7 +184,7 @@ export function ChannelsScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>KANALLAR</h1>
+        <h1>Kanallar</h1>
         <span className="screen-sub">Bağlı YouTube kanalları ve kurdele renkleri</span>
       </div>
 
@@ -231,7 +231,7 @@ export function ChannelsScreen() {
             </EmptyState>
           ) : (
             <section className="ink-panel" aria-label="Kayıtlı kanallar">
-              <h2 className="panel-title">KAYITLI KANALLAR</h2>
+              <h2 className="panel-title">Kayıtlı Kanallar</h2>
               {state.data.channels.map((channel) => (
                 <ChannelRow
                   key={channel.id}

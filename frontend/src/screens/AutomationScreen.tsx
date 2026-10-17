@@ -39,7 +39,7 @@ export function AutomationScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>OTOMASYON</h1>
+        <h1>Otomasyon</h1>
         <span className="screen-sub">İş kuyruğu: kaynak izleme ve üretim hattı</span>
       </div>
 
@@ -61,7 +61,7 @@ export function AutomationScreen() {
         <>
           {state.stale && <StaleNote onRetry={retry} />}
           <section className="plate">
-            <h2 className="panel-title">İŞ KUYRUĞU</h2>
+            <h2 className="panel-title">İş Kuyruğu</h2>
             {state.data.jobs.length === 0 ? (
               <p className="plate-note">
                 Kuyruk boş. Yetkili kaynak eklendiğinde sistem kaynak
@@ -82,7 +82,7 @@ export function AutomationScreen() {
                       <td>
                         <div className="llm-provider-info">
                           <span
-                            className={`bill-row ${statusClass(job.status)}`}
+                            className={`job-line ${statusClass(job.status)}`}
                             style={{ borderBottom: 'none', display: 'block' }}
                           >
                             <span>{JOB_STATUS_LABEL[job.status]}</span>

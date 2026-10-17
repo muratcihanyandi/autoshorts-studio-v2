@@ -4,7 +4,7 @@ export function LogsScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>GÜNLÜKLER</h1>
+        <h1>Günlükler</h1>
         <span className="screen-sub">Yapılandırılmış olay günlüğü</span>
       </div>
       <EmptyState title="Canlı log akışı henüz yok">

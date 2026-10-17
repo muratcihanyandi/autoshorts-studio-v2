@@ -61,7 +61,7 @@ describe('SettingsScreen', () => {
     render(<SettingsScreen />)
 
     expect(
-      await screen.findByText('YOUTUBE & GOOGLE BAĞLANTISI'),
+      await screen.findByText('YouTube & Google Bağlantısı'),
     ).toBeInTheDocument()
     // Düz alan effective değerle dolu gelir.
     expect(
@@ -77,7 +77,7 @@ describe('SettingsScreen', () => {
       screen.getByRole('button', { name: 'Ayarları Kaydet' }),
     ).toBeInTheDocument()
     // Sistem paneli kalır.
-    expect(await screen.findByText('SİSTEM')).toBeInTheDocument()
+    expect(await screen.findByText('Sistem')).toBeInTheDocument()
   })
 
   it('sends only changed plain fields and filled secrets on save', async () => {

@@ -1,11 +1,11 @@
-/* Kabuk: sol nav rayı + içerik alanı; dar ekranda üst çubuğa döner. */
+/* Kabuk: koyu marka nav'ı + açık içerik alanı; dar ekranda üst çubuğa döner. */
 .shell {
   display: flex;
   min-height: 100vh;
 }
 
 .rail {
-  width: 208px;
+  width: 216px;
   flex-shrink: 0;
   background: var(--ink-deep);
   border-right: 1px solid var(--ink-border);
@@ -14,9 +14,9 @@
 }
 
 .rail-brand {
-  padding: 22px 20px 16px;
+  padding: 20px 20px 16px;
   border-bottom: 1px solid var(--ink-border);
-  margin-bottom: var(--space-3);
+  margin-bottom: 10px;
 }
 
 .rail-brand img {
@@ -31,11 +31,23 @@
 }
 
 .rail nav a {
-  display: block;
+  display: flex;
+  gap: 10px;
+  align-items: center;
   padding: 10px 20px;
   color: var(--muted-on-dark);
   text-decoration: none;
   font-size: 13.5px;
+  border-right: 3px solid transparent;
+}
+
+.rail nav a::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3a4a63;
+  flex-shrink: 0;
 }
 
 .rail nav a:hover {
@@ -46,6 +58,11 @@
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
+  border-right-color: var(--accent-ink);
+}
+
+.rail nav a.active::before {
+  background: var(--accent-ink);
 }
 
 .rail-foot {
@@ -59,13 +76,13 @@
 .content {
   flex: 1;
   min-width: 0;
-  padding: var(--space-5) var(--space-6);
+  padding: 24px 28px var(--space-6);
 }
 
 .screen-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
   flex-wrap: wrap;
@@ -73,15 +90,15 @@
 
 .screen-head h1 {
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 24px;
-  letter-spacing: 0.03em;
-  color: var(--cream-text);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  color: var(--plate-ink);
 }
 
 .screen-sub {
   font-size: 12.5px;
-  color: var(--faint-on-dark);
+  color: var(--plate-muted);
 }
 
 @media (max-width: 900px) {
@@ -107,6 +124,8 @@
     padding: 7px 12px;
     white-space: nowrap;
     border: 1px solid var(--ink-border);
+    border-right: 1px solid var(--ink-border);
+    border-radius: 999px;
     margin-right: var(--space-2);
   }
   .rail nav a.active {
@@ -119,6 +138,6 @@
     padding: var(--space-4) var(--space-4) var(--space-6);
   }
   .screen-head h1 {
-    font-size: 20px;
+    font-size: 19px;
   }
 }

@@ -1,175 +1,167 @@
-/* Bileşenler: afiş levhası, jenerik blok, mürekkep göstergesi, damga, durumlar. */
+/* Bileşenler: Kategori Standardı izleme panosu dili, marka kimliğiyle.
+   Beyaz kartlar, başlık şeritli paneller, ince tablolar, yumuşak durum
+   hapları, yuvarlak meter'lar. Yeşilçam'ın afiş anlatısı (marquee, damga,
+   jenerik blok) bu dilden çıkar; yerini stat kartları ve tablo panelleri
+   alır. */
 
-/* --- krem afiş levhası --- */
+/* --- beyaz kart (eski afiş levhası) --- */
 .plate {
   background: var(--plate);
   color: var(--plate-ink);
+  border: 1px solid var(--plate-line);
   border-radius: var(--radius-print);
+  box-shadow: var(--card-shadow);
   padding: var(--space-5) var(--space-5) var(--space-4);
 }
 
-/* --- koyu mürekkep paneli --- */
+/* --- panel (eski mürekkep paneli): başlık şeridi + gövde --- */
 .ink-panel {
-  background: var(--ink-panel);
-  border: 1px solid var(--ink-border);
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
   border-radius: var(--radius-panel);
-  padding: var(--space-4) var(--space-5);
+  box-shadow: var(--card-shadow);
+  padding: 0;
+  overflow: hidden;
 }
 
-.ink-panel h2,
-.plate h2.panel-title {
-  font-size: 11.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.ink-panel > h2,
+.plate > h2.panel-title {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--faint-on-dark);
+  color: var(--plate-ink);
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--plate-line);
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.ink-panel > *:not(h2):not(.panel-title):not(.info-table) {
+  padding: 14px 18px;
+  margin: 0;
+}
+
+.plate h2.panel-title {
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--plate-line);
   margin-bottom: var(--space-3);
 }
 
-.plate h2.panel-title {
+/* --- stat kartları --- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: var(--space-5);
+}
+
+.stat-card {
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  box-shadow: var(--card-shadow);
+  padding: 16px 18px;
+}
+
+.stat-card span {
+  font-size: 12px;
   color: var(--plate-muted);
 }
 
-/* --- marquee (dev sayı + damga) --- */
-.marquee {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-5);
-  margin-bottom: var(--space-4);
-}
-
-.marquee-number {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(64px, 8vw, 116px);
-  line-height: 0.92;
-  color: var(--plate-ink);
-}
-
-.marquee-label {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(20px, 2.2vw, 30px);
-  letter-spacing: 0.02em;
-  display: block;
-  margin-top: var(--space-2);
-}
-
-/* --- damga --- */
-.stamp {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: 0.08em;
-  padding: 8px 12px;
-  border: 3px solid currentColor;
-  transform: rotate(-4deg);
-  white-space: nowrap;
-  margin-left: auto;
-  align-self: flex-start;
-}
-
-.stamp--live {
-  color: var(--red-on-plate);
-}
-
-.stamp--wait {
-  color: var(--plate-muted);
-  border-style: dashed;
-}
-
-.stamp--setup {
-  color: var(--amber-on-plate);
-}
-
-/* tek koreografi edilmiş hareket: damganın basılışı */
-@keyframes stamp-in {
-  0% {
-    transform: rotate(-14deg) scale(1.6);
-    opacity: 0;
-  }
-  60% {
-    transform: rotate(-2deg) scale(0.96);
-    opacity: 1;
-  }
-  100% {
-    transform: rotate(-4deg) scale(1);
-    opacity: 1;
-  }
-}
-
-.stamp-press {
-  animation: stamp-in 450ms cubic-bezier(0.19, 1, 0.22, 1) both;
-}
-
-/* --- jenerik blok satırları --- */
-.bill {
-  border-top: 2px solid var(--plate-ink);
-  margin-top: var(--space-3);
-}
-
-.bill-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-4);
-  padding: 8px 0;
-  border-bottom: 1px solid var(--plate-line);
+.stat-card b {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.05em;
-}
-
-.bill-row > span:first-child {
+  font-size: 26px;
+  display: block;
+  margin-top: 4px;
   color: var(--plate-ink);
+  line-height: 1.2;
 }
 
-.bill-row > span:last-child {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0;
-  text-align: right;
-}
-
-.bill-row.tone-amber > span:last-child {
+.stat-card.warn b {
   color: var(--amber-on-plate);
 }
 
-.bill-row.tone-green > span:last-child {
+.stat-card small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--plate-muted);
+  margin-top: 2px;
+}
+
+@media (max-width: 1100px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- durum hapı --- */
+.pill {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.pill--ok {
+  background: var(--green-soft);
   color: var(--green-on-plate);
 }
 
-.bill-row.tone-red > span:last-child {
+.pill--warn {
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
+}
+
+.pill--run {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.pill--idle {
+  background: #e7edf3;
+  color: var(--plate-muted);
+}
+
+.pill--error {
+  background: var(--red-soft);
   color: var(--red-on-plate);
 }
 
-/* --- mürekkep göstergesi --- */
+/* --- meter (eski mürekkep göstergesi) --- */
 .gauge {
-  margin-bottom: var(--space-3);
+  margin-bottom: 10px;
 }
 
 .gauge label {
   display: flex;
   justify-content: space-between;
-  font-size: 12.5px;
-  color: var(--muted-on-dark);
-  margin-bottom: 5px;
+  font-size: 12px;
+  color: var(--plate-body-ink);
+  margin-bottom: 4px;
 }
 
 .gauge label.warn {
-  color: var(--amber-on-dark);
+  color: var(--amber-on-plate);
 }
 
 .gauge-track {
-  height: 10px;
-  background: var(--ink-deep);
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
 }
 
 .gauge-fill {
   display: block;
   height: 100%;
+  border-radius: 99px;
   background: var(--accent);
 }
 
@@ -181,49 +173,59 @@
   background: var(--green);
 }
 
-/* --- kanal kurdelesi --- */
+/* --- kanal satırı (tablo içinde) --- */
 .channel-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--ink-border);
+  padding: 10px 18px;
+  border-bottom: 1px solid #eef2f6;
   font-size: 13.5px;
-  color: var(--cream-text);
+  color: var(--plate-ink);
+}
+
+.channel-row:last-child {
+  border-bottom: none;
 }
 
 .channel-row i {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
 .channel-row small {
   margin-left: auto;
-  color: var(--faint-on-dark);
+  color: var(--plate-muted);
   font-size: 12px;
+}
+
+.channel-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 /* --- durum bileşenleri --- */
 .state-box {
-  border: 1px dashed var(--plate-line);
+  border: 1px solid var(--plate-line);
   border-radius: var(--radius-print);
   padding: var(--space-6) var(--space-5);
   text-align: center;
   background: var(--plate);
   color: var(--plate-ink);
+  box-shadow: var(--card-shadow);
 }
 
 .state-box.error {
-  border-style: solid;
   border-color: var(--red);
 }
 
 .state-box h3 {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 20px;
-  letter-spacing: 0.03em;
+  font-size: 19px;
   margin-bottom: var(--space-2);
 }
 
@@ -237,8 +239,8 @@
 .state-box a,
 .state-box button {
   display: inline-block;
-  background: var(--plate-ink);
-  color: var(--plate);
+  background: var(--accent);
+  color: var(--accent-ink);
   border: none;
   padding: 9px 18px;
   font-size: 13px;
@@ -249,20 +251,22 @@
 
 .state-box a:hover,
 .state-box button:hover {
-  background: #1a2f4a;
+  background: var(--accent-deep);
+  color: var(--paper-white);
 }
 
 .state-box.error h3 {
   color: var(--red-on-plate);
 }
 
-/* mürekkep sıyırma (yükleme durumu) */
+/* yükleme durumu */
 .ink-loading {
-  background: var(--ink-panel);
-  border: 1px solid var(--ink-border);
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
   border-radius: var(--radius-panel);
+  box-shadow: var(--card-shadow);
   padding: var(--space-5);
-  color: var(--faint-on-dark);
+  color: var(--plate-muted);
   font-size: 13px;
 }
 
@@ -273,6 +277,7 @@
   height: 4px;
   margin-bottom: var(--space-3);
   background: var(--accent);
+  border-radius: 99px;
   animation: ink-sweep 1.1s ease-in-out infinite;
 }
 
@@ -294,56 +299,42 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--space-3);
-  background: var(--ink-panel);
+  background: var(--amber-soft);
   border: 1px solid var(--amber);
-  color: var(--amber-on-dark);
+  color: var(--amber-on-plate);
   font-size: 12.5px;
   padding: 8px 14px;
-  border-radius: var(--radius-panel);
+  border-radius: var(--radius-control);
   margin-bottom: var(--space-4);
 }
 
 .stale-note button {
   background: none;
   border: 1px solid var(--amber);
-  color: var(--amber-on-dark);
+  color: var(--amber-on-plate);
   padding: 4px 12px;
   font-size: 12px;
   border-radius: var(--radius-control);
 }
 
-/* levha üstü ikincil not (marquee altı yönlendirme) */
+/* kart üstü ikincil not */
 .plate-note {
   font-size: 12.5px;
   color: var(--plate-body-ink);
 }
 
-/* müdahale damgası önizlemesi (otomasyon empty state) */
-.stamp-note {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  margin: var(--space-2) auto 0;
-}
-
-.stamp-caption {
-  font-size: 12px;
-  color: var(--plate-muted);
-}
-
 /* --- genel düzen yardımcıları --- */
 .two-col {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: 16px;
 }
 
 @media (max-width: 1100px) {
@@ -352,29 +343,32 @@
   }
 }
 
-/* ayarlar bilgi tablosu */
+/* bilgi tablosu: canon tablo dili */
 .info-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .info-table th {
   text-align: left;
-  font-size: 11.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint-on-dark);
-  font-weight: 600;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--ink-border);
-  width: 220px;
+  color: var(--plate-muted);
+  font-weight: 500;
+  font-size: 12px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--plate-line);
+  vertical-align: top;
 }
 
 .info-table td {
-  padding: 9px 0;
-  border-bottom: 1px solid var(--ink-border);
-  color: var(--cream-text);
+  padding: 10px 18px;
+  border-bottom: 1px solid #eef2f6;
+  color: var(--plate-ink);
+  vertical-align: top;
+}
+
+.info-table tr:last-child td {
+  border-bottom: none;
 }
 
 /* --- form alanları --- */
@@ -386,10 +380,8 @@
 
 .field > label,
 .field > span {
-  font-size: 11.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--plate-muted);
 }
 
@@ -407,6 +399,7 @@
 .field select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+  border-color: var(--accent);
 }
 
 /* --- butonlar --- */
@@ -417,13 +410,13 @@
   font: 600 13px var(--font-body);
   border-radius: var(--radius-control);
   padding: 9px 18px;
-  background: var(--plate-ink);
-  color: var(--plate);
+  background: var(--accent);
+  color: var(--accent-ink);
   text-decoration: none;
 }
 
 .btn:hover {
-  background: #1a2f4a;
+  background: #2ff8c8;
 }
 
 .btn:disabled {
@@ -432,17 +425,17 @@
 }
 
 .btn--ghost {
-  background: none;
-  border: 1px solid var(--ink-border);
-  color: var(--muted-on-dark);
+  background: var(--paper-white);
+  border: 1px solid var(--plate-line);
+  color: var(--plate-body-ink);
   padding: 5px 12px;
   font-size: 12px;
 }
 
 .btn--ghost:hover {
-  color: var(--cream-text);
-  border-color: var(--muted-on-dark);
-  background: none;
+  border-color: var(--plate-muted);
+  color: var(--plate-ink);
+  background: var(--paper-white);
 }
 
 .btn--danger {
@@ -456,13 +449,6 @@
 .btn--danger:hover {
   background: var(--red);
   color: var(--paper-white);
-}
-
-/* --- kanal satır eylemleri --- */
-.channel-actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-shrink: 0;
 }
 
 /* --- kurdele rengi seçici --- */
@@ -489,11 +475,7 @@
   outline-offset: 2px;
 }
 
-/* yeni kanal formu levhası */
-.new-channel {
-  margin-top: var(--space-5);
-}
-
+/* yeni kanal formu */
 .new-channel form {
   display: flex;
   flex-direction: column;
@@ -501,12 +483,12 @@
   max-width: 420px;
 }
 
-/* eylem hatasi seridi (krem levha uzerinde kizil) */
+/* eylem hatası seridi */
 .action-error {
-  background: var(--plate);
+  background: var(--red-soft);
   color: var(--red-on-plate);
   border: 1px solid var(--red);
-  border-radius: var(--radius-print);
+  border-radius: var(--radius-control);
   padding: 10px 16px;
   font-size: 12.5px;
   margin-bottom: var(--space-4);
@@ -530,31 +512,26 @@
   }
 }
 
-/* kaynak rozeti: alan degerinin nereden geldigini soyler */
+/* kaynak rozeti */
 .source-badge {
   margin-left: 8px;
   font-size: 10px;
   letter-spacing: 0.06em;
   color: var(--accent-deep);
-  border: 1px solid var(--plate-line);
+  background: var(--accent-soft);
   border-radius: 999px;
   padding: 2px 8px;
-  text-transform: none;
   font-weight: 600;
   white-space: nowrap;
 }
 
 .field .field-help {
-  text-transform: none;
-  letter-spacing: 0;
   font-size: 11.5px;
   font-weight: 400;
   color: var(--plate-muted);
 }
 
 .field .field-warn {
-  text-transform: none;
-  letter-spacing: 0;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--amber-on-plate);
@@ -595,7 +572,6 @@
 /* LLM saglayici satiri */
 .llm-table th {
   width: 200px;
-  vertical-align: top;
 }
 
 .llm-provider-info {
@@ -608,4 +584,25 @@
 .llm-meta {
   font-size: 12.5px;
   color: var(--plate-body-ink);
+}
+
+/* is satiri (otomasyon) */
+.job-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: 13px;
+}
+
+.job-line.tone-green > span:last-child {
+  color: var(--green-on-plate);
+}
+
+.job-line.tone-red > span:last-child {
+  color: var(--red-on-plate);
+}
+
+.job-line.tone-amber > span:last-child {
+  color: var(--amber-on-plate);
 }

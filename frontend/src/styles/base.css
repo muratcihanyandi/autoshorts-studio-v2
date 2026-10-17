@@ -1,4 +1,4 @@
-/* Temel: tarayıcı yüzeyleri de bu dünyanın mürekkebini taşır. */
+/* Temel: açık izleme panosu zemini; koyu nav markayı taşır. */
 * {
   margin: 0;
   padding: 0;
@@ -6,12 +6,12 @@
 }
 
 html {
-  background: var(--ink-ground);
+  background: var(--page-bg);
 }
 
 body {
-  background: var(--ink-ground);
-  color: var(--cream-text);
+  background: var(--page-bg);
+  color: var(--plate-ink);
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.5;
@@ -24,12 +24,12 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-deep);
   outline-offset: 2px;
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-deep);
 }
 
 button {
@@ -37,20 +37,20 @@ button {
   cursor: pointer;
 }
 
-/* ince mürekkep kaydırma çubuğu */
+/* ince nötr kaydırma çubuğu */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--ink-border) var(--ink-ground);
+  scrollbar-color: #c3ceda var(--page-bg);
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--ink-border);
+  background: #c3ceda;
 }
 *::-webkit-scrollbar-track {
-  background: var(--ink-ground);
+  background: var(--page-bg);
 }
 
 /* veri sayıları hep tabular */

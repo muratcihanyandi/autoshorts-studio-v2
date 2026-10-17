@@ -97,7 +97,7 @@ export function LlmProvidersScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>LLM SAĞLAYICILARI</h1>
+        <h1>LLM Sağlayıcıları</h1>
         <span className="screen-sub">Ana sağlayıcı + iki yedek, sınırlı geçiş</span>
       </div>
 
@@ -114,7 +114,7 @@ export function LlmProvidersScreen() {
           {state.stale && <StaleNote onRetry={retry} />}
           <div className="stack">
             <section className="plate">
-              <h2 className="panel-title">KAYITLI SAĞLAYICILAR</h2>
+              <h2 className="panel-title">Kayıtlı Sağlayıcılar</h2>
               {state.data.providers.length === 0 ? (
                 <p className="plate-note">
                   Henüz sağlayıcı yok. Altyazı düzeltme ve metaveri üretimi
@@ -225,7 +225,7 @@ export function LlmProvidersScreen() {
 
             {state.data.providers.length < 3 && (
               <section className="plate new-channel">
-                <h2 className="panel-title">YENİ SAĞLAYICI</h2>
+                <h2 className="panel-title">Yeni Sağlayıcı</h2>
                 {formError && (
                   <div className="action-error" role="alert">
                     {formError}
@@ -344,7 +344,7 @@ export function LlmProvidersScreen() {
             )}
 
             <section className="ink-panel">
-              <h2>SON İSTEKLER</h2>
+              <h2>Son İstekler</h2>
               {logs.state.status === 'ok' && logs.state.data.total === 0 && (
                 <p className="plate-note">
                   Henüz istek yok. Sağlayıcı ekleyip “Dene” ile bağlantıyı
