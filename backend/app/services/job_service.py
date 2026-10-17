@@ -94,8 +94,12 @@ class JobService:
     # --- claim / heartbeat / finish ---
 
     def disk_ok(self, path: str | None = None) -> bool:
-        """Low disk space must prevent unsafe new jobs."""
-        target = path or "."
+        """Low disk space must prevent unsafe new jobs.
+
+        Checks the media tree's disk when configured (that is where
+        downloads land), the working directory otherwise.
+        """
+        target = path or self._settings.media_root or "."
         try:
             free = shutil.disk_usage(target).free
         except OSError:

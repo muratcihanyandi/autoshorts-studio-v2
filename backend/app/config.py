@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     source_poll_interval_minutes: int = 60
     min_free_disk_gb: float = 2.0
     download_rate_limit_kbps: int = 0
+    # Labelled media tree root INSIDE the container (deployment mounts
+    # /mnt/usb/Autoshorts_Studio here). Empty keeps the feature off.
+    media_root: str = ""
 
     @property
     def oauth_configured(self) -> bool:

@@ -37,6 +37,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.sessionmaker = sessionmaker
         app.state.settings = settings
         app.state.started_at = time.time()
+        # Medya klasör ağacı: volume bağlıysa etiketli klasörleri kur.
+        if settings.media_root:
+            from app.services.media_storage import ensure_media_tree
+
+            app.state.media_tree = ensure_media_tree(settings.media_root)
         # Seed the psutil CPU baseline so the first /api/system poll is real.
         try:
             import psutil

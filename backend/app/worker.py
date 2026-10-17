@@ -67,6 +67,7 @@ class JobWorker:
         self._running: dict[int, asyncio.Task] = {}
         self._worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self._last_poll_enqueue = 0.0
+        self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
 
@@ -144,6 +145,29 @@ class JobWorker:
                 added += 1
         return added
 
+    async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
+        """Prune stale files from the media tmp folder (safe cleanup)."""
+        if not self._settings.media_root:
+            return []
+        from app.services.media_storage import media_subdir
+        from app.services.temp_cleanup import cleanup_temp_dir
+
+        try:
+            return cleanup_temp_dir(
+                media_subdir(self._settings.media_root, "tmp"),
+                max_age_hours=max_age_hours,
+            )
+        except Exception:  # noqa: BLE001 - temizlik best-effort
+            return []
+
+    async def _maybe_cleanup_tmp(self) -> None:
+        """Run the tmp cleanup at most once per hour."""
+        now = time.monotonic()
+        if self._last_tmp_cleanup and now - self._last_tmp_cleanup < 3600:
+            return
+        self._last_tmp_cleanup = now
+        await self.cleanup_tmp_once()
+
     async def _get(self, job_id: int):
         from app.models import Job
 
@@ -158,6 +182,7 @@ class JobWorker:
         while True:
             try:
                 await self.enqueue_poll_jobs()
+                await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:
                 raise

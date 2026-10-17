@@ -47,6 +47,10 @@ services:
       LOG_LEVEL: info
       DATABASE_URL: postgresql+asyncpg://autoshorts_app:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
       WORKER_ENABLED: "true"
+      # Etiketli medya agaci: downloads / edited / clips / stock / tmp.
+      MEDIA_ROOT: /data/media
+    volumes:
+      - /mnt/usb/Autoshorts_Studio:/data/media
     networks:
       - autoshorts-net
 
