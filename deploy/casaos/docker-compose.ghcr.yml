@@ -19,6 +19,15 @@
 
 name: autoshorts-studio
 
+# Docker Compose proje adi ve CasaOS uygulama karti bilgileri.
+name: autoshorts-studio
+
+x-casaos:
+  appstore:
+    icon: https://raw.githubusercontent.com/muratcihanyandi/autoshorts-studio-v2/main/deploy/casaos/autoshorts-icon.png
+    title: AutoShorts Studio
+    port_map: "1478"
+
 services:
   backend:
     image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/backend:latest
