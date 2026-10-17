@@ -12,6 +12,7 @@ from app import __version__
 from app.api.routes.channels import router as channels_router
 from app.api.routes.health import router as health_router
 from app.api.routes.overview import router as overview_router
+from app.api.routes.sources import router as sources_router
 from app.api.routes.system import router as system_router
 from app.config import Settings, get_settings
 from app.db import create_engine_and_sessionmaker
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(overview_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(channels_router, prefix="/api")
+    app.include_router(sources_router, prefix="/api")
     return app
 
 

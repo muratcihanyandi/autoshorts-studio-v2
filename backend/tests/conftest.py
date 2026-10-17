@@ -39,6 +39,7 @@ def client_db(tmp_path) -> TestClient:
     sync_engine.dispose()
 
     app = create_app(Settings(database_url=f"sqlite+aiosqlite:///{db_file}"))
+    app.state.test_db_path = str(db_file)
     with TestClient(app) as client:
         yield client
 
