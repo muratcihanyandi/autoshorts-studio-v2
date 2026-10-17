@@ -146,8 +146,38 @@ class OAuthState(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class Character(Base):
+    """A streamer/person tracked by the studio (M13).
+
+    Binds N source channels across platforms; the reference face (from
+    the uploaded photo) validates webcam regions, and the optional
+    system_prompt overrides the global metadata prompt for this
+    character's clips.
+    """
+
+    __tablename__ = "characters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    # MEDIA_ROOT altinda goreli yol, orn. characters/7_ab12cd3f.jpg
+    photo_path: Mapped[str | None] = mapped_column(String(255))
+    # Kirpilmis referans yuz (characters/7_ref.png); yuz yoksa None.
+    reference_face_path: Mapped[str | None] = mapped_column(String(255))
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class SourceChannel(Base):
-    """An authorized source channel feeding one publishing channel."""
+    """An authorized source channel feeding one publishing channel.
+
+    youtube_channel_id carries the platform channel key for every
+    platform: a UC... id for YouTube, the channel URL/name for
+    Twitch/Kick (discovery itself is YouTube-only in M13; other
+    platforms import VODs manually).
+    """
 
     __tablename__ = "source_channels"
     __table_args__ = (
@@ -157,6 +187,18 @@ class SourceChannel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     channel_id: Mapped[int] = mapped_column(
         ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    character_id: Mapped[int | None] = mapped_column(
+        ForeignKey("characters.id", ondelete="SET NULL")
+    )
+    platform: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "platform IN ('youtube', 'twitch', 'kick')",
+            name="ck_source_channels_platform",
+        ),
+        default="youtube",
+        nullable=False,
     )
     youtube_channel_id: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -170,6 +212,10 @@ class SourceChannel(Base):
         nullable=False,
     )
     authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Reaksiyon kaynagi: budanmis yatay tam kesit + dikey shortlar uretilir.
+    reaction_source: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trim_start_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    trim_end_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
     filter_rules: Mapped[dict[str, Any]] = mapped_column(
         JSONColumn, nullable=False, default=dict
     )
@@ -615,19 +661,39 @@ class WebcamCalibration(Base):
 
 
 class RenderedClip(Base):
-    """One rendered 9:16 clip from a clip candidate (M8).
+    """One rendered clip from a clip candidate (M8), or the trimmed
+    horizontal full cut of a reaction source's video (M13).
 
     'review' means webcam detection was uncertain — nothing rendered;
-    the operator can calibrate the source and re-run. Unique
-    clip_candidate_id keeps re-runs idempotent.
+    the operator can calibrate the source and re-run. The
+    (clip_candidate_id, orientation) pair keeps re-runs idempotent;
+    horizontal full cuts carry a NULL candidate and reference the
+    source video instead.
     """
 
     __tablename__ = "rendered_clips"
+    __table_args__ = (
+        UniqueConstraint(
+            "clip_candidate_id", "orientation", name="uq_rendered_clip_candidate_orientation"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    clip_candidate_id: Mapped[int] = mapped_column(
+    clip_candidate_id: Mapped[int | None] = mapped_column(
         ForeignKey("clip_candidates.id", ondelete="CASCADE"),
-        unique=True,
+        nullable=True,
+    )
+    source_video_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    orientation: Mapped[str] = mapped_column(
+        String(12),
+        CheckConstraint(
+            "orientation IN ('vertical', 'horizontal')",
+            name="ck_rendered_clips_orientation",
+        ),
+        default="vertical",
         nullable=False,
     )
     status: Mapped[str] = mapped_column(
@@ -641,6 +707,8 @@ class RenderedClip(Base):
     )
     file_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     file_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # Onizleme/thumbnail jpg (metadata onaylandiginda uretilir), goreli yol.
+    thumbnail_path: Mapped[str | None] = mapped_column(String(255))
     width: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     height: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duration_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
@@ -717,7 +785,9 @@ class MetadataTemplate(Base):
 
 
 class ClipMetadata(Base):
-    """One metadata revision for a clip candidate (M9).
+    """One metadata revision for a clip candidate (M9), or for the
+    horizontal full cut of a reaction source's video (M13 — candidate
+    NULL, source_video set).
 
     Revisions are append-only: regenerating inserts revision max+1 and
     earlier rows stay for audit. Lengths follow YouTube limits
@@ -730,13 +800,19 @@ class ClipMetadata(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    clip_candidate_id: Mapped[int] = mapped_column(
-        ForeignKey("clip_candidates.id", ondelete="CASCADE"), nullable=False, index=True
+    clip_candidate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clip_candidates.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    source_video_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"), nullable=True
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSONColumn, nullable=False, default=list)
+    # M13: viral kanca (hook) ve thumbnail uzerine yazilacak kisa metin.
+    hook: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    thumbnail_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(
         String(16),
         CheckConstraint(
@@ -755,17 +831,33 @@ class ClipMetadata(Base):
 class PublishedVideo(Base):
     """One uploaded clip on YouTube (M10).
 
-    Unique clip_candidate_id structurally prevents duplicate uploads;
-    the resumable session URI is kept so an interrupted upload can be
-    reconciled instead of restarted from scratch.
+    The (clip_candidate_id, orientation) pair structurally prevents
+    duplicate uploads — a reaction video publishes both its vertical
+    shorts and the horizontal full cut; the resumable session URI is
+    kept so an interrupted upload can be reconciled instead of
+    restarted from scratch. Horizontal full cuts carry a NULL
+    candidate.
     """
 
     __tablename__ = "published_videos"
+    __table_args__ = (
+        UniqueConstraint(
+            "clip_candidate_id", "orientation", name="uq_published_candidate_orientation"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    clip_candidate_id: Mapped[int] = mapped_column(
+    clip_candidate_id: Mapped[int | None] = mapped_column(
         ForeignKey("clip_candidates.id", ondelete="CASCADE"),
-        unique=True,
+        nullable=True,
+    )
+    orientation: Mapped[str] = mapped_column(
+        String(12),
+        CheckConstraint(
+            "orientation IN ('vertical', 'horizontal')",
+            name="ck_published_videos_orientation",
+        ),
+        default="vertical",
         nullable=False,
     )
     channel_id: Mapped[int] = mapped_column(

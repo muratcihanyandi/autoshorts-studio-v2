@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     token_encryption_key: str = ""
     # YouTube Data API v3 key for source monitoring (public data).
     youtube_api_key: str = ""
+    # Global LLM system prompt for AI metadata (title/hook/description/
+    # tags/thumbnail text). Empty = built-in default; a character's own
+    # system_prompt (M13) overrides it for that character's clips.
+    metadata_system_prompt: str = ""
     # Source polling tuning.
     source_cache_ttl_seconds: int = 300
     daily_quota_units: int = 10000
