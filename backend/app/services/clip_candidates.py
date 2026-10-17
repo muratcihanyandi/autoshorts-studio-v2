@@ -28,7 +28,7 @@ class CandidateSpec:
 
     @property
     def duration_seconds(self) -> float:
-        return self.end_seconds - self.start_seconds
+        return round(self.end_seconds - self.start_seconds, 3)
 
 
 def _normalize(values: list[float]) -> list[float]:

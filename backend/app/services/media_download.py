@@ -70,6 +70,15 @@ class LocalImportAdapter:
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{source_video_id}{self._import_path.suffix or '.mp4'}"
         await asyncio.to_thread(shutil.copy2, self._import_path, dest)
+        # Ayni adli altyazi dosyasi varsa transkript asamasi icin tasinir.
+        for sidecar_suffix in (".vtt", ".srt"):
+            sidecar = self._import_path.with_suffix(sidecar_suffix)
+            if sidecar.is_file():
+                await asyncio.to_thread(
+                    shutil.copy2,
+                    sidecar,
+                    dest_dir / f"{source_video_id}{sidecar_suffix}",
+                )
         return DownloadResult(
             path=dest, origin="local_import", file_bytes=dest.stat().st_size
         )

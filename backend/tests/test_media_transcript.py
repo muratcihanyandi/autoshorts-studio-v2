@@ -91,6 +91,16 @@ class TestSidecarAndRange:
         found = find_sidecar(media)
         assert found is not None and found.suffix == ".vtt"
 
+    def test_find_sidecar_language_suffix(self, tmp_path):
+        # yt-dlp '<id>.tr.vtt' adlandirmasi da bulunmalidir
+        media = tmp_path / "1.mp4"
+        media.write_bytes(b"x")
+        assert find_sidecar(media) is None
+        lang = tmp_path / "1.tr.vtt"
+        lang.write_text(VTT_SAMPLE, encoding="utf-8")
+        found = find_sidecar(media)
+        assert found is not None and found.name == "1.tr.vtt"
+
     def test_range_extraction_overlaps(self):
         segments = parse_vtt(VTT_SAMPLE)
         # [0.0, 2.5) -> ilk cue + ikinci cueyle kesisim

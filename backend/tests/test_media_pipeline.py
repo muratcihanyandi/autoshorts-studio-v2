@@ -24,6 +24,7 @@ from app.models import (
     SourceVideo,
     Transcript,
 )
+from tests.media_sample import make_test_media
 
 
 def _pipeline_env(tmp_path, **overrides):
@@ -378,6 +379,22 @@ class TestLocalImportAdapter:
         assert missing_error is not None
         assert empty_error is not None
 
+    def test_copies_sidecar_alongside_media(self, tmp_path):
+        from app.services.media_download import LocalImportAdapter
+
+        source = tmp_path / "kaynak.mp4"
+        source.write_bytes(b"FAKEVIDEO")
+        (tmp_path / "kaynak.vtt").write_text("WEBVTT\n", encoding="utf-8")
+        dest_dir = tmp_path / "downloads"
+
+        async def scenario():
+            adapter = LocalImportAdapter(source)
+            return await adapter.fetch(9, "vid-1", dest_dir)
+
+        result = asyncio.run(scenario())
+        assert (dest_dir / "9.mp4").is_file()
+        assert (dest_dir / "9.vtt").is_file()
+
 
 class TestYtDlpAdapter:
     def _settings(self, **overrides):
@@ -447,3 +464,393 @@ class TestYtDlpAdapter:
         message = asyncio.run(scenario())
         assert message is not None
         assert "yt-dlp" in message
+
+
+# --- Uctan uca boru hatti (ROADMAP M7 kabul kriterleri) ---
+
+VTT_E2E = """WEBVTT
+
+00:00:02.000 --> 00:00:05.000
+bugun kanalda cok onemli bir konuyu anlatiyoruz
+
+00:00:05.000 --> 00:00:10.000
+bu konu seyirciler icin buyuk bir firsat sunuyor arkadaslar
+"""
+
+
+@pytest.fixture(scope="module")
+def sample_pair(tmp_path_factory):
+    """Sentetik medya + ayni adli altyazi: yerel iceri aktarim kaynagi."""
+    base = tmp_path_factory.mktemp("e2e")
+    media = make_test_media(base / "kaynak.mp4")
+    (base / "kaynak.vtt").write_text(VTT_E2E, encoding="utf-8")
+    return base
+
+
+def _e2e_settings(tmp_path, **overrides):
+    """Kisa klip sinirlari: 12s ornekten aday uretilebilsin.
+
+    Medya agaci uygulamadaki lifespan gibi burada da kurulur; disk
+    kontrolu (shutil.disk_usage) mevcut klasor ister.
+    """
+    from app.services.media_storage import ensure_media_tree
+
+    ensure_media_tree(tmp_path / "media")
+    kwargs = dict(
+        media_root=str(tmp_path / "media"),
+        clip_min_seconds=3,
+        clip_max_seconds=6,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _sync_rows(tmp_path, query: str):
+    engine = sa.create_engine(f"sqlite:///{tmp_path}/media.db")
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.text(query)).all()
+    finally:
+        engine.dispose()
+
+
+async def _seed_extra_video(sessionmaker, source_id: int, video_id: int):
+    async with sessionmaker() as session:
+        session.add(
+            SourceVideo(
+                id=video_id,
+                source_channel_id=source_id,
+                youtube_video_id=f"vid-{video_id}",
+                title=f"Ek video {video_id}",
+                status="planned",
+            )
+        )
+        await session.commit()
+
+
+class TestMediaPipelineEndToEnd:
+    def test_full_pipeline_with_local_import(self, tmp_path, sample_pair):
+        from app.services.media_pipeline import MediaPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, _, video_id = await _seed_planned_video(sessionmaker)
+                service = MediaPipelineService(sessionmaker, settings)
+                result = await service.run(
+                    video_id, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                return result, video_id
+            finally:
+                await engine.dispose()
+
+        result, video_id = asyncio.run(scenario())
+        assert result == {"source_video_id": video_id, "processed": True}
+
+        # Dort tablo da doldu mu?
+        asset = _sync_rows(
+            tmp_path, "SELECT id, status, stage, file_bytes, sha256 FROM media_assets"
+        )
+        assert len(asset) == 1
+        assert asset[0].status == "processed"
+        assert asset[0].file_bytes > 0
+        assert len(asset[0].sha256) == 64
+
+        inspection = _sync_rows(
+            tmp_path,
+            "SELECT duration_seconds, width, height, has_audio"
+            " FROM media_inspections",
+        )
+        assert len(inspection) == 1
+        assert inspection[0].duration_seconds > 10.0
+        assert inspection[0].width == 320
+        assert inspection[0].has_audio == 1
+
+        transcripts = _sync_rows(
+            tmp_path, "SELECT source, segment_count FROM transcripts"
+        )
+        assert len(transcripts) == 1
+        assert transcripts[0].source == "sidecar"
+        assert transcripts[0].segment_count == 2
+
+        candidates = _sync_rows(
+            tmp_path,
+            "SELECT start_seconds, end_seconds, duration_seconds, score,"
+            " status FROM clip_candidates",
+        )
+        assert len(candidates) >= 1
+        duration = inspection[0].duration_seconds
+        for row in candidates:
+            # Kabul kriteri: aday zaman damgalari gecerli.
+            assert 0 <= row.start_seconds < row.end_seconds <= duration
+            assert 3 <= row.duration_seconds <= 6
+            assert row.status == "candidate"
+
+        # Video islendi; denetim izi her asamayi kaydetti.
+        assert _sync_one(tmp_path, "source_videos", video_id, "status") == "processed"
+        events = _sync_rows(tmp_path, "SELECT event_type FROM audit_events")
+        event_types = {row.event_type for row in events}
+        assert {
+            "media.download",
+            "media.inspect",
+            "media.transcript",
+            "media.analysis",
+            "media.candidates",
+        } <= event_types
+
+        # Orijinal dosya yerinde kaldi (kabul kriteri: orijinaller korunur).
+        assert (sample_pair / "kaynak.mp4").is_file()
+        assert (sample_pair / "kaynak.vtt").is_file()
+
+    def test_rerun_processed_video_is_idempotent(self, tmp_path, sample_pair):
+        from app.services.media_pipeline import MediaPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, _, video_id = await _seed_planned_video(sessionmaker)
+                service = MediaPipelineService(sessionmaker, settings)
+                first = await service.run(
+                    video_id, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                second = await service.run(
+                    video_id, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                return first, second
+            finally:
+                await engine.dispose()
+
+        first, second = asyncio.run(scenario())
+        assert first["processed"] is True
+        assert second.get("skipped") is True
+        # Satir sayilari degismedi: tek varlik, tek inspeksiyon, ayni adaylar.
+        assert len(_sync_rows(tmp_path, "SELECT id FROM media_assets")) == 1
+        assert len(_sync_rows(tmp_path, "SELECT id FROM media_inspections")) == 1
+        assert len(_sync_rows(tmp_path, "SELECT id FROM transcripts")) == 1
+
+    def test_failure_recorded_and_retry_resumes(self, tmp_path, sample_pair):
+        from app.services.media_pipeline import (
+            MediaPipelineError,
+            MediaPipelineService,
+        )
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, _, video_id = await _seed_planned_video(sessionmaker)
+                service = MediaPipelineService(sessionmaker, settings)
+                try:
+                    await service.run(
+                        video_id, import_path=str(tmp_path / "yok.mp4")
+                    )
+                    failed = None
+                except MediaPipelineError as exc:
+                    failed = str(exc)
+                recovered = await service.run(
+                    video_id, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                return failed, recovered, video_id
+            finally:
+                await engine.dispose()
+
+        failed, recovered, video_id = asyncio.run(scenario())
+        assert failed is not None  # hata kayda gecti
+        assert recovered["processed"] is True  # kurtarma ayni kaynaktan devam
+        assert len(_sync_rows(tmp_path, "SELECT id FROM media_assets")) == 1
+        assert _sync_one(tmp_path, "source_videos", video_id, "status") == "processed"
+        asset = _sync_rows(
+            tmp_path, "SELECT status, last_error FROM media_assets"
+        )[0]
+        assert asset.status == "processed"
+
+    def test_corrupt_media_fails_integrity_and_stays_recoverable(
+        self, tmp_path, sample_pair
+    ):
+        from app.services.media_pipeline import (
+            MediaPipelineError,
+            MediaPipelineService,
+        )
+
+        corrupt = tmp_path / "bozuk.mp4"
+        media_bytes = (sample_pair / "kaynak.mp4").read_bytes()
+        corrupt.write_bytes(media_bytes[: len(media_bytes) // 3])
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, _, video_id = await _seed_planned_video(sessionmaker)
+                service = MediaPipelineService(sessionmaker, settings)
+                try:
+                    await service.run(video_id, import_path=str(corrupt))
+                    error = None
+                except MediaPipelineError as exc:
+                    error = str(exc)
+                return error, video_id
+            finally:
+                await engine.dispose()
+
+        error, video_id = asyncio.run(scenario())
+        assert error is not None
+        asset = _sync_rows(
+            tmp_path, "SELECT status, stage, last_error FROM media_assets"
+        )[0]
+        # Hata kaydedildi; asama 'inspect'te kaldigi icin yeniden deneme
+        # ayni asamadan devam eder (indirme tekrar yapilmaz).
+        assert asset.status == "failed"
+        assert asset.stage == "inspect"
+        assert asset.last_error is not None
+        assert _sync_one(tmp_path, "source_videos", video_id, "status") == "planned"
+
+    def test_unauthorized_source_rejected(self, tmp_path, sample_pair):
+        from app.services.media_pipeline import (
+            MediaPipelineError,
+            MediaPipelineService,
+        )
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                from sqlalchemy.ext.asyncio import AsyncSession
+
+                async with sessionmaker() as session:  # type: AsyncSession
+                    channel = Channel(name="Kanal")
+                    session.add(channel)
+                    await session.flush()
+                    source = SourceChannel(
+                        channel_id=channel.id,
+                        youtube_channel_id="UCpend",
+                        title="Bekleyen",
+                        permission_status="pending",
+                    )
+                    session.add(source)
+                    await session.flush()
+                    video = SourceVideo(
+                        source_channel_id=source.id,
+                        youtube_video_id="vid-p",
+                        title="Video",
+                        status="planned",
+                    )
+                    session.add(video)
+                    await session.commit()
+                    video_id = video.id
+
+                service = MediaPipelineService(sessionmaker, settings)
+                try:
+                    await service.run(
+                        video_id, import_path=str(sample_pair / "kaynak.mp4")
+                    )
+                    error = None
+                except MediaPipelineError as exc:
+                    error = str(exc)
+                return error
+            finally:
+                await engine.dispose()
+
+        error = asyncio.run(scenario())
+        assert error is not None
+        assert "yetkili" in error
+
+    def test_sequential_download_lock_serializes(self, tmp_path, sample_pair):
+        from app.services.media_download import DownloadResult
+        from app.services.media_pipeline import MediaPipelineService
+
+        class _TrackingAdapter:
+            def __init__(self) -> None:
+                self.active = 0
+                self.max_active = 0
+
+            async def fetch(self, source_video_id, youtube_video_id, dest_dir):
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                await asyncio.sleep(0.2)
+                dest = dest_dir / f"{source_video_id}.mp4"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"FAKE")
+                self.active -= 1
+                return DownloadResult(
+                    path=dest, origin="youtube", file_bytes=4
+                )
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, source_id, video_id = await _seed_planned_video(sessionmaker)
+                await _seed_extra_video(sessionmaker, source_id, video_id + 1)
+                tracker = _TrackingAdapter()
+                lock = asyncio.Lock()
+                service = MediaPipelineService(
+                    sessionmaker,
+                    settings,
+                    youtube_adapter=tracker,
+                    download_lock=lock,
+                )
+                results = await asyncio.gather(
+                    service.run(video_id),
+                    service.run(video_id + 1),
+                    return_exceptions=True,
+                )
+                return tracker, results
+            finally:
+                await engine.dispose()
+
+        tracker, results = asyncio.run(scenario())
+        # Kabul kriteri: sirali indirme — ayni anda tek indirme.
+        assert tracker.max_active == 1
+        # Indirme tamamlandi; sahte dosya inspeksiyonda patlar (beklenen).
+        for result in results:
+            assert isinstance(result, Exception)
+
+    def test_similarity_rejects_duplicate_across_videos(
+        self, tmp_path, sample_pair
+    ):
+        from app.services.media_pipeline import MediaPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, source_id, video_id = await _seed_planned_video(sessionmaker)
+                await _seed_extra_video(sessionmaker, source_id, video_id + 1)
+                service = MediaPipelineService(sessionmaker, settings)
+                await service.run(
+                    video_id, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                # Ayni medya + ayni altyazi: icerik benzerligi yakalamali.
+                await service.run(
+                    video_id + 1, import_path=str(sample_pair / "kaynak.mp4")
+                )
+                return video_id
+            finally:
+                await engine.dispose()
+
+        video_id = asyncio.run(scenario())
+        first = _sync_rows(
+            tmp_path,
+            f"SELECT id, status FROM clip_candidates"
+            f" WHERE source_video_id = {video_id}",
+        )
+        second = _sync_rows(
+            tmp_path,
+            f"SELECT id, status, duplicate_of_candidate_id"
+            f" FROM clip_candidates WHERE source_video_id = {video_id + 1}",
+        )
+        assert first and all(row.status == "candidate" for row in first)
+        assert second, "ikinci videonun adaylari uretildi"
+        rejected = [row for row in second if row.status == "rejected"]
+        assert rejected, "benzer adaylar reddedilmeli"
+        first_ids = {row.id for row in first}
+        for row in rejected:
+            assert row.duplicate_of_candidate_id in first_ids

@@ -102,10 +102,18 @@ def parse_sidecar_text(text: str) -> list[dict]:
 
 
 def find_sidecar(media_path: str | Path) -> Path | None:
-    """Same-stem .vtt/.srt next to the media file, if any."""
+    """Caption file next to the media: exact stem first, then
+    language-suffixed names (yt-dlp writes '<id>.tr.vtt')."""
     media = Path(media_path)
+    candidates: list[Path] = []
     for suffix in (".vtt", ".srt"):
-        candidate = media.with_suffix(suffix)
+        exact = media.with_suffix(suffix)
+        candidates.append(exact)
+        candidates.extend(
+            p for p in sorted(media.parent.glob(f"{media.stem}.*{suffix}"))
+            if p != exact
+        )
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
     return None
