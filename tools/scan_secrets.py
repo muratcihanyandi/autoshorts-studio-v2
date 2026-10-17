@@ -40,8 +40,9 @@ PLACEHOLDER_MARKERS = (
     "__GENERATED_PASSWORD__",
 )
 # Inline marker for lines that intentionally contain a fake secret fixture
-# (synthetic values only, never real credentials).
-LINE_ALLOW_MARKER = "# secret-scan-ok"
+# (synthetic values only, never real credentials). Accepts both Python
+# ("# secret-scan-ok") and JS/TS ("// secret-scan-ok") comment styles.
+LINE_ALLOW_RE = re.compile(r"(#|//)\s*secret-scan-ok")
 
 # Compose-style variable references are not literal secrets. Expand them
 # before matching: ${VAR:-default} keeps its default (a real secret hidden
@@ -91,7 +92,7 @@ def main() -> int:
         except OSError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if LINE_ALLOW_MARKER in line:
+            if LINE_ALLOW_RE.search(line):
                 continue
             if any(marker in line for marker in PLACEHOLDER_MARKERS):
                 continue

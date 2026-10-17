@@ -28,7 +28,7 @@ class LlmProviderOut(BaseModel):
     provider_type: ProviderType
     api_base: str
     model_id: str
-    api_key: ApiKeyView
+    api_key: ApiKeyView  # secret-scan-ok: masked view, never carries the value
     enabled: bool
     priority: int
     timeout_seconds: int

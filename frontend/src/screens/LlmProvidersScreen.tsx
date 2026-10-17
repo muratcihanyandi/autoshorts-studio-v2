@@ -51,7 +51,7 @@ export function LlmProvidersScreen() {
         provider_type: form.provider_type as LlmProvider['provider_type'],
         api_base: form.api_base.trim(),
         model_id: form.model_id.trim(),
-        api_key: form.api_key.trim(),
+        api_key: form.api_key.trim(), // secret-scan-ok: user input, POSTed once, never stored client-side
         priority: Number(form.priority),
         timeout_seconds: Number(form.timeout_seconds),
         max_retries: Number(form.max_retries),

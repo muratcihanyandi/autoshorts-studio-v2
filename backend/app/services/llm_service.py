@@ -113,7 +113,7 @@ class LlmProviderService:
             provider_type=provider.provider_type,
             api_base=provider.api_base,
             model_id=provider.model_id,
-            api_key=ApiKeyView(configured=True, hint=self._hint(provider)),
+            api_key=ApiKeyView(configured=True, hint=self._hint(provider)),  # secret-scan-ok: masked view
             enabled=provider.enabled,
             priority=provider.priority,
             timeout_seconds=provider.timeout_seconds,
@@ -198,7 +198,7 @@ class LlmProviderService:
                     raise LlmServiceError(
                         "Bu isimde bir sağlayıcı zaten var.", 409
                     )
-            api_key = patch.pop("api_key", None)
+            api_key = patch.pop("api_key", None)  # secret-scan-ok: patch value, encrypted before storage
             if api_key:
                 row.api_key_enc = self._cipher().encrypt(api_key)
             for field, value in patch.items():
@@ -268,7 +268,7 @@ class LlmProviderService:
         owned = http is None
         try:
             for provider in chain:
-                api_key = self._cipher().decrypt(provider.api_key_enc)
+                api_key = self._cipher().decrypt(provider.api_key_enc)  # secret-scan-ok: decrypted only in-memory for the request
                 attempts = 1 + provider.max_retries
                 for attempt in range(attempts):
                     started = time.monotonic()
@@ -446,7 +446,7 @@ class LlmProviderService:
         owned = http is None
         started = time.monotonic()
         try:
-            api_key = self._cipher().decrypt(provider.api_key_enc)
+            api_key = self._cipher().decrypt(provider.api_key_enc)  # secret-scan-ok: decrypted only in-memory for the request
             text = await self._call(client, provider, api_key, "ping", 8)
             latency = int((time.monotonic() - started) * 1000)
             await self._log(

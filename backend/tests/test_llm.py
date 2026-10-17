@@ -44,7 +44,7 @@ def _add_provider(client: TestClient, **overrides) -> dict:
         "provider_type": "openai",
         "api_base": "https://api.llm-primary.test/v1",
         "model_id": "test-model",
-        "api_key": PRIMARY_KEY,
+        "api_key": PRIMARY_KEY,  # secret-scan-ok: synthetic test key
         "priority": 1,
         "max_retries": 0,
     }
@@ -93,7 +93,7 @@ class TestCrud:
                     "provider_type": "openai",
                     "api_base": "https://x.test/v1",
                     "model_id": "m",
-                    "api_key": "key-dorduncu-0000",
+                    "api_key": "key-dorduncu-0000",  # secret-scan-ok: synthetic test key
                 },
             )
             assert response.status_code == 409
@@ -136,7 +136,7 @@ class TestCrud:
                     "provider_type": "openai",
                     "api_base": "https://x.test/v1",
                     "model_id": "m",
-                    "api_key": "key-anahtarsiz-9999",
+                    "api_key": "key-anahtarsiz-9999",  # secret-scan-ok: synthetic test key
                 },
             )
             assert response.status_code == 503
@@ -151,7 +151,7 @@ class TestCrud:
                     "provider_type": "openai",
                     "api_base": "not-a-url",
                     "model_id": "m",
-                    "api_key": "key-bozuk-url-1234",
+                    "api_key": "key-bozuk-url-1234",  # secret-scan-ok: synthetic test key
                 },
             )
             assert response.status_code == 400
@@ -238,7 +238,7 @@ PRIMARY_PAYLOAD = {
     "provider_type": "openai",
     "api_base": "https://api.llm-primary.test/v1",
     "model_id": "m",
-    "api_key": PRIMARY_KEY,
+    "api_key": PRIMARY_KEY,  # secret-scan-ok: synthetic test key
     "priority": 1,
     "max_retries": 0,
 }
@@ -248,7 +248,7 @@ SECONDARY_PAYLOAD = {
     "provider_type": "openai",
     "api_base": "https://api.llm-secondary.test/v1",
     "model_id": "m",
-    "api_key": SECONDARY_KEY,
+    "api_key": SECONDARY_KEY,  # secret-scan-ok: synthetic test key
     "priority": 2,
     "max_retries": 0,
 }

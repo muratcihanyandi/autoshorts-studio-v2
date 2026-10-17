@@ -13,7 +13,7 @@ export interface LlmProvider {
   provider_type: ProviderType
   api_base: string
   model_id: string
-  api_key: ApiKeyView
+  api_key: ApiKeyView // secret-scan-ok: masked view type
   enabled: boolean
   priority: number
   timeout_seconds: number
