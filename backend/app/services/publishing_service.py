@@ -182,6 +182,8 @@ class PublishingService:
                 .all()
             )
         for profile in profiles:
+            if (profile.settings or {}).get("paused"):
+                continue  # M11: duraklatilmis kanal due sayilmaz
             async with self._sessionmaker() as session:
                 last = (
                     await session.execute(

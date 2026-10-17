@@ -36,3 +36,20 @@ class PublishedVideoOut(BaseModel):
 class PublishedVideosOut(BaseModel):
     videos: list[PublishedVideoOut]
     total: int
+
+
+class PublishingProfileIn(BaseModel):
+    daily_clip_target: int | None = None
+    timezone: str | None = None
+    publish_times: list[str] | None = None
+    auto_approve_metadata: bool | None = None
+    paused: bool | None = None
+
+
+class PublishingProfileOut(BaseModel):
+    channel_id: int
+    daily_clip_target: int
+    timezone: str
+    publish_times: list[str] | None
+    auto_approve_metadata: bool
+    paused: bool

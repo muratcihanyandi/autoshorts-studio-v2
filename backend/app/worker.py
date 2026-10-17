@@ -45,7 +45,13 @@ def build_handlers(
             sessionmaker, settings
         ).effective_settings()
         discovery = DiscoveryService(sessionmaker, effective)
-        return await discovery.discover_for_channel(channel_id)
+        result = await discovery.discover_for_channel(channel_id)
+        # M11: izleme -> planlama baglantisi (kesiften hemen sonra).
+        from app.services.automation_service import auto_plan_channel
+
+        planned = await auto_plan_channel(sessionmaker, channel_id)
+        result["planned"] = planned.get("planned", 0)
+        return result
 
     async def media_process(payload: dict[str, Any]) -> dict:
         from app.services.media_pipeline import MediaPipelineService
@@ -108,17 +114,22 @@ def build_handlers(
         return await service.publish_clip(clip_candidate_id)
 
     async def publish_due(payload: dict[str, Any]) -> dict:
-        from app.services.publishing_service import PublishingService
+        from app.services.automation_service import AutomationService
 
         channel_id = payload.get("channel_id")
         if not isinstance(channel_id, int):
             raise ValueError("payload.channel_id gerekli.")
-        service = PublishingService(sessionmaker, settings)
-        candidate_id = await service.next_ready_candidate(channel_id)
-        if candidate_id is None:
-            return {"channel_id": channel_id, "published": 0}
-        result = await service.publish_clip(candidate_id)
-        return {"channel_id": channel_id, "published": 1, **result}
+        service = AutomationService(sessionmaker, settings)
+        return await service.publish_for_channel(channel_id)
+
+    async def ops_summary(payload: dict[str, Any]) -> dict:
+        from app.services.automation_service import AutomationService
+
+        channel_id = payload.get("channel_id")
+        if not isinstance(channel_id, int):
+            raise ValueError("payload.channel_id gerekli.")
+        service = AutomationService(sessionmaker, settings)
+        return await service.operational_summary(channel_id)
 
     return {
         "source_discover": source_discover,
@@ -128,6 +139,7 @@ def build_handlers(
         "metadata_generate": metadata_generate,
         "publish_clip": publish_clip,
         "publish_due": publish_due,
+        "ops_summary": ops_summary,
     }
 
 
@@ -155,6 +167,7 @@ class JobWorker:
         self._last_render_enqueue = 0.0
         self._last_content_enqueue = 0.0
         self._last_publish_enqueue = 0.0
+        self._last_summary_day = ""
         self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
@@ -386,6 +399,38 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_summary_jobs(self) -> int:
+        """Daily operational summary per connected channel: one
+        ops_summary job per local day (payload dedupes repeats)."""
+        from app.services.automation_service import today_key
+
+        day = today_key()
+        if self._last_summary_day == day:
+            return 0
+        self._last_summary_day = day
+        added = 0
+        async with self._sessionmaker() as session:
+            channel_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT id FROM channels WHERE status = 'connected'"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        for channel_id in channel_ids:
+            job = await self._jobs.enqueue(
+                "ops_summary",
+                {"channel_id": channel_id, "day": day},
+                priority=9,
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
         """Prune stale files from the media tmp folder (safe cleanup)."""
         if not self._settings.media_root:
@@ -427,6 +472,7 @@ class JobWorker:
                 await self.enqueue_render_jobs()
                 await self.enqueue_content_jobs()
                 await self.enqueue_publish_jobs()
+                await self.enqueue_summary_jobs()
                 await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:

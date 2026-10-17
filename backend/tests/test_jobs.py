@@ -425,19 +425,23 @@ class TestJobWorker:
                 from app.worker import build_handlers
 
                 handlers = build_handlers(sessionmaker, settings)
-                return sorted(handlers.keys())
+                return set(handlers.keys())
             finally:
                 await engine.dispose()
 
-        assert asyncio.run(scenario()) == [
-            "clip_render",
+        # Zorunlu kayitlar alt kume olarak dogulanir: yeni is turleri
+        # (sonraki milestone'lar) testi kirmasin.
+        required = {
+            "source_discover",
             "media_process",
+            "clip_render",
+            "subtitle_correct",
             "metadata_generate",
             "publish_clip",
             "publish_due",
-            "source_discover",
-            "subtitle_correct",
-        ]
+            "ops_summary",
+        }
+        assert required <= asyncio.run(scenario())
 
     def test_source_discover_handler_runs_discovery(
         self, tmp_path, mock_youtube  # noqa: F811 - fixture
