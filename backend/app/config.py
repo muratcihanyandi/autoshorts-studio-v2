@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     source_cache_ttl_seconds: int = 300
     daily_quota_units: int = 10000
 
+    # Job queue and worker (Milestone 6). The worker is off by default so
+    # tests and plain API runs stay deterministic; deployment sets
+    # WORKER_ENABLED=true.
+    worker_enabled: bool = False
+    max_concurrent_jobs: int = 2
+    job_stale_after_seconds: int = 600
+    source_poll_interval_minutes: int = 60
+    min_free_disk_gb: float = 2.0
+    download_rate_limit_kbps: int = 0
+
     @property
     def oauth_configured(self) -> bool:
         return bool(

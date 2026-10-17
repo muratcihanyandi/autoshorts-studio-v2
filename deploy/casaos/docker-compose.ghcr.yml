@@ -29,6 +29,7 @@ services:
       APP_ENV: production
       LOG_LEVEL: info
       DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
+      WORKER_ENABLED: "true"
     ports:
       - "8000:8000"
     networks:

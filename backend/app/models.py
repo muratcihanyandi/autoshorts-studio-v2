@@ -360,3 +360,46 @@ class LlmRequestLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class Job(Base):
+    """Durable job row (ADR-006: PostgreSQL is the only durable store).
+
+    States: queued -> running -> succeeded | failed | cancelled.
+    'cancelling' marks a running job the worker should not retry; the
+    worker settles it as cancelled. heartbeat_at + attempts drive stale
+    recovery after crashes/restarts.
+    """
+
+    __tablename__ = "jobs"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    job_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'cancelling', 'succeeded', "
+            "'failed', 'cancelled')",
+            name="ck_jobs_status",
+        ),
+        nullable=False,
+        default="queued",
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    worker_id: Mapped[str | None] = mapped_column(String(64))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

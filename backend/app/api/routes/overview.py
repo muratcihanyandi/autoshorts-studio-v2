@@ -67,6 +67,44 @@ async def _llm_providers_configured(request: Request, database: str) -> int:
         return 0
 
 
+async def _job_counts(request: Request, database: str) -> dict[str, int]:
+    """Job tallies; a schema behind its migration reads as zero."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return {"active": 0, "queued": 0}
+    try:
+        from app.services.job_service import JobService
+
+        counts = await JobService(
+            sessionmaker, request.app.state.settings
+        ).counts()
+        return {"active": counts["active"], "queued": counts["queued"]}
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return {"active": 0, "queued": 0}
+
+
+async def _sources_monitored(request: Request, database: str) -> int:
+    """Authorized source channels; a schema behind its migration reads as zero."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return 0
+    try:
+        from sqlalchemy import text
+
+        async with sessionmaker() as session:
+            count = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM source_channels "
+                        "WHERE permission_status = 'authorized'"
+                    )
+                )
+            ).scalar()
+        return int(count or 0)
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return 0
+
+
 @router.get("/overview")
 async def overview(request: Request) -> dict:
     database = await _database_state(request)
@@ -75,10 +113,11 @@ async def overview(request: Request) -> dict:
 
     channels_total, channels_connected = await _channels_connected(request, database)
     llm_providers_configured = await _llm_providers_configured(request, database)
+    job_counts = await _job_counts(request, database)
+    sources_monitored = await _sources_monitored(request, database)
 
-    sources_monitored = 0
-    jobs_active = 0
-    jobs_queued = 0
+    jobs_active = job_counts["active"]
+    jobs_queued = job_counts["queued"]
     stock_clips = 0
     today_published = 0
 

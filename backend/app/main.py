@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from app import __version__
 from app.api.routes.channels import router as channels_router
 from app.api.routes.health import router as health_router
+from app.api.routes.jobs import router as jobs_router
 from app.api.routes.llm import router as llm_router
 from app.api.routes.overview import router as overview_router
 from app.api.routes.settings import router as settings_router
@@ -42,7 +44,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             psutil.cpu_percent(interval=None)
         except Exception:  # noqa: BLE001 - measurement only
             pass
+        # Milestone 6: background job worker (off in tests; deployment
+        # sets WORKER_ENABLED=true). Heavy work stays off the request path.
+        worker_task = None
+        if settings.worker_enabled and sessionmaker is not None:
+            from app.worker import JobWorker
+
+            worker = JobWorker(sessionmaker, settings)
+            worker_task = asyncio.create_task(worker.run_forever())
+        app.state.worker_task = worker_task
         yield
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
         if engine is not None:
             await engine.dispose()
 
@@ -58,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sources_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(llm_router, prefix="/api")
+    app.include_router(jobs_router, prefix="/api")
     return app
 
 
