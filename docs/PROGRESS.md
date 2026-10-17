@@ -2,18 +2,20 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–7 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–8 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
-to GHCR (every run green, latest `39010166549`). The user deployed the stack
+to GHCR (every run green, latest `39019597052`). The user deployed the stack
 on the Pi via CasaOS (UI/API/database verified from the user's logs); the
 app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 8 — Vertical Studio and Webcam Detection
+**Current milestone:** Milestone 9 — Turkish Subtitle Correction and
+Metadata
 
-**Current task:** M8 kickoff — 9:16 render templates over the M7
-clip_candidates (webcam detection and calibration).
+**Current task:** M9 kickoff — LLM-based Turkish subtitle correction on
+M7 transcripts (timestamps and names preserved) + channel metadata
+templates.
 
 **Last updated:** 2026-10-17
 
@@ -104,7 +106,7 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 5. LLM Provider Manager | COMPLETED | Bounded three-provider fallback, encrypted masked keys, request log (2026-10-17) |
 | 6. Job Queue and Resource Management | COMPLETED | Persistent SKIP LOCKED queue, worker + heartbeat + stale recovery, token-bucket limit, disk guard, tmp cleanup (2026-10-17) |
 | 7. Horizontal Video Processing | COMPLETED | Stage-gated media pipeline on the queue: adapters, ffprobe integrity, transcripts, silence/scene/energy analysis, scored candidates with similarity checks (2026-10-17) |
-| 8. Vertical Studio and Webcam Detection | NOT_STARTED | Tracking and calibration |
+| 8. Vertical Studio and Webcam Detection | COMPLETED | OpenCV multi-frame detection + calibration + 9:16 render with review semantics (2026-10-17) |
 | 9. Subtitles and Metadata | NOT_STARTED | Turkish correction |
 | 10. Upload and Publishing | NOT_STARTED | Private uploads and schedules |
 | 11. End-to-End Automation | NOT_STARTED | Full pipeline integration |
@@ -524,6 +526,67 @@ marked otherwise. Evidence commands are listed; none expose secrets.
     download is a Pi-deployment verification step (no network/YouTube
     dependency in unit tests, per ADR-008).
 
+### Milestone 8 — Vertical Studio and Webcam Detection (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 8
+- Task: 9:16 rendering templates, multi-frame webcam detection,
+  tracking + confidence scoring, streamer calibration, manual region
+  selection, top-webcam/bottom-video composition, subtitle
+  positioning, generated-video validation, representative test videos.
+- Plan: `docs/plans/2026-10-17-m8-vertical-studio.md` (ADR-013).
+- Implementation (commits `f2d2ec5` + `dc2b62b`-series, see git log):
+  - `webcam_detect.py`: OpenCV headless 4.12.0.88 (aarch64 wheel
+    verified) — 1 fps frame sampling over the clip window via
+    cv2.VideoCapture, Haar frontalface_alt2 per frame (grayscale +
+    equalizeHist), greedy IoU clustering across frames; best cluster =
+    detection rate then area; confidence = detection rate with
+    size-jitter penalty; `FaceDetector` protocol for future YuNet.
+  - `webcam_calibration.py` + `webcam_calibrations` table (migration
+    `0008`): manual region wins outright (detection skipped);
+    per-source min_confidence override; below-threshold detection
+    returns region=None so the pipeline routes to review — a wrong
+    crop is never rendered. Calibration API: GET/PUT/DELETE
+    `/api/sources/{id}/webcam-calibration`.
+  - `vertical_render.py`: pure layout math (top webcam crop padded +
+    aspect-corrected, bottom center crop, subtitle band guaranteed
+    below the webcam section) + one-pass ffmpeg render (split -> two
+    crops -> scale -> vstack, x264 veryfast + aac, ASS-style subtitle
+    burn with MarginV) + `validate_output` (ffprobe: 1080x1920,
+    duration tolerance, audio presence, A/V stream sync <= 0.25s).
+  - `vertical_pipeline.py` + `rendered_clips` table: `clip_render` job
+    (unique per candidate, idempotent re-runs) — resolve region ->
+    review short-circuit with audit `render.review` -> render ->
+    validate -> persist with layout/validation/webcam JSON. Worker
+    feed: `enqueue_render_jobs` for candidates without a render row
+    (interval-gated, deduped). Image gains `fonts-dejavu-core` for
+    libass.
+  - Test fixtures: public-domain NASA portrait (resized, 102KB,
+    Haar-verified) committed under `tests/assets/`;
+    `make_face_stream_video` composites it with jitter over a dark
+    1280x720 background with audio — a realistic streamer layout.
+- Verification (2026-10-17, dev machine):
+  - Backend suite: **195 passed, 0 failed, 0 skipped** in 34.7s
+    (M8 adds 23: test_webcam_detect 9 — real detection on the face
+    fixture, no-face video negative, clustering/confidence math;
+    test_vertical_render 7 — layout invariants, real 1080x1920 render
+    with burned subtitles, validation, invalid-range rejection;
+    test_vertical_pipeline 7 — worker-level e2e render, idempotent
+    re-run, uncertainty -> review (nothing rendered), manual
+    calibration override, rejected-candidate refusal, render-feed
+    enqueue, calibration API roundtrip).
+  - Acceptance criteria evidence: expected layout = probed 1080x1920
+    two-section render; uncertainty -> review = forced-threshold test
+    (`render.review` audit event, no output file); A/V sync = stream
+    duration delta <= 0.25s asserted; cropping/subtitle overlap =
+    layout invariant tests (subtitle band strictly below the webcam
+    section) + rendered probe; limitations documented = ADR-013
+    (Haar vs neural detectors, CPU cost, calibration fallback).
+  - Detection performance note: Haar on 1280x720 sampled frames costs
+    well under a second per frame on the dev machine; on the Pi expect
+    a few seconds per sampled frame worst case — acceptable at 1 fps
+    sampling inside a queued job.
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -626,20 +689,24 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M7 session) on the dev machine (Windows 11,
+Verified 2026-10-17 (post-M8 session) on the dev machine (Windows 11,
 Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
 directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: **172** (test_media_pipeline 19, test_media_probe 9,
+  - Passed: **195** (test_media_pipeline 19, test_media_probe 9,
     test_media_analysis 10, test_media_transcript 7, test_clip_candidates
-    10, test_llm 18, test_jobs 19, test_oauth 14, test_settings 10,
+    10, test_llm 18, test_jobs 18, test_oauth 14, test_settings 10,
     test_channels 9, test_sources 7, test_planning 7, test_media 7,
     test_resources 6, test_discovery 5, test_health 4, test_security 3,
     test_overview 2, test_migrations 2, test_logging 2, test_config 2,
-    test_system 1 — collected per file)
+    test_system 1, test_webcam_detect 9, test_vertical_render 7,
+    test_vertical_pipeline 7 — collected per file; correction: the M7
+    record's per-file list overcounted test_jobs by one, the M7 total
+    172 was correct)
   - Failed: 0; Skipped: 0 (media-tooling tests run real ffmpeg/ffprobe
-    from PATH — dev machine and CI image both provide them)
+    from PATH — dev machine and CI image both provide them;
+    webcam tests run real OpenCV on the committed PD face fixture)
   - sqlite test connections enforce foreign keys (production parity).
   - 2 warnings: starlette TestClient deprecation notice (dev-only) and a
     pytest unhandled-thread-exception notice from a worker test
@@ -691,12 +758,15 @@ directories.
 
 ## 9. Immediate Next Actions
 
-1. Milestone 8 (next): vertical studio — 9:16 render templates on top
-   of the M7 clip_candidates (webcam detection and calibration).
-2. User (to exercise M7 on the Pi): pull the new image (includes
-   ffmpeg + yt-dlp), run `alembic upgrade head` (migration 0007), and
-   optionally import authorized test media via a `media_process` job
-   payload with `import_path`, or connect a real YouTube source (B4).
+1. Milestone 9 (next): Turkish subtitle correction on M7 transcripts
+   through the M5 LLM chain (timestamps/names preserved, uncertain
+   corrections flagged) + channel-specific metadata templates with
+   revision storage.
+2. User (to exercise M7/M8 on the Pi): pull the new image (includes
+   ffmpeg + yt-dlp + OpenCV + fonts), run `alembic upgrade head`
+   (migrations 0007+0008), and optionally import authorized test media
+   via a `media_process` job payload with `import_path`, or connect a
+   real YouTube source (B4).
 3. User (to connect a real YouTube channel): enter the Google Cloud
    OAuth client values + Fernet key via the site settings screen or
    compose env vars (B4).
@@ -704,7 +774,7 @@ directories.
 
 ## 10. Handoff Notes
 
-- What was implemented: Milestones 0–7. M4: source registration with
+- What was implemented: Milestones 0–8. M4: source registration with
   rights records, quota-gated cached YouTube discovery with dedupe,
   filter rules, durable auditable planning ledger. Interlude: the
   AutoShorts Studio brand kit applied everywhere and site-managed
@@ -720,28 +790,35 @@ directories.
   + sha256, VTT/SRT transcript sidecars, silence/scene/energy analysis
   via ffmpeg subprocesses, scored non-overlapping clip candidates with
   word-3-gram similarity rejection, all results in migration-0007
-  tables, resumable at the failed stage on retry. Post-M6: CasaOS
-  deployment polish (frontend first, UID/GID 1000,
-  `/mnt/usb/Autoshorts_Studio` volumes, branding) and the canon
-  "Kategori Standardı" redesign (stat cards, title-bar table panels,
-  soft pills, round meters) with `DESIGN.md` rewritten.
-- Tests: backend 172/172 (57 new M7 tests incl. real-ffmpeg e2e),
-  frontend 10/10, oxlint/tsc/build clean, secret scan clean (all
-  re-verified 2026-10-17 post-M7).
+  tables, resumable at the failed stage on retry. M8 (ADR-013):
+  OpenCV multi-frame webcam detection with IoU clustering and
+  confidence scoring, per-source calibration table (manual region wins;
+  below-threshold detection routes to review — never a wrong crop),
+  9:16 top-webcam/bottom-video ffmpeg composition with burned
+  subtitles in the video section, output validation (1080x1920, A/V
+  sync), `clip_render` jobs with idempotent rendered_clips rows and a
+  worker candidate feed. Post-M6: CasaOS deployment polish (frontend
+  first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio` volumes, branding)
+  and the canon "Kategori Standardı" redesign (stat cards, title-bar
+  table panels, soft pills, round meters) with `DESIGN.md` rewritten.
+- Tests: backend 195/195 (57 M7 + 23 M8 tests incl. real-ffmpeg and
+  real-OpenCV e2e), frontend 10/10, oxlint/tsc/build clean, secret
+  scan clean (re-verified 2026-10-17 post-M8).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
   the app's live database is `autoshorts_studio` on the shared
   PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
-  recorded in `docs/DECISIONS.md`). M7 needs an image rebuild + pull
-  on the Pi (now includes ffmpeg; yt-dlp via pip) and `alembic upgrade
-  head` (migration 0007) before media jobs can run there.
+  recorded in `docs/DECISIONS.md`). M7+M8 need an image rebuild + pull
+  on the Pi (now includes ffmpeg, fonts, OpenCV; yt-dlp via pip) and
+  `alembic upgrade head` (migrations 0007+0008) before media/render
+  jobs can run there.
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.
-- Exact next task: Milestone 8 — vertical studio and webcam detection;
-  render 9:16 compositions from M7's `clip_candidates` (top-webcam /
-  bottom-video templates, multi-frame detection, calibration, review
-  on uncertainty).
-- Decisions to preserve: ADR-001…ADR-012 plus the implementation
+- Exact next task: Milestone 9 — Turkish subtitle correction and
+  metadata: LLM-corrected transcript segments (timestamps/names
+  preserved, uncertainty flagged), channel metadata templates,
+  titles/descriptions/tags with length validation, revision storage.
+- Decisions to preserve: ADR-001…ADR-013 plus the implementation
   contracts: OAuth tokens and LLM keys encrypted at rest and never in
   API responses; audit trail append-only; job claim via SKIP LOCKED
   with heartbeat-driven recovery; runtime settings override env only

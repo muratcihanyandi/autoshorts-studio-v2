@@ -211,3 +211,39 @@ revisited only with cause; changes are recorded as new ADRs.
   checks are transcript-text based (word 3-gram Jaccard), which is
   cheap and explainable but blind to visually similar silent clips —
   acceptable for M7; revisit with perceptual hashing if needed.
+
+## ADR-013: In-process OpenCV webcam detection with calibration and review semantics
+
+- **Status:** Accepted (2026-10-17)
+- **Context:** M8 must find the streamer's webcam region in horizontal
+  videos to compose 9:16 clips. The Pi 5 has no GPU; detection must be
+  CPU-feasible. Wrong crops are worse than no render: the user
+  explicitly requires flawless webcam handling.
+- **Decision:**
+  1. Detection runs **in-process with OpenCV headless** (Haar
+     frontalface_alt2 cascade shipped with the wheel; aarch64 wheel
+     verified). Frames are sampled at 1 fps over the clip window and
+     detections are clustered by IoU — a webcam is a box that keeps
+     re-appearing. Confidence = detection rate with a size-jitter
+     penalty. `FaceDetector` is a protocol so a stronger model (e.g.
+     YuNet) can drop in without pipeline changes.
+  2. **Uncertainty routes to review, never to a wrong render**: below
+     the confidence threshold (default 0.5) the clip gets
+     `rendered_clips.status='review'` with the reason, and nothing is
+     rendered until the operator acts.
+  3. **Per-source calibration** (`webcam_calibrations` table): a manual
+     region wins outright (detection skipped); `min_confidence`
+     overrides the threshold per streamer. Calibration changes affect
+     only their own source channel.
+  4. Render is one ffmpeg pass (split -> two crops -> scale -> vstack,
+     x264/aac) with subtitles burned into the bottom video section
+     (ASS Alignment=2 + MarginV) so they can never overlap the webcam.
+     Output validation re-probes: 1080x1920, duration tolerance, audio
+     present, A/V stream-duration sync within 0.25s. The image ships
+     `fonts-dejavu-core` for libass.
+- **Consequences:** opencv-python-headless (~60MB) joins the image;
+  Haar is CPU-light (well under a second per sampled frame) but weaker
+  than neural detectors on profile/turned faces — the protocol leaves
+  the upgrade path open, and calibration covers persistent edge cases.
+  Real-face testing uses a committed public-domain NASA portrait
+  fixture composited with jitter; limitation documented in PROGRESS.

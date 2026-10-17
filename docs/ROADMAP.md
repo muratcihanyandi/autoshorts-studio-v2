@@ -209,7 +209,11 @@ Acceptance criteria:
 
 ## Milestone 8 — Vertical Studio and Webcam Detection
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests with real OpenCV detection on
+a public-domain face fixture and real ffmpeg renders; Haar cascade
+limitations and the neural-detector upgrade path documented in
+ADR-013.)
 
 Tasks:
 - Implement 9:16 rendering templates.
