@@ -8,7 +8,7 @@ export interface Overview {
   uptime_seconds: number | null
   phase: StudioPhase
   database: 'reachable' | 'not_configured' | 'unreachable'
-  channels: { connected: number }
+  channels: { connected: number; total?: number }
   sources: { monitored: number }
   llm_providers: { configured: number }
   jobs: { active: number; queued: number }

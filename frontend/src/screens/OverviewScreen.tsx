@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchOverview, type Overview, type StudioPhase } from '../api/overview'
 import { fetchSystemResources } from '../api/system'
+import { fetchChannels, STATUS_LABEL } from '../api/channels'
 import { usePolling } from '../hooks/usePolling'
 import { BillRow, Gauge, Stamp } from '../components/Studio'
 import {
@@ -32,8 +33,10 @@ function gaugeTone(percent: number): 'plain' | 'warn' {
 export function OverviewScreen() {
   const fetchOverviewCb = useCallback(() => fetchOverview(), [])
   const fetchSystemCb = useCallback(() => fetchSystemResources(), [])
+  const fetchChannelsCb = useCallback(() => fetchChannels(), [])
   const overview = usePolling(fetchOverviewCb, 15000)
   const system = usePolling(fetchSystemCb, 10000)
+  const channels = usePolling(fetchChannelsCb, 20000)
 
   return (
     <>
@@ -159,20 +162,30 @@ export function OverviewScreen() {
 
               <section className="ink-panel" aria-label="Kanallar">
                 <h2>KANALLAR</h2>
-                {overview.state.data.channels.connected === 0 ? (
+                {channels.state.status === 'ok' &&
+                channels.state.data.channels.length > 0 ? (
+                  <>
+                    {channels.state.data.channels.slice(0, 5).map((channel) => (
+                      <div className="channel-row" key={channel.id}>
+                        <i style={{ background: channel.ribbon_color }} />
+                        {channel.name}
+                        <small>{STATUS_LABEL[channel.status]}</small>
+                      </div>
+                    ))}
+                    {channels.state.data.channels.length > 5 && (
+                      <p className="screen-sub">
+                        <Link to="/kanallar">
+                          +{channels.state.data.channels.length - 5} kanal daha
+                        </Link>
+                      </p>
+                    )}
+                  </>
+                ) : (
                   <p className="screen-sub">
                     Henüz bağlı kanal yok.{' '}
                     <Link to="/kanallar">Kanallar ekranına git</Link> — ilk
                     kanalı bağlayınca burada kurdele rengiyle listelenir.
                   </p>
-                ) : (
-                  <div className="channel-row">
-                    <i style={{ background: 'var(--cobalt)' }} />
-                    {overview.state.data.channels.connected} kanal bağlı
-                    <small>
-                      <Link to="/kanallar">yönet</Link>
-                    </small>
-                  </div>
                 )}
               </section>
             </div>

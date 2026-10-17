@@ -8,12 +8,32 @@ const overviewPayload = {
   uptime_seconds: 120,
   phase: 'awaiting_channels',
   database: 'reachable',
-  channels: { connected: 0 },
+  channels: { connected: 0, total: 0 },
   sources: { monitored: 0 },
   llm_providers: { configured: 0 },
   jobs: { active: 0, queued: 0 },
   stock: { clips: 0 },
   today_published: 0,
+}
+
+const channelsPayload = {
+  channels: [
+    {
+      id: 1,
+      name: 'Klip Fabrikası',
+      handle: '@klipfabrika',
+      youtube_channel_id: 'UCmock123',
+      status: 'connected',
+      ribbon_color: '#3550c4',
+      notes: null,
+      created_at: '2026-10-17T00:00:00Z',
+      updated_at: '2026-10-17T00:00:00Z',
+      last_connected_at: '2026-10-17T00:00:00Z',
+      last_disconnected_at: null,
+    },
+  ],
+  total: 1,
+  connected: 1,
 }
 
 const systemPayload = {
@@ -32,7 +52,9 @@ function mockApiOk() {
       const url = String(input)
       const body = url.includes('/api/system')
         ? systemPayload
-        : overviewPayload
+        : url.includes('/api/channels')
+          ? channelsPayload
+          : overviewPayload
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -85,5 +107,18 @@ describe('App', () => {
 
     // Boş durum ekranı doğrudan rotayla da render edilir:
     expect(channelsLink).toHaveAttribute('href', '/kanallar')
+  })
+
+  it('lists channels and offers the new-channel form on /kanallar', async () => {
+    mockApiOk()
+    window.history.pushState({}, '', '/kanallar')
+    render(<App />)
+
+    expect(await screen.findByText('Klip Fabrikası')).toBeInTheDocument()
+    expect(screen.getByText('KAYITLI KANALLAR')).toBeInTheDocument()
+    expect(screen.getByText('bağlı')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Kopar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Kanalı Ekle' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Kanal adı')).toBeInTheDocument()
   })
 })

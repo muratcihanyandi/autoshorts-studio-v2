@@ -80,8 +80,11 @@ class ChannelService:
             if channel is None:
                 return False
             name = channel.name
-            await repo.delete(channel)
+            # Olay, kanal satırı silinmeden önce yazılmalı (FK); kanal
+            # silinince audit_events.channel_id ON DELETE SET NULL ile korunur.
             record_event(session, channel_id, "channel.deleted", {"name": name})
+            await session.flush()
+            await repo.delete(channel)
             await session.commit()
             return True
 
