@@ -77,6 +77,8 @@ class SourceService:
             title_changed = "title" in changes
             if title_changed:
                 source.title = changes["title"]
+            if "filter_rules" in changes:
+                source.filter_rules = changes["filter_rules"] or {}
 
             new_permission = changes.get("permission_status")
             permission_changed = (

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.schemas_sources import (
     DiscoverResult,
+    PlanningResult,
     SourceCreate,
     SourceOut,
     SourceUpdate,
@@ -14,6 +15,7 @@ from app.schemas_sources import (
 )
 from app.services.channel_service import ChannelService
 from app.services.discovery_service import DiscoveryService
+from app.services.planning_service import PlanningService
 from app.services.source_service import SourceService, SourceServiceError
 from app.services.youtube_client import YouTubeNotConfigured
 
@@ -104,7 +106,7 @@ async def discover_channel(request: Request, channel_id: int) -> DiscoverResult:
 
 @router.get("/channels/{channel_id}/videos", response_model=SourceVideosOut)
 async def list_channel_videos(
-    request: Request, channel_id: int
+    request: Request, channel_id: int, status: str | None = None
 ) -> SourceVideosOut:
     _, channels_service = _services(request)
     if await channels_service.get_channel(channel_id) is None:
@@ -112,8 +114,18 @@ async def list_channel_videos(
     discovery = DiscoveryService(
         request.app.state.sessionmaker, request.app.state.settings
     )
-    videos = await discovery.list_videos(channel_id)
+    videos = await discovery.list_videos(channel_id, status=status)
     return SourceVideosOut(
         videos=[SourceVideoOut.model_validate(v) for v in videos],
         total=len(videos),
     )
+
+
+@router.post("/channels/{channel_id}/plan", response_model=PlanningResult)
+async def plan_channel(request: Request, channel_id: int) -> PlanningResult:
+    _, channels_service = _services(request)
+    if await channels_service.get_channel(channel_id) is None:
+        raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
+    planning = PlanningService(request.app.state.sessionmaker)
+    result = await planning.plan_for_channel(channel_id)
+    return PlanningResult(**result)

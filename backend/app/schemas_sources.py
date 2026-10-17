@@ -6,11 +6,36 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SOURCE_PERMISSION_VALUES = ("authorized", "rejected")
+RULE_KEYS = {"exclude_title_patterns", "max_age_days"}
+
+
+def _validate_rules(value: dict | None) -> dict | None:
+    if value is None:
+        return value
+    unknown = set(value) - RULE_KEYS
+    if unknown:
+        raise ValueError(f"bilinmeyen kural anahtarları: {sorted(unknown)}")
+    patterns = value.get("exclude_title_patterns")
+    if patterns is not None:
+        if not isinstance(patterns, list) or not all(
+            isinstance(p, str) for p in patterns
+        ):
+            raise ValueError("exclude_title_patterns metin listesi olmalı")
+    max_age = value.get("max_age_days")
+    if max_age is not None and (not isinstance(max_age, int) or max_age < 1):
+        raise ValueError("max_age_days pozitif tam sayı olmalı")
+    return value
 
 
 class SourceCreate(BaseModel):
     youtube_channel_id: str = Field(min_length=3, max_length=64)
     title: str = Field(min_length=1, max_length=160)
+    filter_rules: dict | None = None
+
+    @field_validator("filter_rules")
+    @classmethod
+    def _rules_valid(cls, value: dict | None) -> dict | None:
+        return _validate_rules(value)
 
 
 class SourceUpdate(BaseModel):
@@ -18,6 +43,7 @@ class SourceUpdate(BaseModel):
 
     permission_status: str | None = None
     title: str | None = Field(default=None, min_length=1, max_length=160)
+    filter_rules: dict | None = None
 
     @field_validator("permission_status")
     @classmethod
@@ -30,6 +56,11 @@ class SourceUpdate(BaseModel):
             )
         return value
 
+    @field_validator("filter_rules")
+    @classmethod
+    def _rules_valid(cls, value: dict | None) -> dict | None:
+        return _validate_rules(value)
+
 
 class SourceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -40,6 +71,7 @@ class SourceOut(BaseModel):
     title: str
     permission_status: str
     authorized_at: datetime | None
+    filter_rules: dict
     created_at: datetime
     updated_at: datetime
 
@@ -53,7 +85,13 @@ class SourcesOut(BaseModel):
 class DiscoverResult(BaseModel):
     sources_checked: int
     new_videos: int
+    new_excluded: int
     quota_blocked: bool
+
+
+class PlanningResult(BaseModel):
+    planned: int
+    skipped: int
 
 
 class SourceVideoOut(BaseModel):

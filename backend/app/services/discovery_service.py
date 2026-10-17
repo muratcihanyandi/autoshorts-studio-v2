@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.models import SourceChannel, SourceVideo
 from app.services.channel_service import record_event
+from app.services.source_rules import evaluate_source_rules
 from app.services.youtube_client import (
     QuotaTracker,
     YouTubeDataClient,
@@ -58,6 +59,7 @@ class DiscoveryService:
         """Poll every authorized source of the channel; return counters."""
         self._client.require_configured()
         new_videos = 0
+        new_excluded = 0
         sources_checked = 0
         quota_blocked = False
 
@@ -89,16 +91,26 @@ class DiscoveryService:
                 for video in videos:
                     if video["video_id"] in known_ids:
                         continue
+                    published_at = _parse_published(video["published_at"])
+                    exclusion = evaluate_source_rules(
+                        source.filter_rules,
+                        title=video["title"],
+                        published_at=published_at,
+                    )
                     session.add(
                         SourceVideo(
                             source_channel_id=source.id,
                             youtube_video_id=video["video_id"],
                             title=video["title"],
-                            published_at=_parse_published(video["published_at"]),
+                            published_at=published_at,
+                            status="excluded" if exclusion else "discovered",
                         )
                     )
                     known_ids.add(video["video_id"])
-                    new_videos += 1
+                    if exclusion:
+                        new_excluded += 1
+                    else:
+                        new_videos += 1
 
             record_event(
                 session,
@@ -107,6 +119,7 @@ class DiscoveryService:
                 {
                     "sources_checked": sources_checked,
                     "new_videos": new_videos,
+                    "new_excluded": new_excluded,
                     "quota_blocked": quota_blocked,
                 },
             )
@@ -115,16 +128,25 @@ class DiscoveryService:
         return {
             "sources_checked": sources_checked,
             "new_videos": new_videos,
+            "new_excluded": new_excluded,
             "quota_blocked": quota_blocked,
         }
 
-    async def list_videos(self, channel_id: int) -> list[SourceVideo]:
+    async def list_videos(
+        self, channel_id: int, status: str | None = None
+    ) -> list[SourceVideo]:
         """Discovered videos across all sources of a studio channel."""
         async with self._sessionmaker() as session:
-            result = await session.execute(
+            query = (
                 select(SourceVideo)
-                .join(SourceChannel, SourceVideo.source_channel_id == SourceChannel.id)
+                .join(
+                    SourceChannel,
+                    SourceVideo.source_channel_id == SourceChannel.id,
+                )
                 .where(SourceChannel.channel_id == channel_id)
                 .order_by(SourceVideo.discovered_at, SourceVideo.id)
             )
+            if status is not None:
+                query = query.where(SourceVideo.status == status)
+            result = await session.execute(query)
             return list(result.scalars().all())

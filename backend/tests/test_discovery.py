@@ -1,75 +1,17 @@
 """Source discovery tests (Milestone 4, slice 2).
 
 YouTube Data API is mocked via httpx.MockTransport on the client's
-_default_http_client indirection; the mock counts calls so caching and
-quota behavior are observable.
+_default_http_client indirection (shared fixture in conftest); the mock
+counts calls so caching and quota behavior are observable.
 """
 from __future__ import annotations
 
 import json
 
-import httpx
-import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
-CALLS = {"channels": 0, "playlist_items": 0}
-
-
-def youtube_mock_handler(request: httpx.Request) -> httpx.Response:
-    url = str(request.url)
-    if "/channels" in url:
-        CALLS["channels"] += 1
-        return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "id": "UCkaynak1",
-                        "contentDetails": {
-                            "relatedPlaylists": {"uploads": "UUkaynak1"}
-                        },
-                    }
-                ]
-            },
-        )
-    if "/playlistItems" in url:
-        CALLS["playlist_items"] += 1
-        return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "snippet": {
-                            "title": "Kaynak Video 1",
-                            "publishedAt": "2026-10-15T10:00:00Z",
-                            "resourceId": {"videoId": "vid-kaynak-1"},
-                        }
-                    },
-                    {
-                        "snippet": {
-                            "title": "Kaynak Video 2",
-                            "publishedAt": "2026-10-16T11:30:00Z",
-                            "resourceId": {"videoId": "vid-kaynak-2"},
-                        }
-                    },
-                ]
-            },
-        )
-    return httpx.Response(404, json={"error": "beklenmeyen adres"})
-
-
-@pytest.fixture
-def mock_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
-    CALLS["channels"] = 0
-    CALLS["playlist_items"] = 0
-    from app.services import youtube_client
-
-    youtube_client.clear_cache()
-    monkeypatch.setattr(
-        "app.services.youtube_client._default_http_client",
-        lambda: httpx.AsyncClient(transport=httpx.MockTransport(youtube_mock_handler)),
-    )
+from tests.conftest import YOUTUBE_MOCK_CALLS
 
 
 def _setup_authorized_source(client: TestClient) -> int:
@@ -102,6 +44,7 @@ def test_discover_records_new_videos_once(
     assert first.json() == {
         "sources_checked": 1,
         "new_videos": 2,
+        "new_excluded": 0,
         "quota_blocked": False,
     }
 
@@ -119,8 +62,8 @@ def test_discover_records_new_videos_once(
     second = client_youtube.post(f"/api/channels/{channel_id}/discover")
     assert second.status_code == 200
     assert second.json()["new_videos"] == 0
-    assert CALLS["channels"] == 1
-    assert CALLS["playlist_items"] == 1
+    assert YOUTUBE_MOCK_CALLS["channels"] == 1
+    assert YOUTUBE_MOCK_CALLS["playlist_items"] == 1
 
     videos = client_youtube.get(f"/api/channels/{channel_id}/videos").json()
     assert videos["total"] == 2
@@ -140,9 +83,10 @@ def test_unauthorized_source_not_polled(
     assert response.json() == {
         "sources_checked": 0,
         "new_videos": 0,
+        "new_excluded": 0,
         "quota_blocked": False,
     }
-    assert CALLS["channels"] == 0
+    assert YOUTUBE_MOCK_CALLS["channels"] == 0
 
 
 def test_quota_limit_respected(

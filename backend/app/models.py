@@ -151,6 +151,9 @@ class SourceChannel(Base):
         nullable=False,
     )
     authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    filter_rules: Mapped[dict[str, Any]] = mapped_column(
+        JSONColumn, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -253,3 +256,33 @@ class QuotaUsage(Base):
 
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     units_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class PlanningDecision(Base):
+    """Durable planning ledger: exactly one decision per source video.
+
+    'planned' videos are eligible for job creation (Milestone 6);
+    'skipped' carries the reason. The unique source_video_id makes
+    repeated planning runs idempotent.
+    """
+
+    __tablename__ = "planning_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_video_id: Mapped[int] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "decision IN ('planned', 'skipped')",
+            name="ck_planning_decisions_decision",
+        ),
+        nullable=False,
+    )
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

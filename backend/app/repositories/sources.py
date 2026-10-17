@@ -41,6 +41,7 @@ class SourceRepository:
             channel_id=channel_id,
             youtube_channel_id=data.youtube_channel_id,
             title=data.title,
+            filter_rules=data.filter_rules or {},
         )
         self._session.add(source)
         await self._session.flush()

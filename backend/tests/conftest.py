@@ -113,3 +113,70 @@ def client_youtube_tight_quota(tmp_path) -> TestClient:
     )
     with TestClient(app) as client:
         yield client
+
+
+# --- YouTube Data API mock'u (keşif/planlama testleri paylaşırlar) ---
+
+YOUTUBE_MOCK_CALLS = {"channels": 0, "playlist_items": 0}
+
+
+def youtube_mock_handler(request) -> "httpx.Response":
+    import httpx
+
+    url = str(request.url)
+    if "/channels" in url:
+        YOUTUBE_MOCK_CALLS["channels"] += 1
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "id": "UCkaynak1",
+                        "contentDetails": {
+                            "relatedPlaylists": {"uploads": "UUkaynak1"}
+                        },
+                    }
+                ]
+            },
+        )
+    if "/playlistItems" in url:
+        YOUTUBE_MOCK_CALLS["playlist_items"] += 1
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "snippet": {
+                            "title": "Kaynak Video 1",
+                            "publishedAt": "2026-10-15T10:00:00Z",
+                            "resourceId": {"videoId": "vid-kaynak-1"},
+                        }
+                    },
+                    {
+                        "snippet": {
+                            "title": "Kaynak Video 2",
+                            "publishedAt": "2026-10-16T11:30:00Z",
+                            "resourceId": {"videoId": "vid-kaynak-2"},
+                        }
+                    },
+                ]
+            },
+        )
+    return httpx.Response(404, json={"error": "beklenmeyen adres"})
+
+
+@pytest.fixture
+def mock_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    from app.services import youtube_client
+
+    YOUTUBE_MOCK_CALLS["channels"] = 0
+    YOUTUBE_MOCK_CALLS["playlist_items"] = 0
+    youtube_client.clear_cache()
+    monkeypatch.setattr(
+        "app.services.youtube_client._default_http_client",
+        lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(youtube_mock_handler)
+        ),
+    )
