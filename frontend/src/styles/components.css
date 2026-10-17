@@ -591,3 +591,21 @@
   font-size: 12.5px;
   color: var(--red-on-plate);
 }
+
+/* LLM saglayici satiri */
+.llm-table th {
+  width: 200px;
+  vertical-align: top;
+}
+
+.llm-provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.llm-meta {
+  font-size: 12.5px;
+  color: var(--plate-body-ink);
+}

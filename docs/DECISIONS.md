@@ -139,3 +139,28 @@ revisited only with cause; changes are recorded as new ADRs.
   user's real GitHub email before pushing (or commits will not be linked
   to the account).
 - **Consequences:** Remote backup is deferred; all work is safe locally.
+
+## ADR-011: LLM provider manager with bounded fallback
+
+- **Status:** Accepted (2026-10-17)
+- **Context:** Subtitle correction and metadata generation need an LLM.
+  Milestone 5 requires three configurable providers with bounded
+  fallback: a failing main provider must not stall the studio, but
+  failures must also never cause unbounded retries. API keys are secrets
+  and must never appear in responses or logs.
+- **Decision:** Store up to three provider rows (name, type, api_base,
+  model_id, encrypted api_key, priority, timeout, retries) in
+  `llm_providers`; keys are Fernet-encrypted with the same
+  TOKEN_ENCRYPTION_KEY used for OAuth tokens. Requests walk the enabled
+  providers in priority order; each provider gets `1 + max_retries`
+  attempts (network/timeout only), then the chain moves on. Every
+  attempt writes a `llm_request_logs` row (status category + latency,
+  grouped by a request UUID); values and keys are never logged. A
+  request fails outright once the chain is exhausted — no background
+  retry loop. Structured (JSON) responses are validated with the
+  caller's Pydantic model; invalid output counts as a provider failure
+  and triggers fallback.
+- **Consequences:** Worst case per user request is bounded:
+  `sum(1 + retries_i)` attempts. Adding a provider is a site operation
+  (Settings-style API, masked keys). The manager is testable with
+  injected HTTP transports, independent of any vendor account.

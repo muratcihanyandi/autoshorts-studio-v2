@@ -42,6 +42,31 @@ async def _channels_connected(request: Request, database: str) -> tuple[int, int
     return len(channels), connected
 
 
+async def _llm_providers_configured(request: Request, database: str) -> int:
+    """Enabled LLM providers; a schema behind its migration reads as zero."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return 0
+    try:
+        from sqlalchemy import select
+
+        from app.models import LlmProvider
+
+        async with sessionmaker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(LlmProvider.id).where(LlmProvider.enabled.is_(True))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return len(rows)
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return 0
+
+
 @router.get("/overview")
 async def overview(request: Request) -> dict:
     database = await _database_state(request)
@@ -49,9 +74,9 @@ async def overview(request: Request) -> dict:
     uptime_seconds = round(time.time() - started_at) if started_at else None
 
     channels_total, channels_connected = await _channels_connected(request, database)
+    llm_providers_configured = await _llm_providers_configured(request, database)
 
     sources_monitored = 0
-    llm_providers_configured = 0
     jobs_active = 0
     jobs_queued = 0
     stock_clips = 0

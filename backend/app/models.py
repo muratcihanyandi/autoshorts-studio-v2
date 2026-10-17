@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -302,4 +303,60 @@ class AppMeta(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class LlmProvider(Base):
+    """One LLM endpoint in the bounded-fallback chain (ADR-011).
+
+    At most three rows exist; enabled rows are tried in priority order.
+    api_key_enc is Fernet-encrypted and never leaves the service layer.
+    """
+
+    __tablename__ = "llm_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    provider_type: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "provider_type IN ('openai', 'anthropic', 'google')",
+            name="ck_llm_providers_type",
+        ),
+        nullable=False,
+    )
+    api_base: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    api_key_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class LlmRequestLog(Base):
+    """One provider attempt: status category + latency, grouped by the
+    originating request's UUID. Never stores prompts or keys."""
+
+    __tablename__ = "llm_request_logs"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    provider_id: Mapped[int | None] = mapped_column(
+        ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True
+    )
+    provider_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
