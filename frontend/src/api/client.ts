@@ -15,10 +15,10 @@ export async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T
 }
 
-/** JSON gövdeli istekler (POST/PATCH/DELETE); 204 boş döner. */
+/** JSON gövdeli istekler (POST/PATCH/PUT/DELETE); 204 boş döner. */
 export async function sendJson<T>(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   body?: unknown,
 ): Promise<T | null> {
   const response = await fetch(path, {

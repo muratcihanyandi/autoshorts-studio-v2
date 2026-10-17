@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from app.api.routes.settings import effective_settings
 from app.schemas_sources import (
     DiscoverResult,
     PlanningResult,
@@ -95,7 +96,7 @@ async def discover_channel(request: Request, channel_id: int) -> DiscoverResult:
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     discovery = DiscoveryService(
-        request.app.state.sessionmaker, request.app.state.settings
+        request.app.state.sessionmaker, await effective_settings(request)
     )
     try:
         result = await discovery.discover_for_channel(channel_id)
@@ -112,7 +113,7 @@ async def list_channel_videos(
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     discovery = DiscoveryService(
-        request.app.state.sessionmaker, request.app.state.settings
+        request.app.state.sessionmaker, await effective_settings(request)
     )
     videos = await discovery.list_videos(channel_id, status=status)
     return SourceVideosOut(

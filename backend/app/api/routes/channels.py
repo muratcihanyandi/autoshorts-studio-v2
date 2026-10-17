@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
+from app.api.routes.settings import effective_settings
 from app.schemas import ChannelCreate, ChannelOut, ChannelUpdate, ChannelsOut
 from app.services.channel_service import ChannelService
 from app.services.oauth_service import OAuthError, OAuthService
@@ -25,14 +26,14 @@ def _service(request: Request) -> ChannelService:
     return ChannelService(sessionmaker)
 
 
-def _oauth_service(request: Request) -> OAuthService:
+async def _oauth_service(request: Request) -> OAuthService:
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Veritabanı yapılandırılmadı; kanal yönetimi kapalı.",
         )
-    return OAuthService(sessionmaker, request.app.state.settings)
+    return OAuthService(sessionmaker, await effective_settings(request))
 
 
 def _out_or_404(channel) -> ChannelOut:
@@ -91,7 +92,7 @@ async def disconnect_channel(request: Request, channel_id: int) -> ChannelOut:
 
 @router.post("/channels/{channel_id}/oauth/start")
 async def oauth_start(request: Request, channel_id: int) -> dict:
-    oauth = _oauth_service(request)
+    oauth = await _oauth_service(request)
     try:
         return await oauth.start(channel_id)
     except OAuthError as exc:
@@ -111,8 +112,8 @@ async def oauth_callback(
     Success/failure redirect to the frontend channels screen when its base
     URL is configured; otherwise the result is plain JSON (API clients).
     """
-    frontend = request.app.state.settings.frontend_base_url.rstrip("/")
-    oauth = _oauth_service(request)
+    frontend = (await effective_settings(request)).frontend_base_url.rstrip("/")
+    oauth = await _oauth_service(request)
     try:
         channel = await oauth.callback(channel_id, code, state, error)
     except OAuthError as exc:
@@ -128,7 +129,7 @@ async def oauth_callback(
 
 @router.post("/channels/{channel_id}/oauth/refresh")
 async def oauth_refresh(request: Request, channel_id: int) -> dict:
-    oauth = _oauth_service(request)
+    oauth = await _oauth_service(request)
     try:
         refreshed = await oauth.refresh_if_needed(channel_id)
     except OAuthError as exc:

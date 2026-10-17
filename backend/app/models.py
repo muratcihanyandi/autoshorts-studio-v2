@@ -286,3 +286,20 @@ class PlanningDecision(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AppMeta(Base):
+    """Runtime key/value state (migration 0001): schema markers, and the
+    site-managed runtime settings override blob stored under
+    'runtime_settings'."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
