@@ -854,3 +854,38 @@ class TestMediaPipelineEndToEnd:
         first_ids = {row.id for row in first}
         for row in rejected:
             assert row.duplicate_of_candidate_id in first_ids
+
+
+class TestMediaProcessJob:
+    def test_worker_runs_media_process_end_to_end(self, tmp_path, sample_pair):
+        """M7 kabul kriteri: is, M6 kuyrugu uzerinden tam boru hattiyla
+        biter (gercek ffmpeg medyasi, yerel iceri aktarim)."""
+        from app.worker import JobWorker, build_handlers
+
+        async def scenario():
+            sessionmaker, settings, engine = _pipeline_env(
+                tmp_path, **_e2e_settings(tmp_path)
+            )
+            try:
+                _, _, video_id = await _seed_planned_video(sessionmaker)
+                handlers = build_handlers(sessionmaker, settings)
+                worker = JobWorker(sessionmaker, settings, handlers=handlers)
+                job = await worker._jobs.enqueue(
+                    "media_process",
+                    {
+                        "source_video_id": video_id,
+                        "import_path": str(sample_pair / "kaynak.mp4"),
+                    },
+                )
+                await worker._jobs.claim_next(worker._worker_id)
+                await worker.run_job(job.id)
+                return job.id, video_id
+            finally:
+                await engine.dispose()
+
+        job_id, video_id = asyncio.run(scenario())
+        assert _sync_one(tmp_path, "jobs", job_id, "status") == "succeeded"
+        assert (
+            _sync_one(tmp_path, "source_videos", video_id, "status") == "processed"
+        )
+        assert len(_sync_rows(tmp_path, "SELECT id FROM clip_candidates")) >= 1

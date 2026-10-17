@@ -2,6 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# M7 medya boru hatti: ffmpeg/ffprobe (ARM64 paketi) analiz ve denetim
+# icin; yt-dlp requirements.txt uzerinden pip ile kurulur (subprocess
+# cagrisi, import edilmez).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

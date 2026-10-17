@@ -29,8 +29,11 @@ JobHandlers = dict[str, Handler]
 def build_handlers(
     sessionmaker: async_sessionmaker[AsyncSession], settings: Settings
 ) -> JobHandlers:
-    """The job-type registry. M6 ships source discovery; later milestones
-    register processing jobs here."""
+    """The job-type registry. M6 ships source discovery; M7 registers
+    the media pipeline. One download lock is shared by every
+    media_process job so downloads stay sequential."""
+
+    download_lock = asyncio.Lock()
 
     async def source_discover(payload: dict[str, Any]) -> dict:
         from app.services.discovery_service import DiscoveryService
@@ -44,7 +47,27 @@ def build_handlers(
         discovery = DiscoveryService(sessionmaker, effective)
         return await discovery.discover_for_channel(channel_id)
 
-    return {"source_discover": source_discover}
+    async def media_process(payload: dict[str, Any]) -> dict:
+        from app.services.media_pipeline import MediaPipelineService
+
+        source_video_id = payload.get("source_video_id")
+        if not isinstance(source_video_id, int):
+            raise ValueError("payload.source_video_id gerekli.")
+        import_path = payload.get("import_path")
+        if import_path is not None and not isinstance(import_path, str):
+            raise ValueError("payload.import_path string olmali.")
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        pipeline = MediaPipelineService(
+            sessionmaker, effective, download_lock=download_lock
+        )
+        return await pipeline.run(source_video_id, import_path=import_path)
+
+    return {
+        "source_discover": source_discover,
+        "media_process": media_process,
+    }
 
 
 class JobWorker:
@@ -67,6 +90,7 @@ class JobWorker:
         self._running: dict[int, asyncio.Task] = {}
         self._worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self._last_poll_enqueue = 0.0
+        self._last_planned_enqueue = 0.0
         self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
@@ -145,6 +169,37 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_planned_jobs(self) -> int:
+        """Periodic planned-video enqueue: one media_process job per
+        'planned' source video. Dedupe keeps repeated ticks from piling
+        up, so the M7 pipeline stays fed without manual job creation."""
+        interval = self._settings.planned_poll_interval_minutes * 60
+        now = time.monotonic()
+        if (
+            self._last_planned_enqueue
+            and now - self._last_planned_enqueue < interval
+        ):
+            return 0
+        self._last_planned_enqueue = now
+        added = 0
+        async with self._sessionmaker() as session:
+            video_ids = (
+                (
+                    await session.execute(
+                        text("SELECT id FROM source_videos WHERE status = 'planned'")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        for video_id in video_ids:
+            job = await self._jobs.enqueue(
+                "media_process", {"source_video_id": video_id}, priority=8
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
         """Prune stale files from the media tmp folder (safe cleanup)."""
         if not self._settings.media_root:
@@ -182,6 +237,7 @@ class JobWorker:
         while True:
             try:
                 await self.enqueue_poll_jobs()
+                await self.enqueue_planned_jobs()
                 await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:

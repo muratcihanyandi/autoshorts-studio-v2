@@ -359,6 +359,81 @@ class TestJobWorker:
         assert added_again == 0
         assert jobs == [("source_discover", {"channel_id": 1})]
 
+    def test_enqueue_planned_jobs_per_planned_video(self, tmp_path):
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                from sqlalchemy.ext.asyncio import AsyncSession
+
+                from app.models import Channel, SourceChannel, SourceVideo
+
+                async with sessionmaker() as session:  # type: AsyncSession
+                    session.add(Channel(id=1, name="Kanal"))
+                    source = SourceChannel(
+                        channel_id=1,
+                        youtube_channel_id="UCkaynak",
+                        title="Kaynak",
+                        permission_status="authorized",
+                    )
+                    session.add(source)
+                    await session.flush()
+                    session.add(
+                        SourceVideo(
+                            source_channel_id=source.id,
+                            youtube_video_id="v-plan",
+                            title="Planlanan",
+                            status="planned",
+                        )
+                    )
+                    session.add(
+                        SourceVideo(
+                            source_channel_id=source.id,
+                            youtube_video_id="v-disc",
+                            title="Kesfedilen",
+                            status="discovered",
+                        )
+                    )
+                    session.add(
+                        SourceVideo(
+                            source_channel_id=source.id,
+                            youtube_video_id="v-done",
+                            title="Islenen",
+                            status="processed",
+                        )
+                    )
+                    await session.commit()
+
+                worker = JobWorker(sessionmaker, settings)
+                added = await worker.enqueue_planned_jobs()
+                added_again = await worker.enqueue_planned_jobs()
+                service = worker._jobs
+                jobs = await service.list_jobs()
+                return added, added_again, [(j.job_type, j.payload) for j in jobs]
+            finally:
+                await engine.dispose()
+
+        added, added_again, jobs = asyncio.run(scenario())
+        # Sadece 'planned' video kuyruga girer; tekrar dedupe edilir.
+        assert added == 1
+        assert added_again == 0
+        assert jobs == [("media_process", {"source_video_id": 1})]
+
+    def test_media_process_handler_registered(self, tmp_path):
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                from app.worker import build_handlers
+
+                handlers = build_handlers(sessionmaker, settings)
+                return sorted(handlers.keys())
+            finally:
+                await engine.dispose()
+
+        assert asyncio.run(scenario()) == [
+            "media_process",
+            "source_discover",
+        ]
+
     def test_source_discover_handler_runs_discovery(
         self, tmp_path, mock_youtube  # noqa: F811 - fixture
     ):
