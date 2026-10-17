@@ -2,7 +2,7 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–8 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–9 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
 to GHCR (every run green, latest `39019597052`). The user deployed the stack
 on the Pi via CasaOS (UI/API/database verified from the user's logs); the
@@ -10,12 +10,10 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 9 — Turkish Subtitle Correction and
-Metadata
+**Current milestone:** Milestone 10 — YouTube Upload and Publishing
 
-**Current task:** M9 kickoff — LLM-based Turkish subtitle correction on
-M7 transcripts (timestamps and names preserved) + channel metadata
-templates.
+**Current task:** M10 kickoff — resumable uploads through the channel
+OAuth tokens, schedules, approval controls.
 
 **Last updated:** 2026-10-17
 
@@ -107,7 +105,7 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 6. Job Queue and Resource Management | COMPLETED | Persistent SKIP LOCKED queue, worker + heartbeat + stale recovery, token-bucket limit, disk guard, tmp cleanup (2026-10-17) |
 | 7. Horizontal Video Processing | COMPLETED | Stage-gated media pipeline on the queue: adapters, ffprobe integrity, transcripts, silence/scene/energy analysis, scored candidates with similarity checks (2026-10-17) |
 | 8. Vertical Studio and Webcam Detection | COMPLETED | OpenCV multi-frame detection + calibration + 9:16 render with review semantics (2026-10-17) |
-| 9. Subtitles and Metadata | NOT_STARTED | Turkish correction |
+| 9. Subtitles and Metadata | COMPLETED | LLM subtitle correction (timestamps preserved, uncertainty flagged), channel templates, revisioned metadata (2026-10-17) |
 | 10. Upload and Publishing | NOT_STARTED | Private uploads and schedules |
 | 11. End-to-End Automation | NOT_STARTED | Full pipeline integration |
 | 12. Production Hardening | NOT_STARTED | Stress, recovery, and security tests |
@@ -587,6 +585,56 @@ marked otherwise. Evidence commands are listed; none expose secrets.
     a few seconds per sampled frame worst case — acceptable at 1 fps
     sampling inside a queued job.
 
+### Milestone 9 — Turkish Subtitle Correction and Metadata (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 9
+- Task: timestamped transcript storage (done in M7), Turkish spelling
+  and punctuation correction, name/timestamp preservation, uncertain
+  correction flags, channel-specific metadata templates, title/
+  description/tag generation, metadata validation, revision storage.
+- Implementation:
+  - Schema (migration `0009`): `corrected_transcripts` (unique per
+    media asset, parallel to the untouched original), 
+    `metadata_templates` (unique per channel; patterns may reference
+    {title}/{summary}/{channel}, unknown placeholders stay literal),
+    `clip_metadata` (unique (candidate, revision); append-only
+    revisions; status draft/approved/rejected).
+  - `subtitle_correction.py`: the M5 provider chain corrects numbered
+    segment chunks (20 per request) with strict rules (preserve
+    names/numbers, never merge or reorder, flag uncertain). The
+    response contract is verified (exact count + index coverage) and
+    timestamps are copied verbatim from the original — the LLM never
+    sees or sets them, so corrections cannot silently alter timing.
+    Corrected/flagged counts + provider recorded; audit
+    `subtitle.corrected`; idempotent re-run.
+  - `metadata_service.py`: proposal schema (title/summary/tags) via
+    the LLM chain from the clip's transcript window (corrected
+    preferred); channel template applied; `validate_metadata` enforces
+    YouTube limits (title 5-100, description 20-5000, tags <= 30 x 50)
+    and rejects invalid output without storing anything;
+    `regenerate=True` appends revision max+1; tags deduped. Template
+    API: GET/PUT `/api/channels/{id}/metadata-template` ({title}
+    required in title pattern, {summary} in description pattern).
+  - Worker: `subtitle_correct` (media_asset_id) and `metadata_generate`
+    (clip_candidate_id) job types; `enqueue_content_jobs` interval-
+    gated feed (uncorrected transcripts + rendered clips without
+    metadata).
+- Verification (2026-10-17): backend suite **210 passed, 0 failed,
+  0 skipped** in 38.9s (M9 adds 15: test_subtitle_correction 6 —
+  timestamp preservation, flag counting, original untouched,
+  idempotency, wrong-count rejection with no row, worker error path,
+  feed; test_metadata 9 — validation rules, pattern application, tag
+  dedupe, template application + revision storage, skip/regenerate
+  semantics, invalid result rejection, channel template isolation,
+  worker feed, template API roundtrip). Migration 0009 offline SQL
+  generation passes. Acceptance criteria: originals recoverable
+  (transcripts row never modified — asserted), no silent timestamp
+  changes (verbatim copy — asserted), invalid metadata rejected
+  (no-row test), template changes isolated per channel (two-channel
+  test). LLM interactions are tested through MockTransport per the
+  M5 chain contract; real-provider behavior is site configuration.
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -689,12 +737,13 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M8 session) on the dev machine (Windows 11,
+Verified 2026-10-17 (post-M9 session) on the dev machine (Windows 11,
 Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
 directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: **195** (test_media_pipeline 19, test_media_probe 9,
+  - Passed: **210** (test_subtitle_correction 6, test_metadata 9,
+    test_media_pipeline 19, test_media_probe 9,
     test_media_analysis 10, test_media_transcript 7, test_clip_candidates
     10, test_llm 18, test_jobs 18, test_oauth 14, test_settings 10,
     test_channels 9, test_sources 7, test_planning 7, test_media 7,
@@ -758,10 +807,8 @@ directories.
 
 ## 9. Immediate Next Actions
 
-1. Milestone 9 (next): Turkish subtitle correction on M7 transcripts
-   through the M5 LLM chain (timestamps/names preserved, uncertain
-   corrections flagged) + channel-specific metadata templates with
-   revision storage.
+1. Milestone 10 (next): YouTube upload and publishing (resumable
+   uploads, schedules, approval controls).
 2. User (to exercise M7/M8 on the Pi): pull the new image (includes
    ffmpeg + yt-dlp + OpenCV + fonts), run `alembic upgrade head`
    (migrations 0007+0008), and optionally import authorized test media
@@ -801,9 +848,9 @@ directories.
   first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio` volumes, branding)
   and the canon "Kategori Standardı" redesign (stat cards, title-bar
   table panels, soft pills, round meters) with `DESIGN.md` rewritten.
-- Tests: backend 195/195 (57 M7 + 23 M8 tests incl. real-ffmpeg and
-  real-OpenCV e2e), frontend 10/10, oxlint/tsc/build clean, secret
-  scan clean (re-verified 2026-10-17 post-M8).
+- Tests: backend 210/210 (57 M7 + 23 M8 + 15 M9 tests incl.
+  real-ffmpeg and real-OpenCV e2e), frontend 10/10, oxlint/tsc/build
+  clean, secret scan clean (re-verified 2026-10-17 post-M9).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
   the app's live database is `autoshorts_studio` on the shared
   PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
@@ -814,11 +861,13 @@ directories.
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.
-- Exact next task: Milestone 9 — Turkish subtitle correction and
-  metadata: LLM-corrected transcript segments (timestamps/names
-  preserved, uncertainty flagged), channel metadata templates,
-  titles/descriptions/tags with length validation, revision storage.
-- Decisions to preserve: ADR-001…ADR-013 plus the implementation
+- Exact next task: Milestone 10 — YouTube upload and publishing:
+  resumable uploads via the channel OAuth tokens, private visibility,
+  per-channel schedules with timezone-aware planning, duplicate
+  prevention, retry/reconciliation, publication approval controls.
+- Decisions to preserve: ADR-001…ADR-013 (M9 added no new ADR — it
+  composes ADR-011's chain under a stricter response contract) plus the
+  implementation
   contracts: OAuth tokens and LLM keys encrypted at rest and never in
   API responses; audit trail append-only; job claim via SKIP LOCKED
   with heartbeat-driven recovery; runtime settings override env only

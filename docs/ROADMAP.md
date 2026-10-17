@@ -235,7 +235,10 @@ Acceptance criteria:
 
 ## Milestone 9 — Turkish Subtitle Correction and Metadata
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests with mocked LLM transports —
+the M5 chain contract; real-provider quality is a site configuration
+matter.)
 
 Tasks:
 - Implement timestamped transcript storage.
