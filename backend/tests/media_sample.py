@@ -30,12 +30,13 @@ def make_test_media(path: str | Path) -> Path:
         "-f", "lavfi", "-i", "color=c=red:s=320x240:r=15:d=4",
         "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=15:d=4",
         "-f", "lavfi", "-i", "color=c=green:s=320x240:r=15:d=4",
-        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=8000:duration=12",
+        # Ornek seviyesinde kapili 440 Hz ton: 0-2s ve 10-12s sessiz.
+        "-f", "lavfi", "-i",
+        "aevalsrc='sin(2*PI*440*t)*if(between(t,0,2),0,if(between(t,10,12),0,0.4))':s=8000:d=12",
         "-filter_complex",
-        "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v];"
-        "[3:a]volume='if(between(t,0,2),0,if(between(t,10,12),0,1))':eval=frame[a]",
+        "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
         "-map", "[v]",
-        "-map", "[a]",
+        "-map", "3:a",
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-c:a", "aac",
