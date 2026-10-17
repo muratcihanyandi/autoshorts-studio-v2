@@ -652,9 +652,10 @@ directories.
 - Secret scan — `python tools/scan_secrets.py` from repository root:
   clean (token/key-handling lines carry justified `# secret-scan-ok`
   markers; synthetic test fixtures marked).
-- CI — GitHub Actions `build-images` on `main`: every run since the last
-  record completed `success` (verified via `gh run list` 2026-10-17;
-  latest `39010166549` for commit `121e175`).
+- CI — GitHub Actions `build-images` on `main`: M7 head commit `2eabbf4`
+  built successfully (run `39019597052`, 2026-10-17, 7m10s — first
+  image including the ffmpeg layer; every earlier run since the last
+  record also `success`, previous latest `39010166549` for `121e175`).
 - Live deployment — Pi (CasaOS): stack deployed by the user; UI, API,
   and migrated database verified from the user's logs (2026-10-17).
   The app's live database is `autoshorts_studio` on the shared
