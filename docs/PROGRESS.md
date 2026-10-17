@@ -2,15 +2,17 @@
 
 ## Current Project State
 
-**Overall status:** Milestone 0 COMPLETE; Milestone 1 COMPLETE (local work;
-private GitHub remote blocked on user authentication — blocker B1)
+**Overall status:** Milestones 0–3 COMPLETE. Repository public on GitHub
+(`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
+to GHCR; the Pi runs the app (M2 interface verified live); the M3 image is
+on GHCR awaiting a CasaOS restart by the user.
 
-**Current milestone:** Milestone 2 — Studio Interface (not started)
+**Current milestone:** Milestone 4 — Source Monitoring and Planning
 
-**Current task:** Milestone 2 planning; the GitHub remote (B1) can be
-created at any time once the user authenticates.
+**Current task:** M4 kickoff — source-channel registration, YouTube
+metadata integration, quota tracking, durable planning.
 
-**Last updated:** 2026-10-16
+**Last updated:** 2026-10-17
 
 **Primary coding agent:** GLM-5.3 via ZCode
 
@@ -93,9 +95,9 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 |---|---|---|
 | 0. Environment and Architecture | COMPLETED | All deliverables created and committed; evidence in section 3 |
 | 1. Repository and Foundation | COMPLETED (local) | All local acceptance criteria verified (section 3, section 7); private GitHub remote pending user auth (B1) |
-| 2. Studio Interface | NOT_STARTED | Pending start; will load impeccable + frontend-design skills first |
-| 3. Database and Channel Management | NOT_STARTED | Pending database models |
-| 4. Source Monitoring and Planning | NOT_STARTED | Pending YouTube integration |
+| 2. Studio Interface | COMPLETED | Yeşilçam Baskı Odası world; finish review `ship`; DESIGN.md recorded (2026-10-17) |
+| 3. Database and Channel Management | COMPLETED | Migration 0002 applied on Pi DB; OAuth handshake with Fernet-encrypted tokens; channels UI; Pi restart pending (2026-10-17) |
+| 4. Source Monitoring and Planning | IN_PROGRESS | Started 2026-10-17 |
 | 5. LLM Provider Manager | NOT_STARTED | Three-provider fallback |
 | 6. Job Queue and Resource Management | NOT_STARTED | Persistent background jobs |
 | 7. Horizontal Video Processing | NOT_STARTED | Authorized media pipeline |
@@ -200,38 +202,153 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   - starlette TestClient emits a deprecation warning suggesting httpx2;
     dev-only, tests pass, recorded for later follow-up.
 
+### Milestone 2 — Studio Interface (completed 2026-10-17)
+
+- Date: 2026-10-16/17
+- Milestone: 2
+- Task: replace the placeholder screen with the real monitoring-first
+  studio dashboard.
+- Implementation (commits `72aec8b`, `e30e0e1`):
+  - Design direction chosen through the impeccable decision round (five
+    sketches served on a live decision page): user picked "Yeşilçam
+    Baskı Odası" (concept-seed key edec7d88, code-led build, Operate
+    surface). Confirmed user answers: durum takibi ağırlıklı
+    (monitoring-first Overview) and tam otomatik (full-auto publishing,
+    approval as override).
+  - Backend: `/api/overview` (phase vocabulary setup → awaiting_channels
+    → running; honest counts; database state) and `/api/system` (psutil
+    CPU/RAM/disk/temperature, Linux-guarded sensors call).
+  - Frontend: self-hosted Anton (latin + latin-ext), design tokens (ink
+    ground, cream plate, poster state inks with on-plate/on-dark
+    variants), app shell with rail nav (8 screens, Turkish microcopy),
+    marquee plate + phase stamp, jenerik bill rows, ink gauges,
+    empty/error/stale states, `usePolling` with stale-data retention.
+  - Finish review per the impeccable contract (fresh-context reviewer
+    subagent; the shipped reviewer agent is unavailable in this harness —
+    substitution disclosed in the review returns): first verdict
+    `disposition: fix` with six material findings; all six fixed and
+    measured-verified (stamp-wait ink 4.78:1, plate-muted/plate-body-ink
+    tokens, faint-on-dark 5.13:1 on panels, stamp replays on phase
+    change via remount key, settings copy made verifiable against
+    `.github/workflows/build-images.yml`, plate corners 0px, red
+    intervention-stamp preview); verdict round scored 6/6 resolved with
+    no regressions: `disposition: ship` (scope: the scored fixes of that
+    review round, as the reviewer stated).
+  - `DESIGN.md` (token-bearing frontmatter per the DESIGN.md spec) and
+    `.impeccable/design.json` sidecar written; review rasters with
+    embedded provenance under `.impeccable/review/` (gitignored).
+- Verification: backend 13/13 tests at commit; frontend 3/3 tests,
+  oxlint 0, production build passed, impeccable detector `[]`; live
+  smoke against the Pi deployment (http://192.168.2.170:1478/) with
+  DOM/computed-style audits at 1440x900 and 390x844 (Anton loaded,
+  marquee 115.2px desktop / 64px mobile, plate colors exact, no
+  horizontal overflow, rail collapse at ≤900px verified); CI runs for
+  both commits: success.
+- Test results: see section 7 for the final combined state.
+- Remaining limitations: the reviewing model in this harness cannot view
+  images, so the review used measured DOM/computed-style audits as
+  render evidence (disclosed inside every review return); the user can
+  eyeball `.impeccable/review/*.png` (desktop, mobile, automation,
+  settings captures with provenance).
+
+### Milestone 3 — Database and Channel Management (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 3
+- Task: channel/OAuth credential/source channel/publishing profile
+  models, migrations, repository/service layers, secure OAuth flows,
+  token refresh, channel-specific settings, audit events.
+- Implementation (commits `66f3301`, `b38fa7f`, `a5c261d`):
+  - Models (`app/models.py`): Channel (status vocabulary pending/
+    connected/disconnected/error, ribbon color), OAuthCredential
+    (encrypted token columns), OAuthState (single-use CSRF states),
+    SourceChannel (permission status pending/authorized/rejected),
+    PublishingProfile (per-channel settings, JSONB), AuditEvent
+    (append-only; survives channel deletion via ON DELETE SET NULL).
+    Migration `0002` applied to the Pi database (`alembic current` →
+    `0002 (head)`, verified).
+  - Repository + service layers; every mutation writes an audit event
+    (channel.created/updated/deleted/disconnected, oauth.started/
+    connected/failed/token_refreshed/token_refresh_failed).
+  - `/api/channels` CRUD + disconnect + `oauth/start` + `oauth/callback`
+    + `oauth/refresh`. OAuth handshake: single-use 10-minute states
+    (wrong/expired/replayed states rejected; state bound to the channel),
+    Google code exchange, YouTube channel fetch, duplicate YouTube
+    channel across studio channels rejected, tokens stored
+    Fernet-encrypted (`cryptography`), disconnect deletes the
+    credential row, callback redirects to the frontend channels screen
+    when `FRONTEND_BASE_URL` is set (plain JSON otherwise). No token or
+    secret appears in any API response (tested).
+  - Kanallar screen: ribbon-colored list with status words,
+    connect/disconnect/two-step delete, new-channel form (name + ribbon
+    picker), OAuth feedback notes from the callback redirect; Overview
+    KANALLAR panel lists real channel ribbons (first 5 + count).
+  - Real bug caught by the real-Postgres smoke and fixed: channel
+    deletion wrote the audit event after the row delete (FK violation on
+    PostgreSQL; sqlite tests had FKs off and missed it). The event is
+    now written and flushed before the delete, and sqlite test
+    connections enforce `PRAGMA foreign_keys=ON` (parity with
+    production).
+- Verification: backend 39/39 (17 new OAuth/security tests; Google
+  endpoints mocked via httpx MockTransport; foreign keys enforced),
+  frontend 4/4, oxlint 0, production build passed, detector `[]`;
+  real-Postgres round trip against the Pi database through a local
+  uvicorn (create → list → patch → delete → overview totals/phase);
+  secret scan clean; CI run `38993105069` (all three commits): success.
+- Remaining limitations:
+  - The Pi still runs the pre-M3 image until the user restarts the app
+    in CasaOS; the DB migration is already applied so the restart is the
+    only step.
+  - Connecting a real YouTube channel additionally requires the user's
+    Google Cloud OAuth client via env vars (`GOOGLE_CLIENT_ID`,
+    `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` (Fernet key),
+    `OAUTH_REDIRECT_BASE`, `FRONTEND_BASE_URL`). Without them the Bağla
+    button returns an explanatory 503; nothing else degrades.
+
 ## 4. Current Blockers
 
-### B1 — No GitHub authentication (blocks remote repository, not local work)
+### B1 — GitHub remote (RESOLVED 2026-10-16)
 
-- Description: `gh` CLI not logged in; no token in environment.
-- Affected component: Milestone 1 task "Create or connect a private GitHub
-  repository"; remote backup of commits.
-- Why it blocks: creating a private repo and pushing requires
-  authentication.
-- Required action: user runs `gh auth login` (or provides a NEW fine-grained
-  token with repo scope — never the previously exposed one). Then:
-  `gh repo create <name> --private --source . --push`.
-- Independent work continues: yes — all local development, tests, commits.
+- Description: remote repository creation was blocked on authentication.
+- Resolution: the user authenticated `gh` (browser flow) and asked for a
+  public repository; `muratcihanyandi/autoshorts-studio-v2` was created
+  and every milestone since is pushed. GitHub Actions builds
+  linux/amd64 + linux/arm64 images to GHCR on every push to `main`
+  (`build-images` workflow; verified runs ending `success`).
+- Note: the old public repo `AutoShorts-Studio` (v1 project) still exists
+  and stays untouched (ADR-001).
 
 ### B2 — No Docker CLI on the dev machine (does not block authoring)
 
 - Description: docker/docker-compose unavailable on Windows dev machine.
-- Affected component: runtime verification of Compose stack, ARM64 image
-  builds.
+- Affected component: runtime verification of the Compose stack locally.
 - Why it blocks: cannot run containers locally.
-- Required action: execute `deploy/docker-compose.yml` on the Raspberry Pi
-  (CasaOS) during deployment.
-- Independent work continues: yes — Compose files authored and
-  syntax-validated locally.
+- Required action: run the stack on the Raspberry Pi (CasaOS). The user
+  already deployed the stack themselves (verified live in Milestone 2);
+  updates flow via GHCR image pulls + CasaOS restart.
+- Independent work continues: yes.
 
-### B3 — Deployment gates G1/G2 pending user confirmation (blocks deployment only)
+### B3 — Deployment gates G1/G2 pending user confirmation
 
 - Description: user must confirm the previously exposed GitHub token is
-  revoked and the PostgreSQL password rotated.
-- Affected component: any deployment to the Pi.
-- Required action: user confirmation recorded in `docs/SECURITY.md`.
+  revoked and the PostgreSQL password rotated (`docs/SECURITY.md`).
+- Note: the user chose to deploy the stack on the Pi themselves before
+  confirming the gates; the confirmation is still outstanding and should
+  be recorded before further credentials are introduced.
 - Independent work continues: yes.
+
+### B4 — OAuth environment variables pending (blocks YouTube connection only)
+
+- Description: connecting a real YouTube channel requires the user's
+  Google Cloud OAuth client and a Fernet key via env vars
+  (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`,
+  `OAUTH_REDIRECT_BASE`, `FRONTEND_BASE_URL`).
+- Affected component: the OAuth handshake end-to-end with Google (the
+  code path is implemented and fully tested against mocks).
+- Required action: user provides the values in the CasaOS compose
+  environment.
+- Independent work continues: yes — all other functionality works; the
+  Bağla button returns an explanatory 503 until configured.
 
 ## 5. Architecture Decisions
 
@@ -290,89 +407,91 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-16 on the dev machine (Windows 11, Python 3.11.9,
+Verified 2026-10-17 on the dev machine (Windows 11, Python 3.11.9 venv,
 Node 24.13.0). Commands run from the stated directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: 10 (test_health 4, test_config 2, test_logging 2,
-    test_migrations 2)
+  - Passed: 39 (test_health 4, test_config 2, test_logging 2,
+    test_migrations 2, test_overview 2, test_system 1, test_channels 9,
+    test_security 3, test_oauth 14 — collected per file)
+  - Failed: 0; Skipped: 0
+  - sqlite test connections enforce foreign keys (production parity).
+  - 1 warning: starlette TestClient deprecation notice (dev-only).
+- Frontend — `cd frontend && npx vitest run`
+  - Passed: 4 (shell+overview from mocked API, error+retry, rail href,
+    channels screen list + form)
   - Failed: 0
-  - Skipped: 0
-  - 1 warning: starlette TestClient deprecation notice suggesting httpx2
-    (dev-only; tests pass; follow up when the ecosystem settles).
-- Frontend — `cd frontend && npm run test`
-  - Passed: 2 (App status render, App error+retry state)
-  - Failed: 0
-- Frontend lint — `cd frontend && npm run lint` (oxlint): 0 warnings,
-  0 errors.
-- Frontend build — `cd frontend && npm run build` (`tsc -b && vite
-  build`): succeeded (dist generated).
+- Frontend lint — `npx oxlint src`: 0 warnings, 0 errors.
+- Frontend build — `npm run build` (`tsc -b && vite build`): succeeded.
+- Impeccable detector — `impeccable detect --json --target
+  frontend/src/App.tsx`: `[]` (clean).
 - Secret scan — `python tools/scan_secrets.py` from repository root:
-  clean.
-- Live HTTP verification (dev machine):
-  - uvicorn (port 8123, no DATABASE_URL): `/api/health` 200,
-    `/api/health/ready` 503 `not_configured` (expected), `/openapi.json`
-    200.
-  - uvicorn (port 8000) + Vite dev server (port 5173): page 200 with
-    correct title; `/api/health` via Vite proxy 200; `/api/health/ready`
-    via proxy 503 (expected without DB).
-- Compose validation — YAML parse + structural assertions
-  (linux/arm64 pins, internal postgres, healthcheck gating, required
-  password, .env excluded): passed.
-- Known limitations: no container runtime on the dev machine — the
-  Compose stack, live `alembic upgrade head`, and app-level PostgreSQL
-  connectivity are verified at deployment time on the Pi
-  (`docs/DEPLOYMENT.md` section 4).
+  clean (all OAuth token-handling lines carry justified
+  `# secret-scan-ok` markers; synthetic test fixtures marked).
+- Real-Postgres integration (2026-10-17, local uvicorn → Pi database):
+  channels create → list → patch → delete round trip 201/200/200/204;
+  `/api/overview` reported live totals and phase before/after.
+- CI — GitHub Actions `build-images` on `main`: latest run
+  `38993105069` (M3 slice 3) completed `success`; images on GHCR.
+- Live deployment — Pi (http://192.168.2.170:1478/): M2 interface
+  verified live (DOM/computed-style audits at two viewports); the M3
+  image awaits the user's CasaOS restart.
 
 ## 8. Git State
 
-- Repository URL: none yet (local only; blocked on GitHub auth — B1)
-- Current branch: `main`
-- Commit history (oldest first):
+- Repository URL: https://github.com/muratcihanyandi/autoshorts-studio-v2
+  (public, per user request; B1 resolved)
+- Current branch: `main` (pushed; CI builds images on every push)
+- Commit history (oldest first, milestone-relevant):
   - `cfb1c35` baseline: original three files preserved
   - `0f37870` Milestone 0 deliverables
-  - `20ffb5e` Milestone 1 repo foundation
-  - `754ed5c` Milestone 1 backend
-  - `36f6dff` Milestone 1 frontend
-  - `3b17ad3` Milestone 1 deployment layer
-  - final Milestone 1 progress-documentation commit (this change)
+  - `20ffb5e` / `754ed5c` / `36f6dff` / `3b17ad3` Milestone 1 (+ progress commit)
+  - `72aec8b` Milestone 2: Yeşilçam Baskı Odası studio interface
+  - `e30e0e1` Milestone 2 finish review fixes + DESIGN.md
+  - `66f3301` Milestone 3 slice 1: channel model, migration 0002, CRUD API
+  - `b38fa7f` Milestone 3 slice 2: OAuth handshake + encrypted tokens
+  - `a5c261d` Milestone 3 slice 3: channels screen, overview ribbons, FK parity
 - Working tree: clean after the final commit
 - Uncommitted changes: none after each milestone commit
 
 ## 9. Immediate Next Actions
 
-1. User (any time): authenticate GitHub and create the private remote
-   (blocker B1): `gh auth login`, then `gh repo create <name> --private
-   --source . --push`. Update the git identity email from the
-   `murat@example.com` placeholder first (ADR-010).
-2. Milestone 2: load the `impeccable` and `frontend-design` skills, then
-   establish design tokens and the studio UI screens.
-3. At deployment time (Pi): execute `docs/DEPLOYMENT.md` after gates G1/G2
-   are confirmed.
+1. Milestone 4 (in progress): source-channel registration API on the
+   existing `source_channels` model (rights records), YouTube metadata
+   client with quota tracking and caching, source-video discovery with
+   duplicate prevention, filtering/exclusion rules, durable planning
+   service.
+2. User (any time): restart the app in CasaOS to pick up the M3 image
+   (GHCR `latest`; DB migration already applied).
+3. User (to connect a real YouTube channel): provide the Google Cloud
+   OAuth client values + Fernet key via compose env vars (B4).
+4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
 
-- What was implemented: Milestone 0 (inspection, architecture, decisions,
-  security gates, agent contract) and Milestone 1 (repo foundation,
-  FastAPI backend with health endpoints/structured logging/Alembic,
-  React+TS+Vite frontend with health wiring, ARM64 Compose stack, CasaOS
-  deployment guide, automated tests, secret-scan guard).
-- Files: everything under `AGENTS.md`, `docs/`, `backend/`, `frontend/`,
-  `deploy/`, `tools/`, `.gitignore`, `.gitattributes`, `.env.example`,
-  `.dockerignore`. The pre-existing empty `Autonomous-Creator-Studio/`
-  directory was left untouched.
-- Tests: backend 10/10 passed; frontend 2/2 passed, lint clean, build OK;
-  secret scan clean; live HTTP checks recorded in section 7.
-- Latest verified commit: section 8 (working tree clean).
-- Outstanding issues: B1 GitHub auth (remote repo), B2 no local Docker
-  (runtime verification on Pi), B3 deployment gates G1/G2 (user
-  confirmation of token revocation and password rotation).
-- Exact next task: Milestone 2 kickoff — load impeccable +
-  frontend-design skills, design tokens, then screens.
-- Decisions to preserve: ADR-001…ADR-010 (fresh repo, monorepo, FastAPI,
-  React/Vite, dedicated postgres with fresh credentials, PG job queue,
-  arm64 compose, SQLite-based local tests, deployment gates, git
-  identity/remote plan).
+- What was implemented: Milestones 0–3. M2: the Yeşilçam Baskı Odası
+  studio interface (monitoring-first dashboard, marquee plate + phase
+  stamp, jenerik bill rows, gauges, 8 screens, polling with stale-data
+  retention) with a fully documented finish review ending `ship`, plus
+  `DESIGN.md` + `.impeccable/design.json`. M3: channel domain (6 models,
+  migration 0002 applied on the Pi DB), repository/service/audit layers,
+  channel CRUD + OAuth handshake (single-use states, Fernet-encrypted
+  tokens, refresh, frontend redirect), Kanallar screen and Overview
+  ribbon list, sqlite FK parity in tests.
+- Tests: backend 39/39, frontend 4/4, lint/build/detector clean, secret
+  scan clean, real-Postgres round trip verified, CI success on all
+  pushes (latest `38993105069`).
+- Deployment state: the Pi runs the app (M2 verified live); the M3 image
+  is on GHCR and arrives with a CasaOS restart (no DB step needed).
+- Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth env vars),
+  ghp_ token exposed in chat should stay revoked.
+- Exact next task: Milestone 4 slice 1 — source-channel registration API
+  (`/api/channels/{id}/sources` CRUD + rights records) with tests; then
+  the YouTube metadata client with quota tracking.
+- Decisions to preserve: ADR-001…ADR-010 plus the M2/M3 implementation
+  contracts (Yeşilçam Baskı Odası design system in `DESIGN.md`; OAuth
+  tokens encrypted at rest and never in API responses; audit trail
+  append-only).
 
 **Never infer progress from previous plans. The repository and test
 results are the source of truth.**
