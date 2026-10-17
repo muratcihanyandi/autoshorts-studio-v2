@@ -824,9 +824,28 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M11 session) on the dev machine (Windows 11,
-Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
-directories.
+Verified 2026-10-17 (post-M12 "connection guide + LLM management"
+session) on the dev machine (Windows 11, Python 3.11.9 venv, Node
+24.13.0). Commands run from the stated directories.
+
+- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
+  - Passed: **248**, Failed: 0, Skipped: 0 (media-tooling tests run
+    real ffmpeg/ffprobe from PATH; webcam tests run real OpenCV on
+    the committed PD face fixture; sqlite test connections enforce
+    foreign keys).
+  - This session added: LLM `api_base` endpoint-path rejection,
+    invalid-cipher-key 503 (LLM create + OAuth callback), and
+    provider duplication (limit, unique names, encrypted-key copy)
+    tests.
+- Frontend — `cd frontend && npx vitest run`
+  - Passed: 10 (App 4, SettingsScreen 3, AutomationScreen 3),
+    Failed: 0
+- Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0
+  errors (1 pre-existing React Compiler advisory in the
+  SettingsScreen loadSettings effect).
+
+Previous full-suite record (post-M11 session; per-file counts
+historical, superseded by the totals above):
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
   - Passed: **230** (test_automation 7, test_publishing 13,
@@ -908,6 +927,39 @@ directories.
 4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
+
+- What was implemented (2026-10-17, connection-guide + LLM-management
+  session, triggered by live-Pi user feedback): (1) Robustness: a
+  malformed `TOKEN_ENCRYPTION_KEY` arriving from the environment no
+  longer crashes LLM/OAuth routes with an unhandled `ValueError`
+  (HTTP 500); `TokenCipher` now raises `TokenEncryptionError` and both
+  services convert it to a clear Turkish 503. (2) LLM providers:
+  `api_base` values that already contain an endpoint path
+  (`/chat/completions`, `/messages`, `:generateContent`) are rejected
+  with an explanatory message (the path is appended per provider type);
+  the form labels now state each type's endpoint, show a live "request
+  URL" preview, and support editing (PATCH, key kept when left blank)
+  and one-click duplication (`POST /api/llm/providers/{id}/duplicate`
+  copies the row including the encrypted key, disabled, unique name,
+  lowest free priority). (3) A "Rehber" guide screen (route `/rehber`,
+  last nav item) documents the full Google Cloud Console setup —
+  YouTube Data API v3 enablement, consent screen (In production vs
+  7-day Testing tokens), Web-application client, exact per-channel
+  redirect URI `http://localhost:1478/api/channels/{id}/oauth/callback`,
+  the Google HTTP/localhost-only redirect rule, the SSH-tunnel consent
+  flow, settings fields, LLM provider setup, and a troubleshooting
+  table; the Channels screen OAuth-failure note now links to it.
+  Live-Pi findings behind these changes: the user's LLM endpoint works
+  through the app (4 successful test calls logged), and the live
+  channel row is id 4 — the redirect URI to register is
+  `http://localhost:1478/api/channels/4/oauth/callback` (user's
+  console attempts used origin-only or fake-domain URIs, causing
+  redirect_uri_mismatch).
+- Tests: backend 248/248, frontend 10/10, tsc clean, oxlint 0 errors
+  (1 pre-existing advisory) — see section 7 for the commands.
+- Deployment note: these changes reach the Pi with the next image
+  build + container restart (no new migrations; runtime settings and
+  stored providers are untouched).
 
 - What was implemented: Milestones 0–8. M4: source registration with
   rights records, quota-gated cached YouTube discovery with dedupe,

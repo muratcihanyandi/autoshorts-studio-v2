@@ -2,14 +2,17 @@ import { useCallback, useState } from 'react'
 import {
   createLlmProvider,
   deleteLlmProvider,
+  duplicateLlmProvider,
   fetchLlmLogs,
   fetchLlmProviders,
+  PROVIDER_TYPE_ENDPOINT,
   PROVIDER_TYPE_LABEL,
   STATUS_LABEL,
   testLlmProvider,
   updateLlmProvider,
   type LlmProvider,
   type LlmTestResult,
+  type ProviderType,
 } from '../api/llm'
 import { usePolling } from '../hooks/usePolling'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
@@ -32,6 +35,7 @@ export function LlmProvidersScreen() {
   const logs = usePolling(logsFetcher, 15000)
 
   const [form, setForm] = useState({ ...EMPTY_FORM })
+  const [editing, setEditing] = useState<LlmProvider | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
@@ -42,27 +46,74 @@ export function LlmProvidersScreen() {
   const set = (key: keyof typeof EMPTY_FORM, value: string) =>
     setForm((f) => ({ ...f, [key]: value }))
 
+  const startEdit = (provider: LlmProvider) => {
+    setEditing(provider)
+    setForm({
+      name: provider.name,
+      provider_type: provider.provider_type,
+      api_base: provider.api_base,
+      model_id: provider.model_id,
+      api_key: '',
+      priority: String(provider.priority),
+      timeout_seconds: String(provider.timeout_seconds),
+      max_retries: String(provider.max_retries),
+    })
+    setFormError(null)
+  }
+
+  const cancelEdit = () => {
+    setEditing(null)
+    setForm({ ...EMPTY_FORM })
+    setFormError(null)
+  }
+
   const submit = async () => {
     setSaving(true)
     setFormError(null)
     try {
-      await createLlmProvider({
-        name: form.name.trim(),
-        provider_type: form.provider_type as LlmProvider['provider_type'],
-        api_base: form.api_base.trim(),
-        model_id: form.model_id.trim(),
-        api_key: form.api_key.trim(), // secret-scan-ok: user input, POSTed once, never stored client-side
-        priority: Number(form.priority),
-        timeout_seconds: Number(form.timeout_seconds),
-        max_retries: Number(form.max_retries),
-        enabled: true,
-      })
-      setForm({ ...EMPTY_FORM })
+      if (editing) {
+        const patch: Parameters<typeof updateLlmProvider>[1] = {
+          name: form.name.trim(),
+          provider_type: form.provider_type as ProviderType,
+          api_base: form.api_base.trim(),
+          model_id: form.model_id.trim(),
+          priority: Number(form.priority),
+          timeout_seconds: Number(form.timeout_seconds),
+          max_retries: Number(form.max_retries),
+        }
+        if (form.api_key.trim() !== '') {
+          patch.api_key = form.api_key.trim() // secret-scan-ok: user input, PATCHed once
+        }
+        await updateLlmProvider(editing.id, patch)
+        cancelEdit()
+      } else {
+        await createLlmProvider({
+          name: form.name.trim(),
+          provider_type: form.provider_type as ProviderType,
+          api_base: form.api_base.trim(),
+          model_id: form.model_id.trim(),
+          api_key: form.api_key.trim(), // secret-scan-ok: user input, POSTed once, never stored client-side
+          priority: Number(form.priority),
+          timeout_seconds: Number(form.timeout_seconds),
+          max_retries: Number(form.max_retries),
+          enabled: true,
+        })
+        setForm({ ...EMPTY_FORM })
+      }
       retry()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'bilinmeyen hata')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const duplicate = async (provider: LlmProvider) => {
+    try {
+      await duplicateLlmProvider(provider.id)
+      retry()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'bilinmeyen hata')
     }
   }
 
@@ -172,6 +223,20 @@ export function LlmProvidersScreen() {
                               <button
                                 type="button"
                                 className="btn--ghost"
+                                onClick={() => startEdit(p)}
+                              >
+                                Düzenle
+                              </button>
+                              <button
+                                type="button"
+                                className="btn--ghost"
+                                onClick={() => void duplicate(p)}
+                              >
+                                Kopyala
+                              </button>
+                              <button
+                                type="button"
+                                className="btn--ghost"
                                 onClick={() => void runTest(p.id)}
                               >
                                 Dene
@@ -223,13 +288,23 @@ export function LlmProvidersScreen() {
               </p>
             </section>
 
-            {state.data.providers.length < 3 && (
+            {(state.data.providers.length < 3 || editing) && (
               <section className="plate new-channel">
-                <h2 className="panel-title">Yeni Sağlayıcı</h2>
+                <h2 className="panel-title">
+                  {editing
+                    ? `Sağlayıcı Düzenle — ${editing.name}`
+                    : 'Yeni Sağlayıcı'}
+                </h2>
                 {formError && (
                   <div className="action-error" role="alert">
                     {formError}
                   </div>
+                )}
+                {editing && (
+                  <p className="plate-note">
+                    Değiştirmek istemediğiniz alanları aynı bırakın. API
+                    anahtarını boş bırakırsanız mevcut anahtar korunur.
+                  </p>
                 )}
                 <form
                   onSubmit={(e) => {
@@ -254,10 +329,22 @@ export function LlmProvidersScreen() {
                         value={form.provider_type}
                         onChange={(e) => set('provider_type', e.target.value)}
                       >
-                        <option value="openai">OpenAI uyumlu</option>
-                        <option value="anthropic">Anthropic uyumlu</option>
-                        <option value="google">Google uyumlu</option>
+                        <option value="openai">
+                          OpenAI uyumlu — uç nokta: /chat/completions
+                        </option>
+                        <option value="anthropic">
+                          Anthropic uyumlu — uç nokta: /messages
+                        </option>
+                        <option value="google">
+                          Google uyumlu — uç nokta:
+                          /models/&#123;model&#125;:generateContent
+                        </option>
                       </select>
+                      <span className="field-help">
+                        API’nizin uyumlu olduğu protokol. Emin değilseniz
+                        sağlayıcınızın dokümanında “chat/completions” (OpenAI)
+                        veya “messages” (Anthropic) yazan uç noktaya bakın.
+                      </span>
                     </div>
                     <div className="field">
                       <label htmlFor="llm-base">API Adresi</label>
@@ -268,6 +355,19 @@ export function LlmProvidersScreen() {
                         placeholder="https://api.example.com/v1"
                         required
                       />
+                      <span className="field-help">
+                        Adres uç nokta yolu içermesin; yol tür seçimine göre
+                        otomatik eklenir. Örnek: https://api.example.com/v1
+                      </span>
+                      {form.api_base.trim() !== '' && (
+                        <span className="field-help nums">
+                          İstek adresi:{' '}
+                          {form.api_base.trim().replace(/\/+$/, '')}
+                          {PROVIDER_TYPE_ENDPOINT[
+                            form.provider_type as ProviderType
+                          ]}
+                        </span>
+                      )}
                     </div>
                     <div className="field">
                       <label htmlFor="llm-model">Model Kimliği</label>
@@ -286,11 +386,17 @@ export function LlmProvidersScreen() {
                         value={form.api_key}
                         onChange={(e) => set('api_key', e.target.value)}
                         autoComplete="new-password"
-                        required
+                        placeholder={
+                          editing
+                            ? 'Değiştirmek için yeni değeri yazın'
+                            : undefined
+                        }
+                        required={!editing}
                       />
                       <span className="field-help">
-                        Bir kez kaydedilir; şifrelenmiş saklanır ve asla geri
-                        okunmaz.
+                        {editing
+                          ? 'Boş bırakırsanız mevcut anahtar korunur. '
+                          : 'Bir kez kaydedilir; şifrelenmiş saklanır ve asla geri okunmaz. '}
                       </span>
                     </div>
                     <div className="field">
@@ -336,8 +442,21 @@ export function LlmProvidersScreen() {
                   </div>
                   <div className="settings-actions">
                     <button type="submit" className="btn" disabled={saving}>
-                      {saving ? 'Ekleniyor…' : 'Sağlayıcı Ekle'}
+                      {saving
+                        ? 'Kaydediliyor…'
+                        : editing
+                          ? 'Değişiklikleri Kaydet'
+                          : 'Sağlayıcı Ekle'}
                     </button>
+                    {editing && (
+                      <button
+                        type="button"
+                        className="btn--ghost"
+                        onClick={cancelEdit}
+                      >
+                        Vazgeç
+                      </button>
+                    )}
                   </div>
                 </form>
               </section>

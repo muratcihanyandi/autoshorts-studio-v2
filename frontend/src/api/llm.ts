@@ -53,6 +53,13 @@ export const PROVIDER_TYPE_LABEL: Record<ProviderType, string> = {
   google: 'Google uyumlu',
 }
 
+// api_base sonuna otomatik eklenen uç nokta yolu (tür başına).
+export const PROVIDER_TYPE_ENDPOINT: Record<ProviderType, string> = {
+  openai: '/chat/completions',
+  anthropic: '/messages',
+  google: '/models/{model}:generateContent',
+}
+
 export const STATUS_LABEL: Record<string, string> = {
   success: 'başarılı',
   timeout: 'zaman aşımı',
@@ -94,6 +101,16 @@ export function updateLlmProvider(
 
 export function deleteLlmProvider(id: number): Promise<null> {
   return sendJson<null>(`/api/llm/providers/${id}`, 'DELETE')
+}
+
+export function duplicateLlmProvider(id: number): Promise<LlmProvider> {
+  return sendJson<LlmProvider>(
+    `/api/llm/providers/${id}/duplicate`,
+    'POST',
+  ).then((p) => {
+    if (p === null) throw new Error('Boş yanıt')
+    return p
+  })
 }
 
 export function testLlmProvider(id: number): Promise<LlmTestResult> {

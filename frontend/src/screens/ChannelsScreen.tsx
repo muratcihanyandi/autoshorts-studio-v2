@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   RIBBON_COLORS,
   STATUS_LABEL,
@@ -198,7 +198,11 @@ export function ChannelsScreen() {
       )}
       {oauthResult === 'hata' && (
         <div className="stale-note" role="alert">
-          <span>Kanal bağlantısı tamamlanamadı. Yeniden deneyin.</span>
+          <span>
+            Kanal bağlantısı tamamlanamadı. Google’daki yönlendirme adresi
+            kayıtlı olmayabilir —{' '}
+            <Link to="/rehber">Rehber’deki bağlantı adımlarına</Link> bakın.
+          </span>
           <button type="button" className="btn--ghost" onClick={clearOauthNote}>
             Kapat
           </button>

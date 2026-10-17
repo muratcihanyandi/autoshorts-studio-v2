@@ -33,12 +33,21 @@ from app.schemas_llm import (
     LlmProviderUpdate,
     LlmTestResult,
 )
-from app.security import TokenCipher
+from app.security import TokenCipher, TokenEncryptionError
 from app.services.channel_service import record_event
 
 PROVIDER_TYPES = ("openai", "anthropic", "google")
 MAX_PROVIDERS = 3
 HINT_MIN_LENGTH = 8
+
+# Uç nokta yolu türe göre otomatik eklenir; adrese yazılmışsa istek çift
+# yol ile gider ve sağlayıcı 404 verir. En sık yapılan hatadır.
+ENDPOINT_PATH_SUFFIXES = (
+    "/chat/completions",
+    "/messages",
+    "/generatecontent",
+    ":generatecontent",
+)
 
 STATUS_SUCCESS = "success"
 STATUS_TIMEOUT = "timeout"
@@ -76,7 +85,16 @@ def _validate_api_base(value: str) -> str:
     parts = urlsplit(value)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise LlmServiceError("api_base geçerli bir http(s) adresi olmalı.")
-    return value.rstrip("/")
+    normalized = value.rstrip("/")
+    lowered = normalized.lower()
+    if any(lowered.endswith(suffix) for suffix in ENDPOINT_PATH_SUFFIXES):
+        raise LlmServiceError(
+            "api_base uç nokta yolu içermemeli; yol türe göre otomatik "
+            "eklenir (OpenAI: /chat/completions, Anthropic: /messages, "
+            "Google: /models/{model}:generateContent). Örnek: "
+            "https://api.example.com/v1"
+        )
+    return normalized
 
 
 class LlmProviderService:
@@ -97,7 +115,14 @@ class LlmProviderService:
                 "ekranından girin.",
                 status_code=503,
             )
-        return TokenCipher(self._settings.token_encryption_key)
+        try:
+            return TokenCipher(self._settings.token_encryption_key)
+        except TokenEncryptionError as exc:
+            raise LlmServiceError(
+                "Token şifreleme anahtarı geçersiz; Ayarlar ekranından "
+                "doğru Fernet anahtarını girin.",
+                status_code=503,
+            ) from exc
 
     def _hint(self, provider: LlmProvider) -> str:
         try:
@@ -216,6 +241,64 @@ class LlmProviderService:
             await session.delete(row)
             await session.commit()
         return True
+
+    async def duplicate_provider(self, provider_id: int) -> LlmProviderOut:
+        """Same provider, another model: copy the row with its stored key.
+
+        The copy starts disabled so it does not join the fallback chain
+        until the user edits the model and enables it.
+        """
+        async with self._sessionmaker() as session:
+            source = await self._get(session, provider_id)
+            rows = (
+                (
+                    await session.execute(
+                        select(LlmProvider).order_by(
+                            LlmProvider.priority, LlmProvider.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if len(rows) >= MAX_PROVIDERS:
+                raise LlmServiceError(
+                    f"En fazla {MAX_PROVIDERS} sağlayıcı desteklenir "
+                    "(ana + iki yedek).",
+                    status_code=409,
+                )
+            existing_names = {row.name for row in rows}
+            base_name = f"{source.name} (kopya)"
+            name = base_name
+            suffix = 2
+            while name in existing_names:
+                name = f"{base_name} {suffix}"
+                suffix += 1
+            used_priorities = {row.priority for row in rows}
+            free_priority = next(
+                p for p in range(1, MAX_PROVIDERS + 1) if p not in used_priorities
+            )
+            copy = LlmProvider(
+                name=name,
+                provider_type=source.provider_type,
+                api_base=source.api_base,
+                model_id=source.model_id,
+                api_key_enc=source.api_key_enc,
+                enabled=False,
+                priority=free_priority,
+                timeout_seconds=source.timeout_seconds,
+                max_retries=source.max_retries,
+            )
+            session.add(copy)
+            record_event(
+                session,
+                None,
+                "llm.provider_duplicated",
+                {"source": source.name, "name": name},
+            )
+            await session.commit()
+            await session.refresh(copy)
+        return self._out(copy)
 
     # --- completion with bounded fallback ---
 

@@ -8,6 +8,7 @@ import { AutomationScreen } from './screens/AutomationScreen'
 import { LlmProvidersScreen } from './screens/LlmProvidersScreen'
 import { LogsScreen } from './screens/LogsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { GuideScreen } from './screens/GuideScreen'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="llm-saglayicilari" element={<LlmProvidersScreen />} />
           <Route path="gunlukler" element={<LogsScreen />} />
           <Route path="ayarlar" element={<SettingsScreen />} />
+          <Route path="rehber" element={<GuideScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

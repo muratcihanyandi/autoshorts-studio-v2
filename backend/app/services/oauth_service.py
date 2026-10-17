@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.models import Channel, ChannelStatus, OAuthCredential, OAuthState
-from app.security import TokenCipher
+from app.security import TokenCipher, TokenEncryptionError
 from app.services.channel_service import record_event
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -63,7 +63,16 @@ class OAuthService:
                 raise OAuthError(
                     "TOKEN_ENCRYPTION_KEY yapılandırılmamış.", status_code=503
                 )
-            self._cipher_instance = TokenCipher(self._settings.token_encryption_key)
+            try:
+                self._cipher_instance = TokenCipher(
+                    self._settings.token_encryption_key
+                )
+            except TokenEncryptionError as exc:
+                raise OAuthError(
+                    "Token şifreleme anahtarı geçersiz; Ayarlar ekranından "
+                    "doğru Fernet anahtarını girin.",
+                    status_code=503,
+                ) from exc
         return self._cipher_instance
 
     def _redirect_uri(self, channel_id: int) -> str:

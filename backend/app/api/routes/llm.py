@@ -81,6 +81,22 @@ async def delete_provider(request: Request, provider_id: int) -> None:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+@router.post(
+    "/llm/providers/{provider_id}/duplicate",
+    response_model=LlmProviderOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_provider(
+    request: Request, provider_id: int
+) -> LlmProviderOut:
+    """Same provider / another model: clone the row with its stored key."""
+    service = await _service(request)
+    try:
+        return await service.duplicate_provider(provider_id)
+    except LlmServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.post("/llm/providers/{provider_id}/test", response_model=LlmTestResult)
 async def test_provider(request: Request, provider_id: int) -> LlmTestResult:
     service = await _service(request)

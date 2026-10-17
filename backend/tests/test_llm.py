@@ -158,6 +158,104 @@ class TestCrud:
         finally:
             client.__exit__(None, None, None)
 
+    def test_api_base_with_endpoint_path_is_rejected(self, tmp_path):
+        client = _make_llm_app(tmp_path)
+        try:
+            for bad_base in (
+                "https://x.test/v1/chat/completions",
+                "https://x.test/v1/messages",
+                "https://x.test/v1/models/m:generateContent",
+            ):
+                response = client.post(
+                    "/api/llm/providers",
+                    json={
+                        "name": "Yollu",
+                        "provider_type": "openai",
+                        "api_base": bad_base,
+                        "model_id": "m",
+                        "api_key": "key-yollu-0000",  # secret-scan-ok: synthetic test key
+                    },
+                )
+                assert response.status_code == 400, bad_base
+                assert "otomatik" in response.json()["detail"]
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_invalid_env_cipher_key_returns_503_not_500(self, tmp_path):
+        from app.main import create_app
+
+        db_file = tmp_path / "badkey.db"
+        sync_engine = sa.create_engine(f"sqlite:///{db_file}")
+        Base.metadata.create_all(sync_engine)
+        sync_engine.dispose()
+        badkey = TestClient(
+            create_app(
+                Settings(
+                    database_url=f"sqlite+aiosqlite:///{db_file}",
+                    token_encryption_key="bozuk-ortam-anahtari",
+                )
+            )
+        )
+        with badkey:
+            response = badkey.post(
+                "/api/llm/providers",
+                json={
+                    "name": "BozukAnahtar",
+                    "provider_type": "openai",
+                    "api_base": "https://x.test/v1",
+                    "model_id": "m",
+                    "api_key": "key-bozuk-anahtar-1",  # secret-scan-ok: synthetic test key
+                },
+            )
+            assert response.status_code == 503
+            assert "geçersiz" in response.json()["detail"]
+
+    def test_duplicate_copies_row_with_same_key(self, tmp_path):
+        client = _make_llm_app(tmp_path)
+        try:
+            provider = _add_provider(client)
+            response = client.post(
+                f"/api/llm/providers/{provider['id']}/duplicate"
+            )
+            assert response.status_code == 201, response.text
+            body = response.json()
+            assert body["name"] == "Ana Saglayici (kopya)"
+            assert body["enabled"] is False
+            assert body["priority"] == 2
+            assert body["api_key"] == {"configured": True, "hint": "abcd"}
+            assert body["api_base"] == provider["api_base"]
+            assert body["model_id"] == provider["model_id"]
+
+            # Aynı şifreli anahtar gövdesi kopyalanır; yeniden şifrelenmez.
+            rows = _sync_rows(
+                client.app.state.test_db_path,
+                "SELECT api_key_enc FROM llm_providers "
+                "ORDER BY id",
+            )
+            assert rows[0][0] == rows[1][0]
+
+            # İkinci kopya benzersiz isim alır.
+            second = client.post(
+                f"/api/llm/providers/{provider['id']}/duplicate"
+            )
+            assert second.status_code == 201
+            assert second.json()["name"] == "Ana Saglayici (kopya) 2"
+        finally:
+            client.__exit__(None, None, None)
+
+    def test_duplicate_respects_limit_and_missing_id(self, tmp_path):
+        client = _make_llm_app(tmp_path)
+        try:
+            for i in range(3):
+                _add_provider(client, name=f"P{i}", priority=i + 1)
+            full = client.post("/api/llm/providers/1/duplicate")
+            assert full.status_code == 409
+
+            missing = client.post("/api/llm/providers/999/duplicate")
+            assert missing.status_code == 404
+        finally:
+            client.__exit__(None, None, None)
+
     def test_overview_counts_enabled_providers(self, tmp_path):
         client = _make_llm_app(tmp_path)
         try:

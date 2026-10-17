@@ -111,6 +111,30 @@ def test_start_requires_configuration(client_db: TestClient) -> None:
     assert response.status_code == 503
 
 
+def test_callback_with_invalid_env_key_returns_503(
+    tmp_path, mock_google
+) -> None:
+    """Ortamdan gelen bozuk Fernet anahtarı 500 değil açık 503 vermeli."""
+    from tests.conftest import _make_app
+
+    app = _make_app(
+        tmp_path,
+        google_client_id="test-client-id",
+        google_client_secret="test-client-secret",
+        oauth_redirect_base="http://lan-test:8000",
+        token_encryption_key="bozuk-ortam-anahtari",
+    )
+    with TestClient(app) as client:
+        channel_id = client.post("/api/channels", json={"name": "K"}).json()["id"]
+        state = _start_and_extract_state(client, channel_id)
+        response = client.get(
+            f"/api/channels/{channel_id}/oauth/callback",
+            params={"code": "mock-code", "state": state},
+        )
+        assert response.status_code == 503
+        assert "geçersiz" in response.json()["detail"]
+
+
 def test_start_returns_authorization_url(client_oauth: TestClient) -> None:
     channel_id = client_oauth.post("/api/channels", json={"name": "Kanal A"}).json()["id"]
     response = client_oauth.post(f"/api/channels/{channel_id}/oauth/start")

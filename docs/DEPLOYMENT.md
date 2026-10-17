@@ -182,7 +182,7 @@ python tools/backup_database.py verify  --url URL --against backup.db.bak
 
 # PostgreSQL (Pi) — custom-format dump + verified restore
 python tools/backup_database.py backup \
-  --url postgresql://autoshorts_app:***@192.168.2.170:5432/autoshorts_studio \
+  --url postgresql://autoshorts_app:CHANGE_ME@192.168.2.170:5432/autoshorts_studio \
   --out backup.dump
 python tools/backup_database.py restore --url ... --from backup.dump
 ```

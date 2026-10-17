@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/llm-saglayicilari', label: 'LLM Sağlayıcıları' },
   { to: '/gunlukler', label: 'Günlükler' },
   { to: '/ayarlar', label: 'Ayarlar' },
+  { to: '/rehber', label: 'Rehber' },
 ]
 
 export function AppShell() {
