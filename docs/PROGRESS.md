@@ -2,7 +2,7 @@
 
 ## Current Project State
 
-**Overall status:** Milestones 0–6 COMPLETE. Repository public on GitHub
+**Overall status:** Milestones 0–7 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
 to GHCR (every run green, latest `39010166549`). The user deployed the stack
 on the Pi via CasaOS (UI/API/database verified from the user's logs); the
@@ -10,10 +10,10 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 7 — Horizontal Video Processing
+**Current milestone:** Milestone 8 — Vertical Studio and Webcam Detection
 
-**Current task:** M7 kickoff — authorized media-source adapters, sequential
-downloads with bandwidth limits, media integrity validation.
+**Current task:** M8 kickoff — 9:16 render templates over the M7
+clip_candidates (webcam detection and calibration).
 
 **Last updated:** 2026-10-17
 
@@ -103,7 +103,7 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 4. Source Monitoring and Planning | COMPLETED | Source registration + rights records, quota-gated cached YouTube discovery with dedupe, filter rules, durable planning ledger (2026-10-17) |
 | 5. LLM Provider Manager | COMPLETED | Bounded three-provider fallback, encrypted masked keys, request log (2026-10-17) |
 | 6. Job Queue and Resource Management | COMPLETED | Persistent SKIP LOCKED queue, worker + heartbeat + stale recovery, token-bucket limit, disk guard, tmp cleanup (2026-10-17) |
-| 7. Horizontal Video Processing | NOT_STARTED | Authorized media pipeline |
+| 7. Horizontal Video Processing | COMPLETED | Stage-gated media pipeline on the queue: adapters, ffprobe integrity, transcripts, silence/scene/energy analysis, scored candidates with similarity checks (2026-10-17) |
 | 8. Vertical Studio and Webcam Detection | NOT_STARTED | Tracking and calibration |
 | 9. Subtitles and Metadata | NOT_STARTED | Turkish correction |
 | 10. Upload and Publishing | NOT_STARTED | Private uploads and schedules |
@@ -456,6 +456,74 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   `muratcihanyandi` database, so the `table_catalog` filter could not
   match `autoshorts_studio` tables.
 
+### Milestone 7 — Horizontal Video Processing (completed 2026-10-17)
+
+- Date: 2026-10-17
+- Milestone: 7
+- Task: authorized media-source adapters, sequential downloads, media
+  integrity validation, ffprobe inspection, transcript generation,
+  intro/outro detection, scene/reaction analysis, clip-candidate
+  generation, content similarity checks, results in PostgreSQL.
+- Plan: `docs/plans/2026-10-17-m7-horizontal-processing.md` (nine
+  tasks, TDD, one commit per task).
+- Implementation (commits `511ecd7`..`11226eb`, one per task, ADR-012):
+  - Schema (migration `0007`): `media_assets` (unique source_video_id,
+    origin, stage/status, sha256, analysis JSONB), `media_inspections`
+    (unique per asset), `transcripts` (unique per asset, segments
+    JSONB), `clip_candidates` (indexed by source_video_id,
+    end>start constraint, duplicate_of pointer).
+  - `media_probe.py`: ffprobe subprocess (JSON), stream/duration
+    integrity rules, chunked sha256 off the event loop.
+  - `media_download.py`: adapter protocol — LocalImportAdapter (copies
+    operator-authorized files + sidecar, originals untouched) and
+    YtDlpAdapter (subprocess, `--limit-rate` from settings, auto-subs,
+    PATH probe with Turkish error). Sequential downloads via one shared
+    asyncio lock in the worker handler registry.
+  - `media_transcript.py`: in-process VTT/SRT parsers (malformed cues
+    skipped), sidecar discovery incl. yt-dlp `<id>.<lang>.vtt` naming,
+    windowed text extraction.
+  - `media_analysis.py`: silencedetect log pairing (intro/outro runs),
+    scene cuts via `select=gt(scene,T),showinfo`, per-second audio RMS
+    from decoded mono PCM; parse helpers pure and unit-tested.
+  - `clip_candidates.py`: window scoring (energy/scene density/
+    transcript coverage minus silence overlap), greedy non-overlapping
+    top-K, word 3-gram Jaccard near-duplicate detection.
+  - `media_pipeline.py`: stage-gated orchestrator — every stage commits
+    its progress; a retried job resumes at the failed stage (no
+    redownload); failures mark the asset `failed` with a Turkish
+    `last_error` and stage stays for resume; per-stage audit events
+    (`media.download`..`media.candidates`); unauthorized sources
+    rejected; disk guard before download.
+  - Worker: `media_process` job type registered with the shared
+    download lock; `enqueue_planned_jobs` feeds one job per `planned`
+    video every `planned_poll_interval_minutes` (deduped, priority 8).
+  - Image: Debian `ffmpeg` package added to the backend Dockerfile;
+    `yt-dlp==2026.8.19` pinned in requirements.txt (subprocess binary,
+    never imported; dev tests never require it).
+- Verification (2026-10-17, dev machine, `backend/.venv`):
+  - Backend suite: **172 passed, 0 failed, 0 skipped** in 36.39s
+    (`cd backend && ./.venv/Scripts/python.exe -m pytest`). 57 new
+    tests: test_media_pipeline 19 (incl. full-pipeline e2e with real
+    ffmpeg media, idempotent re-run, failure+resume, corrupt-media
+    integrity, unauthorized rejection, sequential-lock, cross-video
+    similarity, worker-level e2e), test_media_probe 9, test_media_analysis
+    10, test_media_transcript 7, test_clip_candidates 10, test_jobs +3.
+  - Acceptance criteria evidence: entire pipeline on authorized test
+    media = `test_full_pipeline_with_local_import` +
+    `test_worker_runs_media_process_end_to_end` (real ffmpeg binaries,
+    all four tables populated, audit trail per stage); failures recorded
+    and recoverable = corrupt-media + retry-resume tests; valid
+    candidate timestamps = invariant assertions (`0 <= start < end <=
+    duration`, min/max clip bounds); originals preserved = import copies
+    (never moves) + originals-untouched assertion, downloads stay in
+    `downloads/`, tmp cleanup only prunes `tmp/`; resource limits =
+    sequential download lock test, disk guard, `--limit-rate` flag
+    test, worker concurrency limit (M6 tests).
+  - Known limitation: the yt-dlp YouTube path is verified via command
+    construction and injected runners only; a real authorized YouTube
+    download is a Pi-deployment verification step (no network/YouTube
+    dependency in unit tests, per ADR-008).
+
 ## 4. Current Blockers
 
 ### B1 — GitHub remote (RESOLVED 2026-10-16)
@@ -558,20 +626,24 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M6 + canon redesign session) on the dev machine
-(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
-stated directories.
+Verified 2026-10-17 (post-M7 session) on the dev machine (Windows 11,
+Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
+directories.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest`
-  - Passed: 115 (test_llm 18, test_jobs 16, test_oauth 14, test_settings
-    10, test_channels 9, test_sources 7, test_planning 7, test_media 7,
+  - Passed: **172** (test_media_pipeline 19, test_media_probe 9,
+    test_media_analysis 10, test_media_transcript 7, test_clip_candidates
+    10, test_llm 18, test_jobs 19, test_oauth 14, test_settings 10,
+    test_channels 9, test_sources 7, test_planning 7, test_media 7,
     test_resources 6, test_discovery 5, test_health 4, test_security 3,
     test_overview 2, test_migrations 2, test_logging 2, test_config 2,
     test_system 1 — collected per file)
-  - Failed: 0; Skipped: 0
+  - Failed: 0; Skipped: 0 (media-tooling tests run real ffmpeg/ffprobe
+    from PATH — dev machine and CI image both provide them)
   - sqlite test connections enforce foreign keys (production parity).
   - 2 warnings: starlette TestClient deprecation notice (dev-only) and a
-    pytest unhandled-thread-exception notice from a worker test.
+    pytest unhandled-thread-exception notice from a worker test
+    (both pre-existing).
 - Frontend — `cd frontend && npx vitest run`
   - Passed: 10 (App 4, SettingsScreen 3, AutomationScreen 3)
   - Failed: 0
@@ -609,23 +681,29 @@ stated directories.
   - `548d793` Milestone 6: durable job queue and resource management
   - `1bab11b` / `f3ea1af` / `e816bd4` / `c8f2fbb` / `f091f24` deployment polish
   - `121e175` canon "Kategori Standardı" redesign with studio brand
+  - `a8133fe` deployment DB record correction
+  - `511ecd7`..`11226eb` Milestone 7 (eight task commits: schema,
+    probe, adapters, transcript, analysis, candidates, pipeline,
+    worker wiring + image)
 - Working tree: clean after the final commit
 - Uncommitted changes: none after each milestone commit
 
 ## 9. Immediate Next Actions
 
-1. Milestone 7 (next): authorized media-source adapters — a download job
-   handler on the M6 queue (token-bucket bandwidth limit, sequential
-   downloads into the labelled media tree), media integrity validation
-   via ffprobe/ffmpeg.
-2. User (to connect a real YouTube channel): enter the Google Cloud
+1. Milestone 8 (next): vertical studio — 9:16 render templates on top
+   of the M7 clip_candidates (webcam detection and calibration).
+2. User (to exercise M7 on the Pi): pull the new image (includes
+   ffmpeg + yt-dlp), run `alembic upgrade head` (migration 0007), and
+   optionally import authorized test media via a `media_process` job
+   payload with `import_path`, or connect a real YouTube source (B4).
+3. User (to connect a real YouTube channel): enter the Google Cloud
    OAuth client values + Fernet key via the site settings screen or
    compose env vars (B4).
-3. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
+4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
 
-- What was implemented: Milestones 0–6. M4: source registration with
+- What was implemented: Milestones 0–7. M4: source registration with
   rights records, quota-gated cached YouTube discovery with dedupe,
   filter rules, durable auditable planning ledger. Interlude: the
   AutoShorts Studio brand kit applied everywhere and site-managed
@@ -635,28 +713,40 @@ stated directories.
   PostgreSQL SKIP LOCKED job queue with heartbeat, stale-job recovery,
   dedupe and cancel; worker with concurrency limit, periodic source
   discovery and hourly tmp cleanup; token-bucket download limit;
-  disk-space guard; labelled media tree. Post-M6: CasaOS deployment
-  polish (frontend first, UID/GID 1000, `/mnt/usb/Autoshorts_Studio`
-  volumes, branding) and the canon "Kategori Standardı" redesign (stat
-  cards, title-bar table panels, soft pills, round meters) with
-  `DESIGN.md` rewritten.
-- Tests: backend 115/115, frontend 10/10, oxlint/tsc/build clean, secret
-  scan clean, CI green on every push (latest run `39010166549`).
+  disk-space guard; labelled media tree. M7 (ADR-012): stage-gated
+  media pipeline as `media_process` jobs — local-import and yt-dlp
+  adapters (sequential, rate-limited, disk-guarded), ffprobe integrity
+  + sha256, VTT/SRT transcript sidecars, silence/scene/energy analysis
+  via ffmpeg subprocesses, scored non-overlapping clip candidates with
+  word-3-gram similarity rejection, all results in migration-0007
+  tables, resumable at the failed stage on retry. Post-M6: CasaOS
+  deployment polish (frontend first, UID/GID 1000,
+  `/mnt/usb/Autoshorts_Studio` volumes, branding) and the canon
+  "Kategori Standardı" redesign (stat cards, title-bar table panels,
+  soft pills, round meters) with `DESIGN.md` rewritten.
+- Tests: backend 172/172 (57 new M7 tests incl. real-ffmpeg e2e),
+  frontend 10/10, oxlint/tsc/build clean, secret scan clean (all
+  re-verified 2026-10-17 post-M7).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
   the app's live database is `autoshorts_studio` on the shared
   PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
-  recorded in `docs/DECISIONS.md`).
+  recorded in `docs/DECISIONS.md`). M7 needs an image rebuild + pull
+  on the Pi (now includes ffmpeg; yt-dlp via pip) and `alembic upgrade
+  head` (migration 0007) before media jobs can run there.
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.
-- Exact next task: Milestone 7 slice 1 — the authorized media-source
-  download handler as an M6 job (bandwidth-limited, sequential,
-  integrity-checked into `downloads/`).
-- Decisions to preserve: ADR-001…ADR-011 plus the implementation
+- Exact next task: Milestone 8 — vertical studio and webcam detection;
+  render 9:16 compositions from M7's `clip_candidates` (top-webcam /
+  bottom-video templates, multi-frame detection, calibration, review
+  on uncertainty).
+- Decisions to preserve: ADR-001…ADR-012 plus the implementation
   contracts: OAuth tokens and LLM keys encrypted at rest and never in
   API responses; audit trail append-only; job claim via SKIP LOCKED
   with heartbeat-driven recovery; runtime settings override env only
-  with explicit non-empty values; canon design system per `DESIGN.md`.
+  with explicit non-empty values; media tools subprocess-isolated and
+  PATH-probed; media pipeline stage-gated and idempotent; canon design
+  system per `DESIGN.md`.
 
 **Never infer progress from previous plans. The repository and test
 results are the source of truth.**

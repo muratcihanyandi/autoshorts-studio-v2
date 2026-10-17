@@ -182,7 +182,11 @@ Acceptance criteria:
 
 ## Milestone 7 — Horizontal Video Processing
 
-Status: NOT_STARTED
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests running real ffmpeg media
+through the local-import adapter; the yt-dlp YouTube path is
+code-complete and command-tested, with runtime verification deferred to
+Pi deployment per ADR-012.)
 
 Tasks:
 - Implement authorized media-source adapters.

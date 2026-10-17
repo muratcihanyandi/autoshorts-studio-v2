@@ -172,3 +172,42 @@ revisited only with cause; changes are recorded as new ADRs.
   `sum(1 + retries_i)` attempts. Adding a provider is a site operation
   (Settings-style API, masked keys). The manager is testable with
   injected HTTP transports, independent of any vendor account.
+
+## ADR-012: Subprocess-isolated media tools, stage-gated pipeline, caption-sidecar transcripts
+
+- **Status:** Accepted (2026-10-17)
+- **Context:** Milestone 7 must download authorized media, validate
+  integrity, inspect metadata, obtain transcripts, analyze
+  silence/scenes/energy, and produce clip candidates on a
+  memory-constrained Raspberry Pi 5. ffmpeg/ffprobe and yt-dlp are
+  mature C/Python tools, but in-process use (especially yt-dlp) risks
+  worker memory and crash isolation problems; ASR (Whisper) is far too
+  heavy for the Pi and unnecessary when sources carry captions.
+- **Decision:**
+  1. External media tools run as **subprocesses**, probed on PATH
+     (`ffmpeg_bin`, `ffprobe_bin`, yt-dlp binary). yt-dlp is installed
+     in the container image via requirements.txt but never imported;
+     dev-machine tests never require it (adapters take injected
+     runners). Zero new Python imports at runtime.
+  2. The pipeline is **stage-gated and idempotent** on the M6 job
+     queue: `media_assets.stage` names the next pending stage
+     (download -> inspect -> transcript -> analysis -> candidates);
+     each stage commits its own progress, so a retried job resumes at
+     the failed stage instead of redownloading. Downloads serialize
+     through one shared asyncio lock and respect the M6 disk guard and
+     rate limit (`--limit-rate`).
+  3. **Transcripts come from caption sidecars**: yt-dlp writes
+     auto-subs next to the media; local imports may carry their own
+     .vtt/.srt. VTT/SRT are parsed in-process; missing transcripts
+     degrade to transcript-less scoring rather than failing the job.
+     Heavy ASR stays out of scope for the Pi.
+  4. **Local import adapter** (`origin='local_import'`) lets operators
+     feed already-authorized files (copied, never moved) — this is also
+     the acceptance-test path for "authorized test media" without any
+     YouTube dependency.
+- **Consequences:** Crashes of external tools cannot take down the
+  worker; the ARM64 image grows by the Debian ffmpeg package; yt-dlp
+  availability is a deployment property verified on the Pi. Similarity
+  checks are transcript-text based (word 3-gram Jaccard), which is
+  cheap and explainable but blind to visually similar silent clips —
+  acceptable for M7; revisit with perceptual hashing if needed.
