@@ -15,5 +15,10 @@ COPY backend/alembic ./alembic
 
 EXPOSE 8000
 
+# Uygulama root olarak kosmaz: medya dosyalari Pi'nin ana kullanıcısına
+# (UID/GID 1000) ait olur. USB klasörü de ayni UID'ye chown edilmelidir:
+#   chown -R 1000:1000 /mnt/usb/Autoshorts_Studio
+USER 1000:1000
+
 # Migrations run before the API starts so the schema is always current.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
