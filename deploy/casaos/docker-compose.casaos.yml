@@ -13,8 +13,6 @@
 # Gelistirici notu: yerel imajlar (pull_policy: never), sadece frontend
 # portu disari acik.
 
-name: autoshorts-studio
-
 # Docker Compose proje adi ve CasaOS uygulama karti bilgileri.
 name: autoshorts-studio
 
@@ -25,6 +23,19 @@ x-casaos:
     port_map: "8080"
 
 services:
+  frontend:
+    image: autoshorts-studio-frontend:local
+    platform: linux/arm64
+    pull_policy: never
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    networks:
+      - autoshorts-net
+
   postgres:
     image: postgres:17-alpine
     platform: linux/arm64
@@ -41,6 +52,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    networks:
+      - autoshorts-net
 
   backend:
     image: autoshorts-studio-backend:local
@@ -55,14 +68,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - autoshorts-net
 
-  frontend:
-    image: autoshorts-studio-frontend:local
-    platform: linux/arm64
-    pull_policy: never
-    container_name: autoshorts-frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    ports:
-      - "8080:80"
+networks:
+  autoshorts-net:
+    name: autoshorts-net

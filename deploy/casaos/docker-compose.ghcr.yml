@@ -27,6 +27,21 @@ x-casaos:
     port_map: "1478"
 
 services:
+  frontend:
+    image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
+    platform: linux/arm64
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_HOST: backend
+    ports:
+      - "1478:80"
+    networks:
+      - autoshorts-net
+
+
   backend:
     image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/backend:latest
     platform: linux/arm64
@@ -42,19 +57,6 @@ services:
     networks:
       - autoshorts-net
 
-  frontend:
-    image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
-    platform: linux/arm64
-    container_name: autoshorts-frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    environment:
-      BACKEND_HOST: backend
-    ports:
-      - "1478:80"
-    networks:
-      - autoshorts-net
 
 networks:
   autoshorts-net:
