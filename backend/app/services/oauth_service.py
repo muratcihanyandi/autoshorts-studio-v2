@@ -303,3 +303,29 @@ class OAuthService:
             record_event(session, channel_id, "oauth.token_refreshed")
             await session.commit()
             return True
+
+    async def access_token(
+        self, channel_id: int, http: httpx.AsyncClient | None = None
+    ) -> str:
+        """Current access token for one API call (refreshes first).
+
+        The decrypted token stays in-memory for the caller's single
+        request; it is never logged or returned through the API. If
+        the refresh fails or no credential exists, the read below
+        raises a 409 OAuthError.
+        """
+        await self.refresh_if_needed(channel_id, http=http)
+        async with self._sessionmaker() as session:
+            credential = (
+                await session.execute(
+                    select(OAuthCredential).where(
+                        OAuthCredential.channel_id == channel_id
+                    )
+                )
+            ).scalars().one_or_none()
+            if credential is None or not credential.access_token_enc:
+                raise OAuthError(
+                    "Kanalın OAuth kimliği yok; önce bağlantı kurun.",
+                    status_code=409,
+                )
+            return self._cipher.decrypt(credential.access_token_enc)  # secret-scan-ok: in-memory only

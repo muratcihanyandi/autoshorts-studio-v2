@@ -16,6 +16,7 @@ from app.api.routes.jobs import router as jobs_router
 from app.api.routes.llm import router as llm_router
 from app.api.routes.overview import router as overview_router
 from app.api.routes.settings import router as settings_router
+from app.api.routes.publishing import router as publishing_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.system import router as system_router
 from app.config import Settings, get_settings
@@ -81,6 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(settings_router, prefix="/api")
     app.include_router(llm_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
+    app.include_router(publishing_router, prefix="/api")
     return app
 
 

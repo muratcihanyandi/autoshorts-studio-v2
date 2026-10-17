@@ -750,3 +750,55 @@ class ClipMetadata(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class PublishedVideo(Base):
+    """One uploaded clip on YouTube (M10).
+
+    Unique clip_candidate_id structurally prevents duplicate uploads;
+    the resumable session URI is kept so an interrupted upload can be
+    reconciled instead of restarted from scratch.
+    """
+
+    __tablename__ = "published_videos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    clip_candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("clip_candidates.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    youtube_video_id: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    visibility: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "visibility IN ('private', 'public')", name="ck_published_videos_visibility"
+        ),
+        default="private",
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('uploading', 'uploaded', 'verified', 'failed')",
+            name="ck_published_videos_status",
+        ),
+        default="uploading",
+        nullable=False,
+    )
+    upload_session_uri: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_error: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

@@ -40,3 +40,4 @@ watchfiles==1.3.0
 websockets==17.2
 yt-dlp==2026.8.19
 opencv-python-headless==4.12.0.88
+tzdata==2026.5

@@ -98,12 +98,36 @@ def build_handlers(
         service = MetadataService(sessionmaker, llm)
         return await service.generate(clip_candidate_id)
 
+    async def publish_clip(payload: dict[str, Any]) -> dict:
+        from app.services.publishing_service import PublishingService
+
+        clip_candidate_id = payload.get("clip_candidate_id")
+        if not isinstance(clip_candidate_id, int):
+            raise ValueError("payload.clip_candidate_id gerekli.")
+        service = PublishingService(sessionmaker, settings)
+        return await service.publish_clip(clip_candidate_id)
+
+    async def publish_due(payload: dict[str, Any]) -> dict:
+        from app.services.publishing_service import PublishingService
+
+        channel_id = payload.get("channel_id")
+        if not isinstance(channel_id, int):
+            raise ValueError("payload.channel_id gerekli.")
+        service = PublishingService(sessionmaker, settings)
+        candidate_id = await service.next_ready_candidate(channel_id)
+        if candidate_id is None:
+            return {"channel_id": channel_id, "published": 0}
+        result = await service.publish_clip(candidate_id)
+        return {"channel_id": channel_id, "published": 1, **result}
+
     return {
         "source_discover": source_discover,
         "media_process": media_process,
         "clip_render": clip_render,
         "subtitle_correct": subtitle_correct,
         "metadata_generate": metadata_generate,
+        "publish_clip": publish_clip,
+        "publish_due": publish_due,
     }
 
 
@@ -130,6 +154,7 @@ class JobWorker:
         self._last_planned_enqueue = 0.0
         self._last_render_enqueue = 0.0
         self._last_content_enqueue = 0.0
+        self._last_publish_enqueue = 0.0
         self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
@@ -335,6 +360,32 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_publish_jobs(self) -> int:
+        """Schedule-aware publishing: one publish_due job per connected
+        channel whose slot arrived. The job itself picks the best ready
+        candidate; nothing publishes without the rights/approval
+        guards."""
+        interval = self._settings.publish_check_interval_minutes * 60
+        now = time.monotonic()
+        if (
+            self._last_publish_enqueue
+            and now - self._last_publish_enqueue < interval
+        ):
+            return 0
+        self._last_publish_enqueue = now
+        from app.services.publishing_service import PublishingService
+
+        service = PublishingService(self._sessionmaker, self._settings)
+        channel_ids = await service.due_channels()
+        added = 0
+        for channel_id in channel_ids:
+            job = await self._jobs.enqueue(
+                "publish_due", {"channel_id": channel_id}, priority=6
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
         """Prune stale files from the media tmp folder (safe cleanup)."""
         if not self._settings.media_root:
@@ -375,6 +426,7 @@ class JobWorker:
                 await self.enqueue_planned_jobs()
                 await self.enqueue_render_jobs()
                 await self.enqueue_content_jobs()
+                await self.enqueue_publish_jobs()
                 await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:

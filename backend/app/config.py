@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     silence_min_seconds: float = 1.5
     scene_threshold: float = 0.4
     planned_poll_interval_minutes: int = 5
+    publish_check_interval_minutes: int = 10
 
     @property
     def oauth_configured(self) -> bool:

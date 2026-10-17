@@ -433,6 +433,8 @@ class TestJobWorker:
             "clip_render",
             "media_process",
             "metadata_generate",
+            "publish_clip",
+            "publish_due",
             "source_discover",
             "subtitle_correct",
         ]
