@@ -5,8 +5,10 @@
 **Overall status:** Milestones 0–6 COMPLETE. Repository public on GitHub
 (`muratcihanyandi/autoshorts-studio-v2`) with CI building ARM64+AMD64 images
 to GHCR (every run green, latest `39010166549`). The user deployed the stack
-on the Pi via CasaOS (UI/API/database verified from the user's logs); the app
-database lives in its own `postgres:17` container (ADR-005).
+on the Pi via CasaOS (UI/API/database verified from the user's logs); the
+app's live database is `autoshorts_studio` on the shared PostgreSQL
+instance (verified 2026-10-17 via read-only pg_stat_activity — see the
+deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
 **Current milestone:** Milestone 7 — Horizontal Video Processing
 
@@ -440,10 +442,19 @@ marked otherwise. Evidence commands are listed; none expose secrets.
   production build ok; DOM audits of 4 screens via headless Edge (stat
   cards, panels, pills, meters present; no legacy classes); CI runs
   through `39010166549`: success.
-- Deployment note (2026-10-17, read-only postgres MCP): the shared
-  PostgreSQL instance contains an EMPTY `autoshorts_studio` database — a
-  leftover; the deployed stack uses its own `postgres:17` container per
-  ADR-005. Cleanup decision belongs to the user.
+- Deployment note (2026-10-17, read-only postgres MCP, corrected after user
+  feedback): the app's live database is `autoshorts_studio` on the shared
+  PostgreSQL instance — `pg_stat_activity` shows 2 idle connections to it
+  from the Docker bridge (172.18.0.1, the app backend's SQLAlchemy pool)
+  and `pg_database_size` is 8342 kB, consistent with the migrated schema.
+  This matches the ADR-005 addendum's server-reuse choice (2026-10-16);
+  one deviation observed: the app connects as the shared admin role
+  (`muratcihanyandi`) rather than the planned least-privilege
+  `autoshorts_app` role (verification note in `docs/DECISIONS.md`;
+  related to gate G2). An earlier note calling this database an "empty
+  leftover" was a query artifact — information_schema was read from the
+  `muratcihanyandi` database, so the `table_catalog` filter could not
+  match `autoshorts_studio` tables.
 
 ## 4. Current Blockers
 
@@ -574,9 +585,9 @@ stated directories.
   latest `39010166549` for commit `121e175`).
 - Live deployment — Pi (CasaOS): stack deployed by the user; UI, API,
   and migrated database verified from the user's logs (2026-10-17).
-  Note: the app database lives in the stack's own `postgres:17`
-  container; the empty `autoshorts_studio` on the shared instance is an
-  unused leftover (see the deployment-polish record).
+  The app's live database is `autoshorts_studio` on the shared
+  PostgreSQL instance (2 live app connections observed via
+  pg_stat_activity; see the deployment-polish record).
 
 ## 8. Git State
 
@@ -611,8 +622,6 @@ stated directories.
    OAuth client values + Fernet key via the site settings screen or
    compose env vars (B4).
 3. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
-4. User (optional): decide whether to drop the empty leftover
-   `autoshorts_studio` database on the shared PostgreSQL instance.
 
 ## 10. Handoff Notes
 
@@ -634,9 +643,9 @@ stated directories.
 - Tests: backend 115/115, frontend 10/10, oxlint/tsc/build clean, secret
   scan clean, CI green on every push (latest run `39010166549`).
 - Deployment state: user-verified CasaOS stack on the Pi (UI/API/DB);
-  the app database is in the stack's own `postgres:17` container; the
-  empty `autoshorts_studio` on the shared instance is an unused
-  leftover flagged for a user cleanup decision.
+  the app's live database is `autoshorts_studio` on the shared
+  PostgreSQL instance (verified via pg_stat_activity; ADR-005 addendum
+  recorded in `docs/DECISIONS.md`).
 - Outstanding: B3 (gates G1/G2 user confirmation), B4 (OAuth/env values
   for a real YouTube connection — site settings now provide the entry
   path); the ghp_ token exposed in chat must stay revoked.

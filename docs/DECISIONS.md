@@ -59,6 +59,14 @@ revisited only with cause; changes are recorded as new ADRs.
   postgres service; backend points at the external instance). The bundled
   container variant remains available as
   `deploy/casaos/docker-compose.casaos.yml`.
+  **Verification 2026-10-17 (read-only pg_stat_activity):** the live stack
+  connects to `autoshorts_studio` on the shared instance from the Docker
+  bridge (2 idle pool connections) — the server-reuse choice is in effect.
+  One condition is NOT met: the app connects as the shared admin role
+  (`muratcihanyandi`), not the planned least-privilege `autoshorts_app`
+  role. Aligning the role (or explicitly accepting the deviation) belongs
+  to the user; related to gate G2 (password rotation) in
+  `docs/SECURITY.md`.
 - **Context:** The Pi already runs a shared PostgreSQL 17.10 (Docker network
   172.18.0.2) hosting several service databases, all owned by a single
   role. Its credentials are part of the exposed-credential lineage and must
