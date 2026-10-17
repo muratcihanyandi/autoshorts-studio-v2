@@ -13,11 +13,17 @@ from app.schemas_sources import (
     SourceVideoOut,
     SourceVideosOut,
     SourcesOut,
+    WebcamCalibrationIn,
+    WebcamCalibrationOut,
 )
 from app.services.channel_service import ChannelService
 from app.services.discovery_service import DiscoveryService
 from app.services.planning_service import PlanningService
 from app.services.source_service import SourceService, SourceServiceError
+from app.services.webcam_calibration import (
+    CalibrationError,
+    WebcamCalibrationService,
+)
 from app.services.youtube_client import YouTubeNotConfigured
 
 router = APIRouter(tags=["sources"])
@@ -130,3 +136,69 @@ async def plan_channel(request: Request, channel_id: int) -> PlanningResult:
     planning = PlanningService(request.app.state.sessionmaker)
     result = await planning.plan_for_channel(channel_id)
     return PlanningResult(**result)
+
+
+@router.get(
+    "/sources/{source_id}/webcam-calibration",
+    response_model=WebcamCalibrationOut,
+)
+async def get_webcam_calibration(request: Request, source_id: int):
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
+        )
+    sources_service, _ = _services(request)
+    if await sources_service.get_source(source_id) is None:
+        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+    calibration = await WebcamCalibrationService(sessionmaker).get(source_id)
+    if calibration is None:
+        raise HTTPException(status_code=404, detail="Kalibrasyon kaydı yok.")
+    return WebcamCalibrationOut.model_validate(calibration)
+
+
+@router.put(
+    "/sources/{source_id}/webcam-calibration",
+    response_model=WebcamCalibrationOut,
+)
+async def set_webcam_calibration(
+    request: Request, source_id: int, data: WebcamCalibrationIn
+):
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
+        )
+    sources_service, _ = _services(request)
+    if await sources_service.get_source(source_id) is None:
+        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+    service = WebcamCalibrationService(sessionmaker)
+    try:
+        calibration = await service.set_calibration(
+            source_id,
+            (data.region.x, data.region.y, data.region.w, data.region.h),
+            manual=data.manual,
+            min_confidence=data.min_confidence,
+        )
+    except CalibrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return WebcamCalibrationOut.model_validate(calibration)
+
+
+@router.delete(
+    "/sources/{source_id}/webcam-calibration",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_webcam_calibration(request: Request, source_id: int) -> None:
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
+        )
+    sources_service, _ = _services(request)
+    if await sources_service.get_source(source_id) is None:
+        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+    await WebcamCalibrationService(sessionmaker).delete(source_id)

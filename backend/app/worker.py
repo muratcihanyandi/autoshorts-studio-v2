@@ -64,9 +64,22 @@ def build_handlers(
         )
         return await pipeline.run(source_video_id, import_path=import_path)
 
+    async def clip_render(payload: dict[str, Any]) -> dict:
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        clip_candidate_id = payload.get("clip_candidate_id")
+        if not isinstance(clip_candidate_id, int):
+            raise ValueError("payload.clip_candidate_id gerekli.")
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        pipeline = VerticalPipelineService(sessionmaker, effective)
+        return await pipeline.run(clip_candidate_id)
+
     return {
         "source_discover": source_discover,
         "media_process": media_process,
+        "clip_render": clip_render,
     }
 
 
@@ -91,6 +104,7 @@ class JobWorker:
         self._worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self._last_poll_enqueue = 0.0
         self._last_planned_enqueue = 0.0
+        self._last_render_enqueue = 0.0
         self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
@@ -200,6 +214,44 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_render_jobs(self) -> int:
+        """Periodic render feed: one clip_render job per candidate that
+        is not rendered yet (rendered/review/failed rows are excluded
+        by the NOT EXISTS subquery; dedupe guards repeated ticks)."""
+        interval = self._settings.planned_poll_interval_minutes * 60
+        now = time.monotonic()
+        if (
+            self._last_render_enqueue
+            and now - self._last_render_enqueue < interval
+        ):
+            return 0
+        self._last_render_enqueue = now
+        added = 0
+        async with self._sessionmaker() as session:
+            candidate_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT cc.id FROM clip_candidates cc"
+                            " WHERE cc.status = 'candidate'"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM rendered_clips rc"
+                            " WHERE rc.clip_candidate_id = cc.id)"
+                            " ORDER BY cc.source_video_id, cc.start_seconds"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        for candidate_id in candidate_ids:
+            job = await self._jobs.enqueue(
+                "clip_render", {"clip_candidate_id": candidate_id}, priority=8
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
         """Prune stale files from the media tmp folder (safe cleanup)."""
         if not self._settings.media_root:
@@ -238,6 +290,7 @@ class JobWorker:
             try:
                 await self.enqueue_poll_jobs()
                 await self.enqueue_planned_jobs()
+                await self.enqueue_render_jobs()
                 await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:

@@ -110,3 +110,29 @@ class SourceVideoOut(BaseModel):
 class SourceVideosOut(BaseModel):
     videos: list[SourceVideoOut]
     total: int
+
+
+class WebcamRegion(BaseModel):
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+class WebcamCalibrationIn(BaseModel):
+    region: WebcamRegion
+    manual: bool = True
+    min_confidence: float | None = None
+
+
+class WebcamCalibrationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_channel_id: int
+    region_x: int
+    region_y: int
+    region_w: int
+    region_h: int
+    manual: bool
+    min_confidence: float | None
+    updated_at: datetime

@@ -63,6 +63,8 @@ MEDIA_ASSET_STAGES = ("download", "inspect", "transcript", "analysis", "candidat
 
 CLIP_CANDIDATE_STATUSES = ("candidate", "rejected", "selected")
 
+RENDERED_CLIP_STATUSES = ("rendering", "rendered", "review", "failed")
+
 
 class Channel(Base):
     """A YouTube publishing channel the studio manages."""
@@ -573,4 +575,84 @@ class ClipCandidate(Base):
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WebcamCalibration(Base):
+    """Streamer-specific webcam calibration (M8).
+
+    A manual region wins over detection outright; min_confidence
+    overrides the default review threshold for this source only.
+    """
+
+    __tablename__ = "webcam_calibrations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_channel_id: Mapped[int] = mapped_column(
+        ForeignKey("source_channels.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    region_x: Mapped[int] = mapped_column(Integer, nullable=False)
+    region_y: Mapped[int] = mapped_column(Integer, nullable=False)
+    region_w: Mapped[int] = mapped_column(Integer, nullable=False)
+    region_h: Mapped[int] = mapped_column(Integer, nullable=False)
+    manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    min_confidence: Mapped[float | None] = mapped_column(
+        CheckConstraint(
+            "min_confidence IS NULL OR (min_confidence >= 0 AND min_confidence <= 1)",
+            name="ck_webcam_calibrations_confidence",
+        )
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class RenderedClip(Base):
+    """One rendered 9:16 clip from a clip candidate (M8).
+
+    'review' means webcam detection was uncertain — nothing rendered;
+    the operator can calibrate the source and re-run. Unique
+    clip_candidate_id keeps re-runs idempotent.
+    """
+
+    __tablename__ = "rendered_clips"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    clip_candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("clip_candidates.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('rendering', 'rendered', 'review', 'failed')",
+            name="ck_rendered_clips_status",
+        ),
+        default="rendering",
+        nullable=False,
+    )
+    file_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    file_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    width: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    height: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    layout: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    validation: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    webcam_region: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    webcam_confidence: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )

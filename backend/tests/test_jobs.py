@@ -430,6 +430,7 @@ class TestJobWorker:
                 await engine.dispose()
 
         assert asyncio.run(scenario()) == [
+            "clip_render",
             "media_process",
             "source_discover",
         ]

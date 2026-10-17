@@ -4,9 +4,9 @@ WORKDIR /app
 
 # M7 medya boru hatti: ffmpeg/ffprobe (ARM64 paketi) analiz ve denetim
 # icin; yt-dlp requirements.txt uzerinden pip ile kurulur (subprocess
-# cagrisi, import edilmez).
+# cagrisi, import edilmez). M8: altyazi yakma (libass) font ister.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
