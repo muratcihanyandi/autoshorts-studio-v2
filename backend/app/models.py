@@ -49,6 +49,20 @@ SOURCE_PERMISSION_STATUSES = ("pending", "authorized", "rejected")
 
 SOURCE_VIDEO_STATUSES = ("discovered", "excluded", "planned", "processed")
 
+MEDIA_ASSET_STATUSES = (
+    "downloading",
+    "downloaded",
+    "inspected",
+    "transcribed",
+    "analyzed",
+    "processed",
+    "failed",
+)
+
+MEDIA_ASSET_STAGES = ("download", "inspect", "transcript", "analysis", "candidates")
+
+CLIP_CANDIDATE_STATUSES = ("candidate", "rejected", "selected")
+
 
 class Channel(Base):
     """A YouTube publishing channel the studio manages."""
@@ -402,4 +416,161 @@ class Job(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class MediaAsset(Base):
+    """One downloaded source video and its pipeline progress (M7).
+
+    Unique source_video_id makes the pipeline idempotent: a retried job
+    resumes at 'stage' instead of redownloading. 'status' is the coarse
+    row state; 'stage' is the next pending pipeline stage.
+    """
+
+    __tablename__ = "media_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_video_id: Mapped[int] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    origin: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "origin IN ('youtube', 'local_import')", name="ck_media_assets_origin"
+        ),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('downloading', 'downloaded', 'inspected', 'transcribed', "
+            "'analyzed', 'processed', 'failed')",
+            name="ck_media_assets_status",
+        ),
+        default="downloading",
+        nullable=False,
+    )
+    stage: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "stage IN ('download', 'inspect', 'transcript', 'analysis', 'candidates')",
+            name="ck_media_assets_stage",
+        ),
+        default="download",
+        nullable=False,
+    )
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    analysis: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class MediaInspection(Base):
+    """ffprobe metadata for one media asset (M7)."""
+
+    __tablename__ = "media_inspections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    media_asset_id: Mapped[int] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    duration_seconds: Mapped[float] = mapped_column(
+        CheckConstraint("duration_seconds > 0", name="ck_media_inspections_duration"),
+        nullable=False,
+    )
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    fps: Mapped[float] = mapped_column(nullable=False)
+    video_codec: Mapped[str] = mapped_column(Text, nullable=False)
+    audio_codec: Mapped[str | None] = mapped_column(Text)
+    has_audio: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    format_name: Mapped[str | None] = mapped_column(Text)
+    raw: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Transcript(Base):
+    """Timestamped caption segments for one media asset (M7).
+
+    'source' records how the transcript was obtained; raw_path keeps the
+    sidecar file so the original transcript stays recoverable (M9).
+    """
+
+    __tablename__ = "transcripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    media_asset_id: Mapped[int] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    language: Mapped[str] = mapped_column(Text, nullable=False, default="tr")
+    source: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "source IN ('sidecar', 'auto_caption')", name="ck_transcripts_source"
+        ),
+        nullable=False,
+    )
+    segment_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    segments: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONColumn, nullable=False, default=list
+    )
+    raw_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ClipCandidate(Base):
+    """A scored vertical-clip window cut from a source video (M7).
+
+    Timestamps always satisfy 0 <= start < end <= source duration.
+    Near-duplicates are kept with status='rejected' and a pointer to the
+    candidate they duplicate, so decisions stay auditable.
+    """
+
+    __tablename__ = "clip_candidates"
+    __table_args__ = (
+        CheckConstraint("end_seconds > start_seconds", name="ck_clip_candidates_range"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_video_id: Mapped[int] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    start_seconds: Mapped[float] = mapped_column(nullable=False)
+    end_seconds: Mapped[float] = mapped_column(nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(nullable=False)
+    score: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    reason: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('candidate', 'rejected', 'selected')",
+            name="ck_clip_candidates_status",
+        ),
+        default="candidate",
+        nullable=False,
+    )
+    duplicate_of_candidate_id: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSONColumn)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

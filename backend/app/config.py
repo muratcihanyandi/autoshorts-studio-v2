@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     # /mnt/usb/Autoshorts_Studio here). Empty keeps the feature off.
     media_root: str = ""
 
+    # Milestone 7 media pipeline. External tools run as subprocesses
+    # and are probed on PATH; binaries live in the container image.
+    ffmpeg_bin: str = "ffmpeg"
+    ffprobe_bin: str = "ffprobe"
+    clip_min_seconds: int = 20
+    clip_max_seconds: int = 90
+    silence_noise_db: float = -35.0
+    silence_min_seconds: float = 1.5
+    scene_threshold: float = 0.4
+    planned_poll_interval_minutes: int = 5
+
     @property
     def oauth_configured(self) -> bool:
         return bool(
