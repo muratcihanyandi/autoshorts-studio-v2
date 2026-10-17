@@ -1,4 +1,4 @@
-# Architecture Decision Records — Autonomous Creator Studio
+# Architecture Decision Records — AutoShorts Studio
 
 Each decision records context, the decision, and its status. Decisions are
 revisited only with cause; changes are recorded as new ADRs.

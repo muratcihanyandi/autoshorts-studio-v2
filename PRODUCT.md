@@ -17,7 +17,7 @@ kurulumundan çıkarım.)
 
 ## Product Purpose
 
-Autonomous Creator Studio: Raspberry Pi 5 üzerinde çalışan, birden çok
+AutoShorts Studio: Raspberry Pi 5 üzerinde çalışan, birden çok
 YouTube kanalını yöneten otonom klip stüdyosu. Yetkili kaynak kanalları
 izler, yatay videoları dikey kliplere dönüştürür, Türkçe altyazıları
 düzeltir, metaveri hazırlar, özel (private) video stoğu tutar ve
@@ -60,7 +60,7 @@ gerektiğinde açılan bir geçiş/override mekanizmasıdır.
 
 - Arayüz metinleri Türkçe, teknik terimler (OAuth, LLM) evrensel
   kalabilir.
-- Mevcut marka varlığı/logo yok; isim: "Autonomous Creator Studio".
+- Mevcut marka varlığı/logo yok; isim: "AutoShorts Studio".
 
 ## Evidence on Hand
 

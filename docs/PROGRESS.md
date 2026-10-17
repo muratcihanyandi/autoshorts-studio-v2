@@ -1,4 +1,4 @@
-# Autonomous Creator Studio — Current Progress
+# AutoShorts Studio — Current Progress
 
 ## Current Project State
 

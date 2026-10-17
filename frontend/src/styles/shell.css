@@ -14,20 +14,15 @@
 }
 
 .rail-brand {
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 17px;
-  letter-spacing: 0.04em;
-  line-height: 1.3;
-  color: var(--cream-text);
   padding: 22px 20px 16px;
   border-bottom: 1px solid var(--ink-border);
   margin-bottom: var(--space-3);
 }
 
-.rail-brand em {
-  font-style: normal;
-  color: var(--amber);
+.rail-brand img {
+  display: block;
+  width: 148px;
+  height: auto;
 }
 
 .rail nav {
@@ -48,8 +43,8 @@
 }
 
 .rail nav a.active {
-  background: var(--cobalt);
-  color: var(--paper-white);
+  background: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
@@ -78,7 +73,7 @@
 
 .screen-head h1 {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 800;
   font-size: 24px;
   letter-spacing: 0.03em;
   color: var(--cream-text);
@@ -115,7 +110,7 @@
     margin-right: var(--space-2);
   }
   .rail nav a.active {
-    border-color: var(--cobalt);
+    border-color: var(--accent);
   }
   .rail-foot {
     display: none;

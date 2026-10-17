@@ -1,4 +1,4 @@
-# Security Checklist — Autonomous Creator Studio
+# Security Checklist — AutoShorts Studio
 
 Living document. Every gate must be re-checked before deployment. Never
 store real secrets in this file or any committed file.

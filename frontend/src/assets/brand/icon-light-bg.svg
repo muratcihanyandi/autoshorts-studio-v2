@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <mask id="a-cutout">
+      <rect width="512" height="512" fill="white"/>
+      <polygon points="212,215 212,305 290,260" fill="black"/>
+      <polygon points="185,425 220,340 270,340 305,425" fill="black"/>
+      <polygon points="262,88 450,88 475,232 287,232" fill="black"/>
+    </mask>
+    <mask id="film-cutout">
+      <rect width="512" height="512" fill="white"/>
+      <polygon points="292,108 314,108 316,122 294,122" fill="black"/>
+      <polygon points="334,108 356,108 358,122 336,122" fill="black"/>
+      <polygon points="376,108 398,108 400,122 378,122" fill="black"/>
+      <polygon points="418,108 440,108 442,122 420,122" fill="black"/>
+      <polygon points="309,198 331,198 333,212 311,212" fill="black"/>
+      <polygon points="351,198 373,198 375,212 353,212" fill="black"/>
+      <polygon points="393,198 415,198 417,212 395,212" fill="black"/>
+      <polygon points="435,198 457,198 459,212 437,212" fill="black"/>
+    </mask>
+  </defs>
+  
+  <polygon points="205,95 285,95 405,420 85,420" fill="#0B192C" mask="url(#a-cutout)"/>
+  <polygon points="274,96 446,96 468,224 296,224" fill="#15F5BA" mask="url(#film-cutout)"/>
+  <polygon points="338,138 338,182 376,160" fill="#0B192C"/>
+  <polygon points="378,138 378,182 416,160" fill="#0B192C"/>
+</svg>

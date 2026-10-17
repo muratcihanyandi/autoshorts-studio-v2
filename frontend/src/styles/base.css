@@ -19,17 +19,17 @@ body {
 }
 
 ::selection {
-  background: var(--cobalt);
-  color: var(--paper-white);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--cobalt-on-dark);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 a {
-  color: var(--cobalt-on-dark);
+  color: var(--accent);
 }
 
 button {
@@ -62,8 +62,8 @@ button {
   position: absolute;
   left: -9999px;
   top: 0;
-  background: var(--cobalt);
-  color: var(--paper-white);
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: var(--space-2) var(--space-4);
   z-index: 100;
 }

@@ -40,7 +40,7 @@
 
 .marquee-number {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 800;
   font-size: clamp(64px, 8vw, 116px);
   line-height: 0.92;
   color: var(--plate-ink);
@@ -48,7 +48,7 @@
 
 .marquee-label {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 800;
   font-size: clamp(20px, 2.2vw, 30px);
   letter-spacing: 0.02em;
   display: block;
@@ -58,7 +58,7 @@
 /* --- damga --- */
 .stamp {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 800;
   font-size: 15px;
   letter-spacing: 0.08em;
   padding: 8px 12px;
@@ -116,7 +116,7 @@
   padding: 8px 0;
   border-bottom: 1px solid var(--plate-line);
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.05em;
 }
@@ -170,7 +170,7 @@
 .gauge-fill {
   display: block;
   height: 100%;
-  background: var(--cobalt);
+  background: var(--accent);
 }
 
 .gauge-fill.warn {
@@ -221,7 +221,7 @@
 
 .state-box h3 {
   font-family: var(--font-display);
-  font-weight: 400;
+  font-weight: 700;
   font-size: 20px;
   letter-spacing: 0.03em;
   margin-bottom: var(--space-2);
@@ -249,7 +249,7 @@
 
 .state-box a:hover,
 .state-box button:hover {
-  background: #33302a;
+  background: #1a2f4a;
 }
 
 .state-box.error h3 {
@@ -272,7 +272,7 @@
   width: 42px;
   height: 4px;
   margin-bottom: var(--space-3);
-  background: var(--cobalt);
+  background: var(--accent);
   animation: ink-sweep 1.1s ease-in-out infinite;
 }
 
@@ -405,7 +405,7 @@
 
 .field input:focus-visible,
 .field select:focus-visible {
-  outline: 2px solid var(--cobalt);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -423,7 +423,7 @@
 }
 
 .btn:hover {
-  background: #33302a;
+  background: #1a2f4a;
 }
 
 .btn:disabled {
@@ -485,7 +485,7 @@
 }
 
 .ribbon-option:focus-visible {
-  outline: 2px solid var(--cobalt);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

@@ -1,4 +1,4 @@
-# Autonomous Creator Studio — CasaOS kurulumu, HARICI PostgreSQL (Raspberry Pi 5, ARM64)
+# AutoShorts Studio — CasaOS kurulumu, HARICI PostgreSQL (Raspberry Pi 5, ARM64)
 #
 # Bu dosya, Pi'de zaten calisan PostgreSQL sunucusunu (192.168.2.170:5432)
 # kullanir. Kendi postgres konteynerini KURMAZ.

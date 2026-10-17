@@ -1,0 +1,43 @@
+/* AutoShorts Studio marka fontlari — marka kitinden self-hosted TTF.
+   Roller: Noto Sans Display (baslik/logo), Noto Sans (govde/vurgu),
+   Google Sans (arayuz metni). Latin-ext dahil tam Turkce glif destegi
+   dogrulandi (fontTools cmap kontrolu, 2026-10-17). */
+@font-face {
+  font-family: 'Noto Sans Display';
+  src: url('../assets/fonts/notosansdisplay-extrabold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans Display';
+  src: url('../assets/fonts/notosansdisplay-bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('../assets/fonts/notosans-semibold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('../assets/fonts/notosans-regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Google Sans';
+  src: url('../assets/fonts/googlesans-regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

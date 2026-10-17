@@ -1,4 +1,4 @@
-# Architecture — Autonomous Creator Studio
+# Architecture — AutoShorts Studio
 
 Status: initial version (Milestone 0). Everything marked **[VERIFIED]** was
 confirmed by direct inspection on 2026-10-16. Everything marked **[PLANNED]**

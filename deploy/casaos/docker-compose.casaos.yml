@@ -1,4 +1,4 @@
-# Autonomous Creator Studio — CasaOS kurulum sablonu, PAKET ICI PostgreSQL (Raspberry Pi 5, ARM64)
+# AutoShorts Studio — CasaOS kurulum sablonu, PAKET ICI PostgreSQL (Raspberry Pi 5, ARM64)
 #
 # Bu varyant kendi izole postgres:17 konteynerini kurar (paylasilan
 # sunucuya dokunmaz). Veri: /DATA/AppData/autoshorts-studio/pgdata

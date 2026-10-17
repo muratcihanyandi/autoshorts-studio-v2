@@ -45,7 +45,7 @@ export function OverviewScreen() {
         <span className="screen-sub nums">
           {overview.state.status === 'ok'
             ? `v${overview.state.data.version} · çalışma süresi ${formatUptime(overview.state.data.uptime_seconds)}`
-            : 'Autonomous Creator Studio'}
+            : 'AutoShorts Studio'}
         </span>
       </div>
 

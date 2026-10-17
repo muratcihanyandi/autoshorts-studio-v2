@@ -27,15 +27,15 @@ def mock_google_handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 200,
                 json={
-                    "access_token": "ya29.refreshed",
+                    "access_token": "ya29.refreshed",  # secret-scan-ok (sentetik)
                     "expires_in": 3600,
                     "token_type": "Bearer",
                 },
             )
         if "code=mock-code-b" in body:
-            access_token = "ya29.token-b"
+            access_token = "ya29.token-b"  # secret-scan-ok (sentetik)
         else:
-            access_token = "ya29.token-a"
+            access_token = "ya29.token-a"  # secret-scan-ok (sentetik)
         return httpx.Response(
             200,
             json={

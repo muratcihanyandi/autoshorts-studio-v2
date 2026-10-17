@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import logoUrl from '../assets/brand/logo-dark-bg.svg'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Genel Bakış', end: true },
@@ -19,9 +20,7 @@ export function AppShell() {
       </a>
       <aside className="rail">
         <div className="rail-brand">
-          AUTONOMOUS
-          <br />
-          CREATOR <em>STUDIO</em>
+          <img src={logoUrl} alt="AutoShorts Studio" />
         </div>
         <nav aria-label="Stüdyo gezinme">
           {NAV_ITEMS.map((item) => (

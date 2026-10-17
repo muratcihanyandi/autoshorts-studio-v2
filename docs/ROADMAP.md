@@ -1,4 +1,4 @@
-# Autonomous Creator Studio — Development Roadmap
+# AutoShorts Studio — Development Roadmap
 
 ## Project Objective
 

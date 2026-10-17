@@ -1,4 +1,4 @@
-# AGENTS.md — Autonomous Creator Studio
+# AGENTS.md — AutoShorts Studio
 
 Instructions for coding agents working in this repository
 (`AutoShortsStudio_RaspberryPi5_2`). This file is the project-level contract;

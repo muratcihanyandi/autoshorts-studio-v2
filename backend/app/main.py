@@ -45,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     app = FastAPI(
-        title="Autonomous Creator Studio API",
+        title="AutoShorts Studio API",
         version=__version__,
         lifespan=lifespan,
     )

@@ -1,41 +1,47 @@
-/* Yeşilçam Baskı Odası — tasarım token'ları.
-   Palet: koyu mürekkep zemini, krem afiş levhası, poster mürekkepleri
-   durum işi yapar (kırmızı kritik, hardal uyarı, yeşil sağlıklı, kobalt seçim). */
+/* AutoShorts Studio tasarım token'ları — marka kiti "Modern Sinematik & Prestij".
+   Palet: Zengin Geceyarısı Mavisi zemin, Fildişi Beyazı levhalar, Canlı Okyanus
+   Yeşili vurgu (%60 açık / %30 koyu / %10 vurgu dengesi), Arduvaz Grisi nötr.
+   Vurgu üstünde metin daima koyu mavi, asla beyaz değil (marka kuralı). */
 :root {
   /* zemin ve levhalar */
-  --ink-ground: #171b26;
-  --ink-deep: #10131c;
-  --ink-panel: #1e2330;
-  --ink-border: #2c3244;
-  --plate: #f2ecdd;
-  --plate-line: #c9c1ac;
-  --plate-ink: #1c1b17;
+  --ink-ground: #0b192c;
+  --ink-deep: #081322;
+  --ink-panel: #12233c;
+  --ink-border: #24354f;
+  --plate: #f0f4f8;
+  --plate-line: #c7d2de;
+  --plate-ink: #0b192c;
 
   /* metin */
-  --cream-text: #ede6d3;
-  --muted-on-dark: #b9b29e;
-  --faint-on-dark: #9a9380;
+  --cream-text: #f0f4f8;
+  --muted-on-dark: #94a3b8;
+  --faint-on-dark: #7c8ba1;
 
-  /* levha üstü yardımcı mürekkepler (krem zeminde >=4.5:1) */
-  --plate-muted: #6e6753;
-  --plate-body-ink: #4a4436;
+  /* levha üstü yardımcı mürekkepler (fildişi zeminde >=4.5:1) */
+  --plate-muted: #64748b;
+  --plate-body-ink: #334155;
 
-  /* poster mürekkepleri */
-  --red: #c93a2e;
-  --red-on-plate: #b02f24;
-  --amber: #d9a036;
-  --amber-on-plate: #8f5e0f;
-  --amber-on-dark: #d9a036;
-  --green: #2e7f6f;
-  --green-on-plate: #1f5b4e;
-  --green-on-dark: #4fa391;
-  --cobalt: #3550c4;
-  --cobalt-on-dark: #7d92e8;
-  --paper-white: #fffdf6;
+  /* vurgu — Canlı Okyanus Yeşili ve türevleri */
+  --accent: #15f5ba;
+  --accent-ink: #0b192c;
+  --accent-deep: #0a8f6d;
+  --accent-soft: #a7f5dd;
 
-  /* tipografi */
-  --font-display: 'Anton', 'Arial Narrow', sans-serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* durum renkleri (işlevsel; marka nötr+vurgu temelli) */
+  --red: #d64545;
+  --red-on-plate: #b91c1c;
+  --amber: #e8a33d;
+  --amber-on-plate: #92610a;
+  --amber-on-dark: #e8a33d;
+  --green: #0e9f6e;
+  --green-on-plate: #047857;
+  --green-on-dark: #34d399;
+  --paper-white: #ffffff;
+
+  /* tipografi — marka font paketi */
+  --font-display: 'Noto Sans Display', 'Segoe UI', sans-serif;
+  --font-body: 'Google Sans', 'Noto Sans', system-ui, -apple-system, 'Segoe UI',
+    Roboto, sans-serif;
 
   /* ölçek */
   --space-1: 4px;
@@ -45,8 +51,8 @@
   --space-5: 28px;
   --space-6: 40px;
 
-  /* afiş levhası keskin baskı köşesi; koyu paneller yumuşak */
-  --radius-print: 0px;
-  --radius-panel: 4px;
-  --radius-control: 2px;
+  /* modern sinematik köşeler: levha geniş, panel orta, kontrol dar */
+  --radius-print: 12px;
+  --radius-panel: 8px;
+  --radius-control: 6px;
 }
