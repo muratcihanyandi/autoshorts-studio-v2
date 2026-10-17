@@ -328,3 +328,122 @@ class TestMediaModels:
         range_error, status_error = asyncio.run(scenario())
         assert range_error is not None  # end > start ihlali
         assert status_error is not None  # origin sozlugu ihlali
+
+
+class TestLocalImportAdapter:
+    def test_copies_file_and_preserves_original(self, tmp_path):
+        from app.services.media_download import LocalImportAdapter
+
+        source = tmp_path / "kaynak.mp4"
+        source.write_bytes(b"FAKEVIDEO" * 100)
+        dest_dir = tmp_path / "media" / "downloads"
+
+        async def scenario():
+            adapter = LocalImportAdapter(source)
+            return await adapter.fetch(7, "vid-1", dest_dir)
+
+        result = asyncio.run(scenario())
+        assert result.origin == "local_import"
+        assert result.file_bytes == 900
+        assert result.path.name == "7.mp4"
+        assert result.path.is_file()
+        # Orijinal dosya yerinde ve icerigi ayni (tasinmaz, kopyalanir).
+        assert source.is_file()
+        assert source.read_bytes() == result.path.read_bytes()
+
+    def test_missing_and_empty_files_rejected(self, tmp_path):
+        from app.services.media_download import (
+            LocalImportAdapter,
+            MediaDownloadError,
+        )
+
+        async def scenario():
+            missing = LocalImportAdapter(tmp_path / "yok.mp4")
+            try:
+                await missing.fetch(1, "v", tmp_path / "d")
+                missing_error = None
+            except MediaDownloadError as exc:
+                missing_error = str(exc)
+            empty = tmp_path / "bos.mp4"
+            empty.write_bytes(b"")
+            empty_adapter = LocalImportAdapter(empty)
+            try:
+                await empty_adapter.fetch(1, "v", tmp_path / "d")
+                empty_error = None
+            except MediaDownloadError as exc:
+                empty_error = str(exc)
+            return missing_error, empty_error
+
+        missing_error, empty_error = asyncio.run(scenario())
+        assert missing_error is not None
+        assert empty_error is not None
+
+
+class TestYtDlpAdapter:
+    def _settings(self, **overrides):
+        return Settings(database_url="", **overrides)
+
+    def test_command_construction_with_rate_limit(self, tmp_path):
+        from app.services.media_download import YtDlpAdapter
+
+        adapter = YtDlpAdapter(self._settings(download_rate_limit_kbps=512))
+        cmd = adapter.build_command("abc123", tmp_path, str(tmp_path / "1.%(ext)s"))
+        assert cmd[0] == "yt-dlp"
+        assert "--limit-rate" in cmd
+        assert cmd[cmd.index("--limit-rate") + 1] == "512K"
+        assert cmd[-1] == "https://www.youtube.com/watch?v=abc123"
+        assert "--write-auto-subs" in cmd  # transkript asamasi icin altyazi
+
+    def test_command_without_rate_limit(self, tmp_path):
+        from app.services.media_download import YtDlpAdapter
+
+        adapter = YtDlpAdapter(self._settings(download_rate_limit_kbps=0))
+        cmd = adapter.build_command("abc", tmp_path, str(tmp_path / "1.%(ext)s"))
+        assert "--limit-rate" not in cmd
+
+    def test_fetch_with_fake_runner(self, tmp_path):
+        from app.services.media_download import YtDlpAdapter
+
+        calls = []
+
+        async def fake_runner(cmd):
+            calls.append(cmd)
+            output = tmp_path / "downloads" / "3.mp4"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"YTDLP-OUTPUT")
+            return 0
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings(), runner=fake_runner)
+            return await adapter.fetch(
+                3, "vid-abc", tmp_path / "downloads"
+            )
+
+        result = asyncio.run(scenario())
+        assert result.origin == "youtube"
+        assert result.path.name == "3.mp4"
+        assert result.file_bytes == 12
+        assert len(calls) == 1
+        assert any("vid-abc" in part for part in calls[0])
+
+    def test_missing_binary_reports_turkish_error(self, tmp_path, monkeypatch):
+        from app.services.media_download import (
+            MediaDownloadError,
+            YtDlpAdapter,
+        )
+
+        monkeypatch.setattr(
+            "app.services.media_download.shutil.which", lambda name: None
+        )
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings())  # gercek subprocess yolu
+            try:
+                await adapter.fetch(5, "vid-x", tmp_path / "downloads")
+                return None
+            except MediaDownloadError as exc:
+                return str(exc)
+
+        message = asyncio.run(scenario())
+        assert message is not None
+        assert "yt-dlp" in message
