@@ -60,8 +60,8 @@ export function SettingsScreen() {
                 <tr>
                   <th>Güncelleme</th>
                   <td>
-                    Kod GitHub’a push edildiğinde imajlar otomatik derlenir;
-                    CasaOS’ta uygulamayı yeniden başlatmak yeterli.
+                    main dalına push edildiğinde GHCR imajları otomatik
+                    derlenir; CasaOS’ta uygulamayı yeniden başlatmak yeterli.
                   </td>
                 </tr>
               </tbody>

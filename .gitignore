@@ -7,6 +7,10 @@
 deploy/casaos/docker-compose.generated.yml
 deploy/casaos/.generated-password
 
+# --- Impeccable process artifacts (decision mocks, payloads); briefs stay tracked ---
+.impeccable/*
+!.impeccable/surfaces/
+
 # --- Transfer bundle (build artifact) ---
 /autoshorts-studio-src.zip
 

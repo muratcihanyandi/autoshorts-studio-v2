@@ -69,10 +69,13 @@ export function OverviewScreen() {
                   </span>
                   <span className="marquee-label">BUGÜN YAYINLANAN KLİP</span>
                 </div>
-                <Stamp {...STAMP_BY_PHASE[overview.state.data.phase]} />
+                <Stamp
+                  key={overview.state.data.phase}
+                  {...STAMP_BY_PHASE[overview.state.data.phase]}
+                />
               </div>
 
-              <p className="screen-sub" style={{ color: '#4a4436', marginBottom: 0 }}>
+              <p className="plate-note">
                 {overview.state.data.phase === 'running'
                   ? 'Otomasyon çalışıyor: kurallar sağlandıkça sistem kendisi yayınlıyor.'
                   : overview.state.data.phase === 'awaiting_channels'

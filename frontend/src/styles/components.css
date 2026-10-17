@@ -4,7 +4,7 @@
 .plate {
   background: var(--plate);
   color: var(--plate-ink);
-  border-radius: var(--radius-plate);
+  border-radius: var(--radius-print);
   padding: var(--space-5) var(--space-5) var(--space-4);
 }
 
@@ -12,7 +12,7 @@
 .ink-panel {
   background: var(--ink-panel);
   border: 1px solid var(--ink-border);
-  border-radius: var(--radius-plate);
+  border-radius: var(--radius-panel);
   padding: var(--space-4) var(--space-5);
 }
 
@@ -27,7 +27,7 @@
 }
 
 .plate h2.panel-title {
-  color: #6e6753;
+  color: var(--plate-muted);
 }
 
 /* --- marquee (dev sayı + damga) --- */
@@ -74,7 +74,7 @@
 }
 
 .stamp--wait {
-  color: #8a8168;
+  color: var(--plate-muted);
   border-style: dashed;
 }
 
@@ -207,7 +207,7 @@
 /* --- durum bileşenleri --- */
 .state-box {
   border: 1px dashed var(--plate-line);
-  border-radius: var(--radius-plate);
+  border-radius: var(--radius-print);
   padding: var(--space-6) var(--space-5);
   text-align: center;
   background: var(--plate);
@@ -231,7 +231,7 @@
   max-width: 52ch;
   margin: 0 auto var(--space-3);
   font-size: 13.5px;
-  color: #4a4436;
+  color: var(--plate-body-ink);
 }
 
 .state-box a,
@@ -244,7 +244,7 @@
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
 }
 
 .state-box a:hover,
@@ -260,7 +260,7 @@
 .ink-loading {
   background: var(--ink-panel);
   border: 1px solid var(--ink-border);
-  border-radius: var(--radius-plate);
+  border-radius: var(--radius-panel);
   padding: var(--space-5);
   color: var(--faint-on-dark);
   font-size: 13px;
@@ -299,7 +299,7 @@
   color: var(--amber-on-dark);
   font-size: 12.5px;
   padding: 8px 14px;
-  border-radius: var(--radius-plate);
+  border-radius: var(--radius-panel);
   margin-bottom: var(--space-4);
 }
 
@@ -309,7 +309,27 @@
   color: var(--amber-on-dark);
   padding: 4px 12px;
   font-size: 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
+}
+
+/* levha üstü ikincil not (marquee altı yönlendirme) */
+.plate-note {
+  font-size: 12.5px;
+  color: var(--plate-body-ink);
+}
+
+/* müdahale damgası önizlemesi (otomasyon empty state) */
+.stamp-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) auto 0;
+}
+
+.stamp-caption {
+  font-size: 12px;
+  color: var(--plate-muted);
 }
 
 /* --- genel düzen yardımcıları --- */

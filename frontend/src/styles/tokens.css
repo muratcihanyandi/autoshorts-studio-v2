@@ -14,7 +14,11 @@
   /* metin */
   --cream-text: #ede6d3;
   --muted-on-dark: #b9b29e;
-  --faint-on-dark: #8d8672;
+  --faint-on-dark: #9a9380;
+
+  /* levha üstü yardımcı mürekkepler (krem zeminde >=4.5:1) */
+  --plate-muted: #6e6753;
+  --plate-body-ink: #4a4436;
 
   /* poster mürekkepleri */
   --red: #c93a2e;
@@ -41,5 +45,8 @@
   --space-5: 28px;
   --space-6: 40px;
 
-  --radius-plate: 4px;
+  /* afiş levhası keskin baskı köşesi; koyu paneller yumuşak */
+  --radius-print: 0px;
+  --radius-panel: 4px;
+  --radius-control: 2px;
 }
