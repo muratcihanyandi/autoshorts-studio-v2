@@ -1,11 +1,21 @@
-"""Source channel registration and rights records API."""
+"""Source channel registration, rights records, and discovery API."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from app.schemas_sources import SourceCreate, SourceOut, SourceUpdate, SourcesOut
+from app.schemas_sources import (
+    DiscoverResult,
+    SourceCreate,
+    SourceOut,
+    SourceUpdate,
+    SourceVideoOut,
+    SourceVideosOut,
+    SourcesOut,
+)
 from app.services.channel_service import ChannelService
+from app.services.discovery_service import DiscoveryService
 from app.services.source_service import SourceService, SourceServiceError
+from app.services.youtube_client import YouTubeNotConfigured
 
 router = APIRouter(tags=["sources"])
 
@@ -75,3 +85,35 @@ async def delete_source(request: Request, source_id: int) -> None:
     sources_service, _ = _services(request)
     if not await sources_service.delete_source(source_id):
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+
+
+@router.post("/channels/{channel_id}/discover", response_model=DiscoverResult)
+async def discover_channel(request: Request, channel_id: int) -> DiscoverResult:
+    _, channels_service = _services(request)
+    if await channels_service.get_channel(channel_id) is None:
+        raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
+    discovery = DiscoveryService(
+        request.app.state.sessionmaker, request.app.state.settings
+    )
+    try:
+        result = await discovery.discover_for_channel(channel_id)
+    except YouTubeNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return DiscoverResult(**result)
+
+
+@router.get("/channels/{channel_id}/videos", response_model=SourceVideosOut)
+async def list_channel_videos(
+    request: Request, channel_id: int
+) -> SourceVideosOut:
+    _, channels_service = _services(request)
+    if await channels_service.get_channel(channel_id) is None:
+        raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
+    discovery = DiscoveryService(
+        request.app.state.sessionmaker, request.app.state.settings
+    )
+    videos = await discovery.list_videos(channel_id)
+    return SourceVideosOut(
+        videos=[SourceVideoOut.model_validate(v) for v in videos],
+        total=len(videos),
+    )

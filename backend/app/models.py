@@ -6,12 +6,13 @@ PostgreSQL; the sqlite variant keeps the same models testable in-memory.
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -44,6 +45,8 @@ class ChannelStatus(str, enum.Enum):
 
 
 SOURCE_PERMISSION_STATUSES = ("pending", "authorized", "rejected")
+
+SOURCE_VIDEO_STATUSES = ("discovered", "excluded", "planned", "processed")
 
 
 class Channel(Base):
@@ -199,3 +202,54 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SourceVideo(Base):
+    """A video discovered under an authorized source channel.
+
+    The unique (source_channel_id, youtube_video_id) pair is the
+    duplicate guard: repeated discovery never creates a second record.
+    """
+
+    __tablename__ = "source_videos"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_channel_id", "youtube_video_id", name="uq_source_video_per_source"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_channel_id: Mapped[int] = mapped_column(
+        ForeignKey("source_channels.id", ondelete="CASCADE"), nullable=False
+    )
+    youtube_video_id: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('discovered', 'excluded', 'planned', 'processed')",
+            name="ck_source_videos_status",
+        ),
+        default="discovered",
+        nullable=False,
+    )
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class QuotaUsage(Base):
+    """Daily YouTube Data API quota units spent (1 row per day)."""
+
+    __tablename__ = "quota_usage"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    units_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

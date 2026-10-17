@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     frontend_base_url: str = ""
     # Fernet key (urlsafe base64, 32 bytes) encrypting OAuth tokens at rest.
     token_encryption_key: str = ""
+    # YouTube Data API v3 key for source monitoring (public data).
+    youtube_api_key: str = ""
+    # Source polling tuning.
+    source_cache_ttl_seconds: int = 300
+    daily_quota_units: int = 10000
 
     @property
     def oauth_configured(self) -> bool:

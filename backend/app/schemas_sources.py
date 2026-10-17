@@ -48,3 +48,27 @@ class SourcesOut(BaseModel):
     sources: list[SourceOut]
     total: int
     authorized: int
+
+
+class DiscoverResult(BaseModel):
+    sources_checked: int
+    new_videos: int
+    quota_blocked: bool
+
+
+class SourceVideoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_channel_id: int
+    youtube_video_id: str
+    title: str
+    published_at: datetime | None
+    duration_seconds: int | None
+    status: str
+    discovered_at: datetime
+
+
+class SourceVideosOut(BaseModel):
+    videos: list[SourceVideoOut]
+    total: int
