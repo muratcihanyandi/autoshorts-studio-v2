@@ -9,8 +9,15 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.api.routes.settings import effective_settings
-from app.schemas import ChannelCreate, ChannelOut, ChannelUpdate, ChannelsOut
+from app.schemas import (
+    ChannelCreate,
+    ChannelOut,
+    ChannelUpdate,
+    ChannelsOut,
+    MetadataTemplateIn,
+)
 from app.services.channel_service import ChannelService
+from app.services.metadata_service import MetadataError
 from app.services.oauth_service import OAuthError, OAuthService
 
 router = APIRouter(tags=["channels"])
@@ -135,3 +142,66 @@ async def oauth_refresh(request: Request, channel_id: int) -> dict:
     except OAuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return {"channel_id": channel_id, "refreshed": refreshed}
+
+
+@router.get("/channels/{channel_id}/metadata-template")
+async def get_metadata_template(request: Request, channel_id: int):
+    service = await _metadata_service(request)
+    await _require_channel(request, channel_id)
+    template = await service.get_template(channel_id)
+    return _template_out(template)
+
+
+@router.put("/channels/{channel_id}/metadata-template")
+async def set_metadata_template(
+    request: Request,
+    channel_id: int,
+    data: MetadataTemplateIn,
+):
+    service = await _metadata_service(request)
+    await _require_channel(request, channel_id)
+    try:
+        template = await service.set_template(
+            channel_id,
+            title_pattern=data.title_pattern,
+            description_pattern=data.description_pattern,
+            base_tags=data.base_tags,
+        )
+    except MetadataError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return _template_out(template)
+
+
+async def _metadata_service(request: Request) -> "MetadataService":
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Veritabanı yapılandırılmadı; metaveri şablonu kapalı.",
+        )
+    from app.services.llm_service import LlmProviderService
+    from app.services.metadata_service import MetadataService
+
+    settings = getattr(request.app.state, "settings", None)
+    return MetadataService(
+        sessionmaker, LlmProviderService(sessionmaker, settings)
+    )
+
+
+async def _require_channel(request: Request, channel_id: int) -> None:
+    sessionmaker = request.app.state.sessionmaker
+    from app.models import Channel
+
+    async with sessionmaker() as session:
+        if await session.get(Channel, channel_id) is None:
+            raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
+
+
+def _template_out(template) -> dict:
+    return {
+        "channel_id": template.channel_id,
+        "title_pattern": template.title_pattern,
+        "description_pattern": template.description_pattern,
+        "base_tags": template.base_tags,
+        "updated_at": template.updated_at,
+    }

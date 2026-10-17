@@ -432,7 +432,9 @@ class TestJobWorker:
         assert asyncio.run(scenario()) == [
             "clip_render",
             "media_process",
+            "metadata_generate",
             "source_discover",
+            "subtitle_correct",
         ]
 
     def test_source_discover_handler_runs_discovery(

@@ -76,10 +76,34 @@ def build_handlers(
         pipeline = VerticalPipelineService(sessionmaker, effective)
         return await pipeline.run(clip_candidate_id)
 
+    async def subtitle_correct(payload: dict[str, Any]) -> dict:
+        from app.services.llm_service import LlmProviderService
+        from app.services.subtitle_correction import SubtitleCorrectionService
+
+        media_asset_id = payload.get("media_asset_id")
+        if not isinstance(media_asset_id, int):
+            raise ValueError("payload.media_asset_id gerekli.")
+        llm = LlmProviderService(sessionmaker, settings)
+        service = SubtitleCorrectionService(sessionmaker, llm)
+        return await service.correct_transcript(media_asset_id)
+
+    async def metadata_generate(payload: dict[str, Any]) -> dict:
+        from app.services.llm_service import LlmProviderService
+        from app.services.metadata_service import MetadataService
+
+        clip_candidate_id = payload.get("clip_candidate_id")
+        if not isinstance(clip_candidate_id, int):
+            raise ValueError("payload.clip_candidate_id gerekli.")
+        llm = LlmProviderService(sessionmaker, settings)
+        service = MetadataService(sessionmaker, llm)
+        return await service.generate(clip_candidate_id)
+
     return {
         "source_discover": source_discover,
         "media_process": media_process,
         "clip_render": clip_render,
+        "subtitle_correct": subtitle_correct,
+        "metadata_generate": metadata_generate,
     }
 
 
@@ -105,6 +129,7 @@ class JobWorker:
         self._last_poll_enqueue = 0.0
         self._last_planned_enqueue = 0.0
         self._last_render_enqueue = 0.0
+        self._last_content_enqueue = 0.0
         self._last_tmp_cleanup = 0.0
 
     # --- testable pieces ---
@@ -252,6 +277,64 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_content_jobs(self) -> int:
+        """Feed the M9 content stages: subtitle correction for assets
+        with an uncorrected transcript, metadata for rendered clips
+        without metadata. Interval-gated like the other feeds; job
+        dedupe guards repeated ticks."""
+        interval = self._settings.planned_poll_interval_minutes * 60
+        now = time.monotonic()
+        if (
+            self._last_content_enqueue
+            and now - self._last_content_enqueue < interval
+        ):
+            return 0
+        self._last_content_enqueue = now
+        added = 0
+        async with self._sessionmaker() as session:
+            asset_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT t.media_asset_id FROM transcripts t"
+                            " WHERE NOT EXISTS ("
+                            " SELECT 1 FROM corrected_transcripts ct"
+                            " WHERE ct.media_asset_id = t.media_asset_id)"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            candidate_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT rc.clip_candidate_id FROM rendered_clips rc"
+                            " WHERE rc.status = 'rendered'"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.clip_candidate_id = rc.clip_candidate_id)"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        for asset_id in asset_ids:
+            job = await self._jobs.enqueue(
+                "subtitle_correct", {"media_asset_id": asset_id}, priority=7
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        for candidate_id in candidate_ids:
+            job = await self._jobs.enqueue(
+                "metadata_generate", {"clip_candidate_id": candidate_id}, priority=7
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def cleanup_tmp_once(self, max_age_hours: float = 24.0) -> list[str]:
         """Prune stale files from the media tmp folder (safe cleanup)."""
         if not self._settings.media_root:
@@ -291,6 +374,7 @@ class JobWorker:
                 await self.enqueue_poll_jobs()
                 await self.enqueue_planned_jobs()
                 await self.enqueue_render_jobs()
+                await self.enqueue_content_jobs()
                 await self._maybe_cleanup_tmp()
                 await self.claim_batch()
             except asyncio.CancelledError:

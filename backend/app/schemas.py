@@ -62,3 +62,9 @@ class ChannelsOut(BaseModel):
     channels: list[ChannelOut]
     total: int
     connected: int
+
+
+class MetadataTemplateIn(BaseModel):
+    title_pattern: str | None = None
+    description_pattern: str | None = None
+    base_tags: list[str] | None = None

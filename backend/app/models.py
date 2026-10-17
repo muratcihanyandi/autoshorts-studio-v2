@@ -65,6 +65,8 @@ CLIP_CANDIDATE_STATUSES = ("candidate", "rejected", "selected")
 
 RENDERED_CLIP_STATUSES = ("rendering", "rendered", "review", "failed")
 
+CLIP_METADATA_STATUSES = ("draft", "approved", "rejected")
+
 
 class Channel(Base):
     """A YouTube publishing channel the studio manages."""
@@ -655,4 +657,96 @@ class RenderedClip(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class CorrectedTranscript(Base):
+    """LLM-corrected Turkish transcript, parallel to the original (M9).
+
+    The original transcripts row is never modified — timestamps are
+    copied verbatim from it, only the text is corrected; segments the
+    provider marked uncertain carry uncertain=True.
+    """
+
+    __tablename__ = "corrected_transcripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    media_asset_id: Mapped[int] = mapped_column(
+        ForeignKey("media_assets.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    segments: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONColumn, nullable=False, default=list
+    )
+    corrected_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    flagged_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class MetadataTemplate(Base):
+    """Channel-specific metadata template (M9).
+
+    Patterns may reference {title}, {summary}, {channel}; unknown
+    placeholders are left intact. Template changes affect only this
+    channel.
+    """
+
+    __tablename__ = "metadata_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    title_pattern: Mapped[str] = mapped_column(Text, nullable=False, default="{title}")
+    description_pattern: Mapped[str] = mapped_column(
+        Text, nullable=False, default="{summary}"
+    )
+    base_tags: Mapped[list[str]] = mapped_column(JSONColumn, nullable=False, default=list)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class ClipMetadata(Base):
+    """One metadata revision for a clip candidate (M9).
+
+    Revisions are append-only: regenerating inserts revision max+1 and
+    earlier rows stay for audit. Lengths follow YouTube limits
+    (title <= 100, description <= 5000).
+    """
+
+    __tablename__ = "clip_metadata"
+    __table_args__ = (
+        UniqueConstraint("clip_candidate_id", "revision", name="uq_clip_metadata_rev"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    clip_candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("clip_candidates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list[str]] = mapped_column(JSONColumn, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        CheckConstraint(
+            "status IN ('draft', 'approved', 'rejected')",
+            name="ck_clip_metadata_status",
+        ),
+        default="draft",
+        nullable=False,
+    )
+    provider_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
