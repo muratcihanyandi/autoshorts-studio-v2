@@ -62,10 +62,12 @@ class JobService:
         payload: dict | None = None,
         *,
         priority: int = 5,
-        max_attempts: int = 3,
+        max_attempts: int | None = None,
         dedupe: bool = True,
     ) -> Job:
         """Add a job; with dedupe, skip when an equivalent active job exists."""
+        if max_attempts is None:
+            max_attempts = self._settings.retry_max_attempts
         async with self._sessionmaker() as session:
             if dedupe:
                 existing = (
@@ -106,26 +108,49 @@ class JobService:
             return False
         return free >= self._settings.min_free_disk_gb * 1024**3
 
-    async def claim_next(self, worker_id: str) -> Job | None:
-        """Atomically take the highest-priority queued job, if disk allows."""
+    async def claim_next(
+        self,
+        worker_id: str,
+        *,
+        job_types: tuple[str, ...] | list[str] | None = None,
+        exclude_types: tuple[str, ...] | list[str] | None = None,
+    ) -> Job | None:
+        """Atomically take the highest-priority queued job, if disk allows.
+
+        job_types restricts the claim to the given types (the heavy-job
+        limit needs this); run_at gates retry backoff — a job whose
+        retry delay has not elapsed is not claimable yet.
+        """
         if not self.disk_ok():
             return None
+        now = _utcnow()
         async with self._sessionmaker() as session:
             # FOR UPDATE SKIP LOCKED: PostgreSQL'te eşzamanlı worker'lar
             # aynı satırı alamaz; sqlite kilit ipucunu yok sayar (tek
             # worker testleri için yeterli).
-            row_id = (
-                await session.execute(
-                    select(Job.id)
-                    .where(Job.status == "queued")
-                    .order_by(Job.priority, Job.id)
-                    .limit(1)
-                    .with_for_update(skip_locked=True)
+            query = (
+                select(Job.id)
+                .where(Job.status == "queued")
+                .where(
+                    (Job.run_at.is_(None)) | (Job.run_at <= now),
                 )
-            ).scalar_one_or_none()
+            )
+            if job_types is not None:
+                query = query.where(Job.job_type.in_(job_types))
+            if exclude_types is not None:
+                query = query.where(Job.job_type.notin_(exclude_types))
+            row_id = (
+                (
+                    await session.execute(
+                        query.order_by(Job.priority, Job.id)
+                        .limit(1)
+                        .with_for_update(skip_locked=True)
+                    )
+                )
+                .scalar_one_or_none()
+            )
             if row_id is None:
                 return None
-            now = _utcnow()
             await session.execute(
                 update(Job)
                 .where(Job.id == row_id)
@@ -181,6 +206,10 @@ class JobService:
                 job.worker_id = None
                 job.started_at = None
                 job.heartbeat_at = None
+                # Yeniden deneme bekleme araligi: run_at gelmeden alinmaz.
+                backoff = max(0, self._settings.retry_backoff_seconds)
+                if backoff:
+                    job.run_at = _utcnow() + timedelta(seconds=backoff)
             await session.commit()
 
     async def cancel(self, job_id: int) -> Job:

@@ -212,6 +212,7 @@ class VerticalPipelineService:
                 candidate.end_seconds,
                 layout,
                 out_path,
+                threads=self._settings.ffmpeg_threads,
             )
             report = await validate_output(
                 self._settings.ffprobe_bin, out_path, expected
@@ -355,6 +356,7 @@ class VerticalPipelineService:
                 trim_start=trim_start,
                 trim_end=trim_end,
                 source_duration=duration,
+                threads=self._settings.ffmpeg_threads,
             )
             report = await validate_output(
                 self._settings.ffprobe_bin,

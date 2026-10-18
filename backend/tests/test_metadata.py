@@ -106,6 +106,14 @@ async def _seed(
         channel = Channel(name=channel_name)
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        # Start/Stop donemi: icerik beslemesi yalnizca calisan kanalda.
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id="UCkaynak",
@@ -186,6 +194,13 @@ async def _seed_full_cut(
         channel = Channel(name="Kanal")
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id="UCkaynak",

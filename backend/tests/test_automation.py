@@ -72,6 +72,7 @@ async def _seed_channel(
     paused=False,
     daily_target=3,
     auto_approve=True,
+    automation_state="running",
 ) -> int:
     from app.models import PublishingProfile
 
@@ -90,6 +91,7 @@ async def _seed_channel(
             PublishingProfile(
                 channel_id=channel.id,
                 daily_clip_target=daily_target,
+                automation_state=automation_state,
                 settings={
                     "paused": paused,
                     "auto_approve_metadata": auto_approve,
@@ -154,13 +156,42 @@ async def _add_llm_provider(sessionmaker, settings) -> None:
 
 
 def _llm_handler(request: httpx.Request) -> httpx.Response:
-    """Iki istem de tek mock'ta: altyazi duzeltme + metaveri onerisi."""
+    """Uc istek tek mock'ta: hype degerlendirme + altyazi duzeltme +
+    metaveri onerisi. Yonlendirme belirgin isaretlerle yapilir: metaveri
+    promptu 'altyazi' kelimesini icerdiginden 'altyazi' kontrolu SONDADIR."""
+    import re
+
     body = json.loads(request.content.decode("utf-8"))
     prompt = ""
     if isinstance(body, dict):
         for message in body.get("messages", []):
             prompt += str(message.get("content", ""))
-    if "altyazi" in prompt:
+    if "metaveri oner" in prompt:
+        payload = {
+            "title": "Cok Onemli Kesit",
+            "summary": "Bu kesitte konusan kisi cok onemli bir konuyu"
+            " anlatiyor ve izlemeye deger bilgiler veriyor.",
+            "tags": ["kesit", "turkce"],
+            "content_warning": False,
+            "ai_disclosure": False,
+        }
+    elif "aday" in prompt:
+        # Hype degerlendirmesi: prompttaki aday kimliklerini ayikla ve
+        # her birine gecerli (3-6 sn) bir pencere oner.
+        ids = [int(m) for m in re.findall(r"aday (\d+):", prompt)]
+        payload = {
+            "evaluations": [
+                {
+                    "candidate_id": cid,
+                    "start_seconds": 1.0,
+                    "end_seconds": 4.0,
+                    "reason": "reaksiyonun olusumu ve tamamlanmasi iceride",
+                    "confidence": 0.8,
+                }
+                for cid in ids
+            ]
+        }
+    else:
         payload = {
             "segments": [
                 {
@@ -169,13 +200,6 @@ def _llm_handler(request: httpx.Request) -> httpx.Response:
                     "uncertain": False,
                 }
             ]
-        }
-    else:
-        payload = {
-            "title": "Cok Onemli Kesit",
-            "summary": "Bu kesitte konusan kisi cok onemli bir konuyu"
-            " anlatiyor ve izlemeye deger bilgiler veriyor.",
-            "tags": ["kesit", "turkce"],
         }
     return httpx.Response(
         200, json={"choices": [{"message": {"content": json.dumps(payload)}}]}
@@ -265,11 +289,13 @@ class TestFullChain:
                         break
                     await worker.run_job(claimed.id)
 
-                # Render + icerik asamalarini besleme sorgularindan al.
-                for job_type, payload in [
-                    ("clip_render", None),
-                    ("subtitle_correct", None),
-                    ("metadata_generate", None),
+                # Hype degerlendirme + render + icerik asamalarini
+                # besleme sorgularindan al.
+                for job_type in [
+                    "hype_evaluate",
+                    "clip_render",
+                    "subtitle_correct",
+                    "metadata_generate",
                 ]:
                     candidate_or_asset = await _next_payload(
                         sessionmaker, job_type
@@ -330,7 +356,9 @@ class TestFullChain:
         # Kabul kriteri: tum zincir authorized test icerigi uzerinde kostu.
         import os
 
-        assert video_status == "processed"
+        # Zincir tamamlandi: Shorts uretimi bitince kaynak #confirmed olur
+        # ve yeniden islenmek uzere kuyruga alinmaz.
+        assert video_status == "confirmed"
         assert asset[0] == "processed" and os.path.isfile(asset[1])
         assert render[0] == "rendered" and (render[1], render[2]) == (1080, 1920)
         assert corrected == 1  # duzeltilmis transkript kaydi olustu
@@ -345,9 +373,19 @@ class TestFullChain:
 async def _next_payload(sessionmaker, job_type: str) -> dict | None:
     """Besleme sorgularinin yaptigi secimi test tarafindan tekrarlar."""
     queries = {
+        "hype_evaluate": (
+            "SELECT sv.id FROM source_videos sv"
+            " JOIN media_assets ma ON ma.source_video_id = sv.id"
+            " WHERE sv.status = 'processed' AND ma.status = 'processed'"
+            " AND EXISTS (SELECT 1 FROM clip_candidates cc"
+            " WHERE cc.source_video_id = sv.id AND cc.status = 'candidate')"
+            " AND NOT EXISTS (SELECT 1 FROM clip_candidates cc2"
+            " WHERE cc2.source_video_id = sv.id AND cc2.status = 'selected')"
+            " LIMIT 1"
+        ),
         "clip_render": (
             "SELECT cc.id FROM clip_candidates cc"
-            " WHERE cc.status = 'candidate'"
+            " WHERE cc.status = 'selected'"
             " AND NOT EXISTS (SELECT 1 FROM rendered_clips rc"
             " WHERE rc.clip_candidate_id = cc.id)"
             " ORDER BY cc.id LIMIT 1"
@@ -378,6 +416,8 @@ async def _next_payload(sessionmaker, job_type: str) -> dict | None:
         )
     if value is None:
         return None
+    if job_type in ("hype_evaluate",):
+        return {"source_video_id": value}
     if job_type == "clip_render":
         return {"clip_candidate_id": value}
     if job_type == "subtitle_correct":
@@ -620,6 +660,8 @@ class TestAutoPlan:
             )
             try:
                 async with sessionmaker() as session:
+                    from app.models import PublishingProfile
+
                     channel = Channel(name="Kanal", status="connected")
                     session.add(channel)
                     await session.flush()
@@ -629,6 +671,12 @@ class TestAutoPlan:
                             youtube_channel_id="UCkaynak1",
                             title="Kaynak",
                             permission_status="authorized",
+                        )
+                    )
+                    session.add(
+                        PublishingProfile(
+                            channel_id=channel.id,
+                            automation_state="running",
                         )
                     )
                     await session.commit()

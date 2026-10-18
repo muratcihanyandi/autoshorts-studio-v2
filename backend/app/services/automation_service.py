@@ -6,10 +6,16 @@ never fabricates content — an empty stock publishes nothing and says
 so; a met daily target waits for the next slot; a paused channel is
 skipped entirely. Operational summaries land in the append-only audit
 trail so the studio's day is reconstructable.
+
+Start/Stop era: the service also owns the per-channel automation state
+machine (stopped/running/paused/error), the stock-target-aware
+horizontal refill, channel-scoped job cancellation on Stop, and the
+followed-character associations used by the channel settings modal.
 """
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,7 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.models import (
     Channel,
+    ChannelCharacter,
+    Character,
     ClipCandidate,
+    Job,
     PublishedVideo,
     PublishingProfile,
     RenderedClip,
@@ -31,6 +40,12 @@ from app.services.publishing_schedule import ScheduleError
 
 class AutomationError(Exception):
     """Automation failure with a user-facing Turkish message."""
+
+
+# Yeni is baslatilmasina izin veren durumlar: 'paused' yayinlamayi
+# bekletir ama uretim (indirme/render) surer; 'stopped' ve 'error'
+# tamamen durur.
+WORK_STATES = ("running", "paused")
 
 
 class AutomationService:
@@ -58,10 +73,254 @@ class AutomationService:
                 .one_or_none()
             )
             if row is None:
-                row = PublishingProfile(channel_id=channel_id)
+                # Ilk olusumda stok hedefi site ayarindaki varsayilandan
+                # baslar (genellikle 3).
+                from app.services.settings_service import SettingsService
+
+                effective = await SettingsService(
+                    self._sessionmaker, self._settings
+                ).effective_settings()
+                row = PublishingProfile(
+                    channel_id=channel_id,
+                    horizontal_stock_target=(
+                        effective.horizontal_stock_target_default
+                    ),
+                )
                 session.add(row)
                 await session.commit()
                 await session.refresh(row)
+            return row
+
+    # --- Start/Stop durum makinesi ---
+
+    async def set_automation_state(
+        self, channel_id: int, state: str
+    ) -> PublishingProfile:
+        if state not in ("stopped", "running", "paused", "error"):
+            raise AutomationError("Gecersiz otomasyon durumu.")
+        profile = await self.profile(channel_id)
+        async with self._sessionmaker() as session:
+            row = await session.get(PublishingProfile, profile.id)
+            row.automation_state = state
+            await session.commit()
+            await session.refresh(row)
+            return row
+
+    async def start(self, channel_id: int) -> dict[str, Any]:
+        """Baslat: durumu 'running' yap, siradaki yatay kaynagi hemen
+        kuyruga ekle (feed araligini beklemeden)."""
+        profile = await self.set_automation_state(channel_id, "running")
+        await self._audit(channel_id, "automation.started", {})
+        refill = await refill_channel_stock(
+            self._sessionmaker, self._settings, channel_id
+        )
+        return {
+            "channel_id": channel_id,
+            "automation_state": profile.automation_state,
+            "refill": refill,
+        }
+
+    async def stop(self, channel_id: int) -> dict[str, Any]:
+        """Durdur: yeni isler baslamaz. Bu kanala ait SIRADAKI isler
+        iptal edilir; suruyen isler guvenli sekilde tamamlanir (yarim
+        cikti asla hazir olarak isaretlenmez)."""
+        profile = await self.set_automation_state(channel_id, "stopped")
+        cancelled = await self.cancel_channel_jobs(channel_id)
+        await self._audit(
+            channel_id, "automation.stopped", {"cancelled_jobs": cancelled}
+        )
+        return {
+            "channel_id": channel_id,
+            "automation_state": profile.automation_state,
+            "cancelled_jobs": cancelled,
+        }
+
+    async def pause(self, channel_id: int) -> dict[str, Any]:
+        """Duraklat: yayinlama bekler, uretim surer."""
+        profile = await self.set_automation_state(channel_id, "paused")
+        await self._audit(channel_id, "automation.paused", {})
+        return {"channel_id": channel_id, "automation_state": profile.automation_state}
+
+    async def mark_error(self, channel_id: int, reason: str) -> None:
+        """Kalici is hatasi: kanali mudahale bekleyen 'error' durumuna
+        al (kullanici tekrar Baslatabilir)."""
+        profile = await self.profile(channel_id)
+        if profile.automation_state == "running":
+            await self.set_automation_state(channel_id, "error")
+            await self._audit(
+                channel_id, "automation.error", {"reason": reason[:500]}
+            )
+
+    async def cancel_channel_jobs(self, channel_id: int) -> int:
+        """Bu kanala ait siradaki (queued) isleri kontrollu iptal et.
+        Calisan islere dokunulmaz; iptal edilen islerin veritabani
+        durumu tutarli kalir (jobs.cancel)."""
+        from app.services.job_service import JobService
+        from app.services.status_service import StatusService
+
+        status = StatusService(self._sessionmaker, self._settings)
+        jobs = await status._channel_jobs(channel_id, statuses=("queued",))
+        service = JobService(self._sessionmaker, self._settings)
+        cancelled = 0
+        for job in jobs:
+            try:
+                await service.cancel(job.id)
+                cancelled += 1
+            except Exception:  # noqa: BLE001 - iptal best-effort
+                continue
+        return cancelled
+
+    # --- takip edilen karakterler (kanal ayarlari) ---
+
+    async def followed_characters(self, channel_id: int) -> list[dict]:
+        """Kanalin takip ettigi karakterler; karakter basina platform
+        hesabi sayisi da doner (kaynaklar kaynak kanallarinda yasar)."""
+        async with self._sessionmaker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        sa.select(Character, ChannelCharacter)
+                        .join(
+                            ChannelCharacter,
+                            ChannelCharacter.character_id == Character.id,
+                        )
+                        .where(ChannelCharacter.channel_id == channel_id)
+                        .order_by(Character.name)
+                    )
+                )
+                .all()
+            )
+            result = []
+            for character, follow in rows:
+                source_count = int(
+                    (
+                        await session.execute(
+                            sa.select(sa.func.count())
+                            .select_from(SourceChannel)
+                            .where(
+                                SourceChannel.channel_id == channel_id,
+                                SourceChannel.character_id == character.id,
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+                result.append(
+                    {
+                        "character_id": character.id,
+                        "name": character.name,
+                        "source_count": source_count,
+                        "followed_at": (
+                            follow.created_at.isoformat()
+                            if follow.created_at
+                            else None
+                        ),
+                    }
+                )
+            return result
+
+    async def set_followed_characters(
+        self, channel_id: int, character_ids: list[int]
+    ) -> list[dict]:
+        """Takip listesini degistir: eksikleri ekle, kaldirilanlari sil.
+        Kaynak kanallar silinmez; yalnizca takip iliskisi degisir."""
+        if len(set(character_ids)) != len(character_ids):
+            raise AutomationError("Karakter listesinde tekrar var.")
+        async with self._sessionmaker() as session:
+            existing_chars = set(
+                (
+                    await session.execute(sa.select(Character.id))
+                )
+                .scalars()
+                .all()
+            )
+            for cid in character_ids:
+                if cid not in existing_chars:
+                    raise AutomationError(f"Karakter bulunamadi: {cid}")
+            current = set(
+                (
+                    await session.execute(
+                        sa.select(ChannelCharacter.character_id).where(
+                            ChannelCharacter.channel_id == channel_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            wanted = set(character_ids)
+            for cid in sorted(wanted - current):
+                session.add(
+                    ChannelCharacter(channel_id=channel_id, character_id=cid)
+                )
+            if current - wanted:
+                await session.execute(
+                    sa.delete(ChannelCharacter).where(
+                        ChannelCharacter.channel_id == channel_id,
+                        ChannelCharacter.character_id.in_(
+                            sorted(current - wanted)
+                        ),
+                    )
+                )
+            record_event(
+                session,
+                channel_id,
+                "automation.characters",
+                {"followed": sorted(wanted)},
+            )
+            await session.commit()
+        return await self.followed_characters(channel_id)
+
+    # --- kanal ayarlari (modal) ---
+
+    async def update_channel_settings(
+        self,
+        channel_id: int,
+        *,
+        horizontal_stock_target: int | None = None,
+        title_mode: str | None = None,
+        description_mode: str | None = None,
+        tags_mode: str | None = None,
+        content_warning_mode: str | None = None,
+        ai_disclosure_mode: str | None = None,
+        channel_system_prompt: str | None = None,
+    ) -> PublishingProfile:
+        profile = await self.profile(channel_id)
+        modes = {
+            "title_mode": title_mode,
+            "description_mode": description_mode,
+            "tags_mode": tags_mode,
+            "content_warning_mode": content_warning_mode,
+            "ai_disclosure_mode": ai_disclosure_mode,
+        }
+        for field, value in modes.items():
+            if value is not None and value not in ("auto", "on", "off"):
+                raise AutomationError(
+                    f"{field} 'auto', 'on' veya 'off' olmali."
+                )
+        if horizontal_stock_target is not None and not (
+            1 <= horizontal_stock_target <= 50
+        ):
+            raise AutomationError(
+                "Yatay stok hedefi 1..50 arasinda olmali."
+            )
+        async with self._sessionmaker() as session:
+            row = await session.get(PublishingProfile, profile.id)
+            if horizontal_stock_target is not None:
+                row.horizontal_stock_target = horizontal_stock_target
+            for field, value in modes.items():
+                if value is not None:
+                    setattr(row, field, value)
+            if channel_system_prompt is not None:
+                if len(channel_system_prompt) > 8000:
+                    raise AutomationError(
+                        "Kanal sistem promptu en fazla 8000 karakter olabilir."
+                    )
+                row.channel_system_prompt = (
+                    channel_system_prompt.strip() or None
+                )
+            await session.commit()
+            await session.refresh(row)
             return row
 
     async def stock_level(self, channel_id: int) -> int:
@@ -125,7 +384,19 @@ class AutomationService:
         """Target-, stock-, and pause-aware publish decision."""
         profile = await self.profile(channel_id)
         settings = profile.settings or {}
-        if settings.get("paused"):
+        if profile.automation_state == "stopped":
+            return {
+                "channel_id": channel_id,
+                "published": 0,
+                "reason": "otomasyon durduruldu",
+            }
+        if profile.automation_state == "error":
+            return {
+                "channel_id": channel_id,
+                "published": 0,
+                "reason": "kanal hata durumunda; tekrar baslatilmali",
+            }
+        if profile.automation_state == "paused" or settings.get("paused"):
             return {
                 "channel_id": channel_id,
                 "published": 0,
@@ -252,6 +523,111 @@ class AutomationService:
     async def _count(self, query) -> int:
         async with self._sessionmaker() as session:
             return int((await session.execute(query)).scalar() or 0)
+
+
+async def refill_channel_stock(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    channel_id: int,
+) -> dict[str, Any]:
+    """Stock-target-aware horizontal refill for one channel.
+
+    Ready stock (#done, not yet #confirmed) below the target triggers
+    exactly ONE new media_process job — the global single-source rule
+    means no second horizontal source starts until this one finishes.
+    Sources bound to unfollowed characters are skipped when the channel
+    has a follow list; without a follow list every authorized source of
+    the channel is eligible (M13 behavior).
+    """
+    from app.services.job_service import JobService
+    from app.services.status_service import StatusService
+
+    status = StatusService(sessionmaker, settings)
+    jobs = JobService(sessionmaker, settings)
+    service = AutomationService(sessionmaker, settings)
+
+    profile = await service.profile(channel_id)
+    if profile.automation_state not in WORK_STATES:
+        return {
+            "channel_id": channel_id,
+            "enqueued": False,
+            "reason": "otomasyon calismiyor",
+            "stock": await status.horizontal_stock_level(channel_id),
+            "target": profile.horizontal_stock_target,
+        }
+
+    stock = await status.horizontal_stock_level(channel_id)
+    target = profile.horizontal_stock_target
+    if stock >= target:
+        return {
+            "channel_id": channel_id,
+            "enqueued": False,
+            "reason": "stok hedefte",
+            "stock": stock,
+            "target": target,
+        }
+
+    # Global tek kaynak kurali: aktif bir yatay islem varsa yeni
+    # indirme baslamaz (kanal fark etmeksizin).
+    async with sessionmaker() as session:
+        active = int(
+            (
+                await session.execute(
+                    sa.select(sa.func.count())
+                    .select_from(Job)
+                    .where(
+                        Job.job_type == "media_process",
+                        Job.status.in_(("queued", "running", "cancelling")),
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+    if active >= 1:
+        return {
+            "channel_id": channel_id,
+            "enqueued": False,
+            "reason": "baska bir yatay kaynak isleniyor",
+            "stock": stock,
+            "target": target,
+        }
+
+    followed = await status.followed_character_ids(channel_id)
+    async with sessionmaker() as session:
+        query = (
+            sa.select(SourceVideo.id)
+            .join(SourceChannel, SourceVideo.source_channel_id == SourceChannel.id)
+            .where(
+                SourceChannel.channel_id == channel_id,
+                SourceChannel.permission_status == "authorized",
+                SourceVideo.status == "planned",
+            )
+            .order_by(SourceVideo.id)
+        )
+        if followed:
+            query = query.where(SourceChannel.character_id.in_(followed))
+        next_video_id = (await session.execute(query.limit(1))).scalar_one_or_none()
+
+    if next_video_id is None:
+        return {
+            "channel_id": channel_id,
+            "enqueued": False,
+            "reason": "islenecek uygun kaynak yok",
+            "stock": stock,
+            "target": target,
+        }
+
+    job = await jobs.enqueue(
+        "media_process", {"source_video_id": next_video_id}, priority=8
+    )
+    enqueued = job.status == "queued" and job.attempts == 0
+    return {
+        "channel_id": channel_id,
+        "enqueued": enqueued,
+        "source_video_id": next_video_id,
+        "stock": stock,
+        "target": target,
+    }
 
 
 async def auto_plan_channel(

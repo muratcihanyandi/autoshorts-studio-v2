@@ -34,11 +34,15 @@ def _sync_one(tmp_path, table: str, row_id: int, column: str):
 
 
 def _queue_env(tmp_path, **overrides):
-    """Kendi motoruyla çalışan kuyruk ortamı: (sessionmaker, settings, db_path)."""
+    """Kendi motoruyla çalışan kuyruk ortamı: (sessionmaker, settings, db_path).
+
+    Varsayılan olarak yeniden deneme bekleme aralığı kapalıdır (eski
+    anlık-retry test davranışı); backoff'un kendisi ayrı testte ölçülür."""
     db_path = tmp_path / "jobs.db"
     sync_engine = sa.create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(sync_engine)
     sync_engine.dispose()
+    overrides.setdefault("retry_backoff_seconds", 0)
     settings = Settings(
         database_url=f"sqlite+aiosqlite:///{db_path}", **overrides
     )
@@ -321,11 +325,26 @@ class TestJobWorker:
                 # Bir kanal + iki kaynak (biri authorized, biri pending).
                 from sqlalchemy.ext.asyncio import AsyncSession
 
-                from app.models import Channel, SourceChannel
+                from app.models import (
+                    Channel,
+                    PublishingProfile,
+                    SourceChannel,
+                )
 
                 async with sessionmaker() as session:  # type: AsyncSession
                     session.add(Channel(id=1, name="Kanal 1"))
                     session.add(Channel(id=2, name="Kanal 2"))
+                    # Start/Stop donemi: keşif yalnızca çalışan kanalı besler.
+                    session.add(
+                        PublishingProfile(
+                            channel_id=1, automation_state="running"
+                        )
+                    )
+                    session.add(
+                        PublishingProfile(
+                            channel_id=2, automation_state="stopped"
+                        )
+                    )
                     session.add(
                         SourceChannel(
                             channel_id=1,
@@ -359,16 +378,61 @@ class TestJobWorker:
         assert added_again == 0
         assert jobs == [("source_discover", {"channel_id": 1})]
 
+    def test_enqueue_poll_jobs_skips_stopped_channel(self, tmp_path):
+        """Durdurulmus kanal kesif bile beslemez (Baslat/Durdur)."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                from app.models import Channel, PublishingProfile, SourceChannel
+
+                async with sessionmaker() as session:
+                    session.add(Channel(id=1, name="Kanal"))
+                    session.add(
+                        PublishingProfile(
+                            channel_id=1, automation_state="stopped"
+                        )
+                    )
+                    session.add(
+                        SourceChannel(
+                            channel_id=1,
+                            youtube_channel_id="UCauth",
+                            title="Yetkili",
+                            permission_status="authorized",
+                        )
+                    )
+                    await session.commit()
+                worker = JobWorker(sessionmaker, settings)
+                added = await worker.enqueue_poll_jobs()
+                jobs = await worker._jobs.list_jobs()
+                return added, len(jobs)
+            finally:
+                await engine.dispose()
+
+        added, job_count = asyncio.run(scenario())
+        assert added == 0
+        assert job_count == 0
+
     def test_enqueue_planned_jobs_per_planned_video(self, tmp_path):
         async def scenario():
             sessionmaker, settings, engine, db = _queue_env(tmp_path)
             try:
                 from sqlalchemy.ext.asyncio import AsyncSession
 
-                from app.models import Channel, SourceChannel, SourceVideo
+                from app.models import (
+                    Channel,
+                    PublishingProfile,
+                    SourceChannel,
+                    SourceVideo,
+                )
 
                 async with sessionmaker() as session:  # type: AsyncSession
                     session.add(Channel(id=1, name="Kanal"))
+                    session.add(
+                        PublishingProfile(
+                            channel_id=1, automation_state="running"
+                        )
+                    )
                     source = SourceChannel(
                         channel_id=1,
                         youtube_channel_id="UCkaynak",
@@ -413,7 +477,8 @@ class TestJobWorker:
                 await engine.dispose()
 
         added, added_again, jobs = asyncio.run(scenario())
-        # Sadece 'planned' video kuyruga girer; tekrar dedupe edilir.
+        # Stok hedefi dolmamis: siradaki 'planned' video tek basina kuyruga
+        # girer (tek seferde bir yatay kaynak kurali); tekrar dedupe edilir.
         assert added == 1
         assert added_again == 0
         assert jobs == [("media_process", {"source_video_id": 1})]
@@ -451,10 +516,16 @@ class TestJobWorker:
                 tmp_path, youtube_api_key="test-yt-key"
             )
             try:
-                from app.models import Channel, SourceChannel
+                from app.models import Channel, PublishingProfile, SourceChannel
 
                 async with sessionmaker() as session:
                     session.add(Channel(id=1, name="Kanal"))
+                    # Handler guard'u: kanal calisirken kesif gercekten yurur.
+                    session.add(
+                        PublishingProfile(
+                            channel_id=1, automation_state="running"
+                        )
+                    )
                     session.add(
                         SourceChannel(
                             channel_id=1,

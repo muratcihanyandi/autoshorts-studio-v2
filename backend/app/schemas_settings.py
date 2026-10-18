@@ -46,6 +46,23 @@ class SettingsOut(BaseModel):
     youtube_api_key: SecretSettingOut
     daily_quota_units: IntSettingOut
     metadata_system_prompt: PlainSettingOut
+    # Kaynak limitleri ve uretim ayarlari (Start/Stop donemi).
+    cpu_target_percent: IntSettingOut
+    ram_target_percent: IntSettingOut
+    ffmpeg_threads: IntSettingOut
+    max_heavy_jobs: IntSettingOut
+    max_concurrent_jobs: IntSettingOut
+    retry_max_attempts: IntSettingOut
+    retry_backoff_seconds: IntSettingOut
+    horizontal_stock_target_default: IntSettingOut
+    shorts_per_video: IntSettingOut
+    min_free_disk_gb: PlainSettingOut
+    download_rate_limit_kbps: IntSettingOut
+    planned_poll_interval_minutes: IntSettingOut
+    transcription_method: PlainSettingOut
+    whisper_model: PlainSettingOut
+    whisper_language: PlainSettingOut
+    media_root: PlainSettingOut
 
 
 class SettingsUpdate(BaseModel):
@@ -61,3 +78,18 @@ class SettingsUpdate(BaseModel):
     youtube_api_key: str | None = None
     daily_quota_units: int | None = None
     metadata_system_prompt: str | None = None
+    cpu_target_percent: int | None = None
+    ram_target_percent: int | None = None
+    ffmpeg_threads: int | None = None
+    max_heavy_jobs: int | None = None
+    max_concurrent_jobs: int | None = None
+    retry_max_attempts: int | None = None
+    retry_backoff_seconds: int | None = None
+    horizontal_stock_target_default: int | None = None
+    shorts_per_video: int | None = None
+    min_free_disk_gb: float | None = None
+    download_rate_limit_kbps: int | None = None
+    planned_poll_interval_minutes: int | None = None
+    transcription_method: str | None = None
+    whisper_model: str | None = None
+    whisper_language: str | None = None

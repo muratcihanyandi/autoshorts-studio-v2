@@ -78,13 +78,18 @@ class MetadataError(Exception):
 
 
 class MetadataProposal(BaseModel):
-    """LLM sözleşmesi: kısa başlık, kanca, özet, etiketler, kapak metni."""
+    """LLM sözleşmesi: kısa başlık, kanca, özet, etiketler, kapak metni
+    ve içerik bildirimi kararları (auto modunda)."""
 
     title: str = Field(min_length=1, max_length=MAX_TITLE_CHARS)
     summary: str = Field(min_length=1, max_length=2000)
     tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
-    hook: str = Field(default="", max_length=MAX_HOOK_CHARS)
-    thumbnail_text: str = Field(default="", max_length=MAX_THUMBNAIL_TEXT_CHARS)
+    hook: str = Field("", max_length=MAX_HOOK_CHARS)
+    thumbnail_text: str = Field("", max_length=MAX_THUMBNAIL_TEXT_CHARS)
+    # Iki bildirim BIRBIRINDEN BAGIMSIZ kararlar: yapay zekâ ile
+    # duzenlenmis olmak tek basina +18 demek degil.
+    content_warning: bool = Field(default=False)
+    ai_disclosure: bool = Field(default=False)
 
 
 PROMPT = (
@@ -98,8 +103,17 @@ PROMPT = (
     "120 karakter\n"
     "- thumbnail_text: kapak goruntusune yazilacak kisa vurucu metin, "
     "en fazla 80 karakter\n"
+    "- content_warning: icerik yetiskinlere uygun degilse true (siddet, "
+    "acik konusma veya benzeri yogunsa); belirsizse false\n"
+    "- ai_disclosure: icerik anlamli bicimde yapay zeka ile uretilmis "
+    "veya degistirilmisse true (sentetik ses/goruntu); altyazi "
+    "duzeltmesi veya montaj tek basina true yapmak icin yeterli DEGIL; "
+    "belirsizse false\n"
+    "Icerikte olmayan bilgi, yanlis iddia veya clickbait URETME; iki "
+    "bildirim karari birbirinden bagimsizdir.\n"
     'Yaniti SADECE su JSON biciminde ver: {{"title": "...", "summary": '
-    '"...", "tags": ["..."], "hook": "...", "thumbnail_text": "..."}}\n\n'
+    '"...", "tags": ["..."], "hook": "...", "thumbnail_text": "...", '
+    '"content_warning": false, "ai_disclosure": false}}\n\n'
     "Kaynak baslik: {video_title}\n\nTranskript:\n{transcript}"
 )
 
@@ -147,6 +161,33 @@ def apply_pattern(pattern: str, values: dict[str, str]) -> str:
         return values.get(key, match.group(0))
 
     return _PLACEHOLDER.sub(_sub, pattern)
+
+
+def fallback_title(video_title: str) -> str:
+    """Deterministic title for channels with title generation off."""
+    base = (video_title or "").strip() or "Kisa video"
+    if len(base) < MIN_TITLE_CHARS:
+        base = f"{base} - kisa video"
+    return base[:MAX_TITLE_CHARS]
+
+
+def fallback_description(video_title: str, transcript_text: str) -> str:
+    """Deterministic description for channels with generation off."""
+    text = (transcript_text or "").strip()
+    if len(text) >= MIN_DESCRIPTION_CHARS:
+        return text[:300]
+    base = f"Bu kisa video '{video_title or 'kaynak'}' kaynagindan kesilmistir."
+    return base[:MAX_DESCRIPTION_CHARS]
+
+
+def resolve_notification(mode: str, llm_value: bool) -> bool:
+    """auto/on/off karar: 'on' dogrudan acik, 'off' dogrudan kapali,
+    'auto' LLM karari (LLM cagrisi yoksa guvenli varsayilan false)."""
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    return bool(llm_value)
 
 
 class MetadataService:
@@ -218,10 +259,13 @@ class MetadataService:
     # --- uretim ---
 
     async def _system_prompt(self, context: dict) -> str:
-        """M13 zinciri: karakter -> global (efektif) -> yerlesik."""
+        """Prompt zinciri: karakter -> kanal -> global (efektif) -> yerlesik."""
         character_prompt = (context.get("character_system_prompt") or "").strip()
         if character_prompt:
             return character_prompt
+        channel_prompt = (context.get("channel_system_prompt") or "").strip()
+        if channel_prompt:
+            return channel_prompt
         if self._settings is not None:
             from app.services.settings_service import SettingsService
 
@@ -234,6 +278,89 @@ class MetadataService:
             if global_prompt:
                 return global_prompt
         return DEFAULT_SYSTEM_PROMPT
+
+    def _modes(self, context: dict) -> dict[str, str]:
+        """Kanal ayarlarindaki auto/on/off modlari (varsayilan 'auto')."""
+        modes = context.get("modes") or {}
+        return {
+            key: modes.get(key, "auto")
+            for key in (
+                "title_mode",
+                "description_mode",
+                "tags_mode",
+                "content_warning_mode",
+                "ai_disclosure_mode",
+            )
+        }
+
+    def _compose(
+        self, proposal: MetadataProposal | None, context: dict
+    ) -> dict:
+        """Modlara gore nihai metaveri: 'off' alanlari deterministik
+        degere duser, bildirimler auto/on/off kararindan gecer."""
+        modes = self._modes(context)
+        if modes["title_mode"] == "off" or proposal is None:
+            title_raw = fallback_title(context["video_title"])
+        else:
+            title_raw = proposal.title
+        if modes["description_mode"] == "off" or proposal is None:
+            summary_raw = fallback_description(
+                context["video_title"], context["transcript"]
+            )
+        else:
+            summary_raw = proposal.summary
+        if modes["tags_mode"] == "off" or proposal is None:
+            proposed_tags: list[str] = []
+        else:
+            proposed_tags = list(proposal.tags)
+
+        title = apply_pattern(
+            context["title_pattern"],
+            {"title": title_raw, "channel": context["channel_name"]},
+        )
+        description = apply_pattern(
+            context["description_pattern"],
+            {"summary": summary_raw, "channel": context["channel_name"]},
+        )
+        tags = dedupe_tags(list(context["base_tags"]) + proposed_tags)
+        content_warning = resolve_notification(
+            modes["content_warning_mode"],
+            proposal.content_warning if proposal is not None else False,
+        )
+        ai_disclosure = resolve_notification(
+            modes["ai_disclosure_mode"],
+            proposal.ai_disclosure if proposal is not None else False,
+        )
+        hook = proposal.hook if proposal is not None else ""
+        thumbnail_text = proposal.thumbnail_text if proposal is not None else ""
+        problems = validate_metadata(
+            title,
+            description,
+            tags,
+            hook=hook,
+            thumbnail_text=thumbnail_text,
+        )
+        return {
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "content_warning": content_warning,
+            "ai_disclosure": ai_disclosure,
+            "hook": hook,
+            "thumbnail_text": thumbnail_text,
+            "problems": problems,
+        }
+
+    def _llm_needed(self, modes: dict[str, str]) -> bool:
+        return any(
+            (
+                modes["title_mode"] != "off",
+                modes["description_mode"] != "off",
+                modes["tags_mode"] != "off",
+                modes["content_warning_mode"] == "auto",
+                modes["ai_disclosure_mode"] == "auto",
+            )
+        )
 
     async def generate(
         self,
@@ -265,42 +392,31 @@ class MetadataService:
             context = await self._context(session, candidate)
 
         system_prompt = await self._system_prompt(context)
-        prompt = PROMPT.format(
-            kind="bir kisa videonun",
-            video_title=context["video_title"],
-            transcript=context["transcript"],
-        )
-        try:
-            result = await self._llm.complete(
-                prompt,
-                schema=MetadataProposal,
-                http=http,
-                system_prompt=system_prompt,
+        modes = self._modes(context)
+        proposal: MetadataProposal | None = None
+        provider_name = ""
+        if self._llm_needed(modes):
+            prompt = PROMPT.format(
+                kind="bir kisa videonun",
+                video_title=context["video_title"],
+                transcript=context["transcript"],
             )
-        except LlmServiceError as exc:
-            raise MetadataError(str(exc)) from exc
-        proposal = MetadataProposal.model_validate(result.structured)
+            try:
+                result = await self._llm.complete(
+                    prompt,
+                    schema=MetadataProposal,
+                    http=http,
+                    system_prompt=system_prompt,
+                )
+            except LlmServiceError as exc:
+                raise MetadataError(str(exc)) from exc
+            proposal = MetadataProposal.model_validate(result.structured)
+            provider_name = result.provider_name
 
-        title = apply_pattern(
-            context["title_pattern"],
-            {"title": proposal.title, "channel": context["channel_name"]},
-        )
-        description = apply_pattern(
-            context["description_pattern"],
-            {"summary": proposal.summary, "channel": context["channel_name"]},
-        )
-        tags = dedupe_tags(list(context["base_tags"]) + list(proposal.tags))
-
-        problems = validate_metadata(
-            title,
-            description,
-            tags,
-            hook=proposal.hook,
-            thumbnail_text=proposal.thumbnail_text,
-        )
-        if problems:
+        composed = self._compose(proposal, context)
+        if composed["problems"]:
             raise MetadataError(
-                "Metaveri gecersiz: " + "; ".join(problems)
+                "Metaveri gecersiz: " + "; ".join(composed["problems"])
             )
 
         revision = (existing.revision + 1) if existing else 1
@@ -309,12 +425,14 @@ class MetadataService:
                 ClipMetadata(
                     clip_candidate_id=clip_candidate_id,
                     revision=revision,
-                    title=title,
-                    description=description,
-                    tags=tags,
-                    hook=proposal.hook,
-                    thumbnail_text=proposal.thumbnail_text,
-                    provider_name=result.provider_name,
+                    title=composed["title"],
+                    description=composed["description"],
+                    tags=composed["tags"],
+                    hook=composed["hook"],
+                    thumbnail_text=composed["thumbnail_text"],
+                    content_warning=composed["content_warning"],
+                    ai_disclosure=composed["ai_disclosure"],
+                    provider_name=provider_name,
                 )
             )
             record_event(
@@ -324,15 +442,17 @@ class MetadataService:
                 {
                     "clip_candidate_id": clip_candidate_id,
                     "revision": revision,
-                    "provider": result.provider_name,
+                    "provider": provider_name,
                 },
             )
             await session.commit()
         return {
             "clip_candidate_id": clip_candidate_id,
             "revision": revision,
-            "title": title,
-            "tags": len(tags),
+            "title": composed["title"],
+            "tags": len(composed["tags"]),
+            "content_warning": composed["content_warning"],
+            "ai_disclosure": composed["ai_disclosure"],
         }
 
     async def generate_full_cut(
@@ -381,42 +501,31 @@ class MetadataService:
             context = await self._full_cut_context(session, video, source)
 
         system_prompt = await self._system_prompt(context)
-        prompt = PROMPT.format(
-            kind="bir reaksiyon videosunun tam kesitinin",
-            video_title=context["video_title"],
-            transcript=context["transcript"],
-        )
-        try:
-            result = await self._llm.complete(
-                prompt,
-                schema=MetadataProposal,
-                http=http,
-                system_prompt=system_prompt,
+        modes = self._modes(context)
+        proposal: MetadataProposal | None = None
+        provider_name = ""
+        if self._llm_needed(modes):
+            prompt = PROMPT.format(
+                kind="bir reaksiyon videosunun tam kesitinin",
+                video_title=context["video_title"],
+                transcript=context["transcript"],
             )
-        except LlmServiceError as exc:
-            raise MetadataError(str(exc)) from exc
-        proposal = MetadataProposal.model_validate(result.structured)
+            try:
+                result = await self._llm.complete(
+                    prompt,
+                    schema=MetadataProposal,
+                    http=http,
+                    system_prompt=system_prompt,
+                )
+            except LlmServiceError as exc:
+                raise MetadataError(str(exc)) from exc
+            proposal = MetadataProposal.model_validate(result.structured)
+            provider_name = result.provider_name
 
-        title = apply_pattern(
-            context["title_pattern"],
-            {"title": proposal.title, "channel": context["channel_name"]},
-        )
-        description = apply_pattern(
-            context["description_pattern"],
-            {"summary": proposal.summary, "channel": context["channel_name"]},
-        )
-        tags = dedupe_tags(list(context["base_tags"]) + list(proposal.tags))
-
-        problems = validate_metadata(
-            title,
-            description,
-            tags,
-            hook=proposal.hook,
-            thumbnail_text=proposal.thumbnail_text,
-        )
-        if problems:
+        composed = self._compose(proposal, context)
+        if composed["problems"]:
             raise MetadataError(
-                "Metaveri gecersiz: " + "; ".join(problems)
+                "Metaveri gecersiz: " + "; ".join(composed["problems"])
             )
 
         revision = (existing.revision + 1) if existing else 1
@@ -426,12 +535,14 @@ class MetadataService:
                     clip_candidate_id=None,
                     source_video_id=source_video_id,
                     revision=revision,
-                    title=title,
-                    description=description,
-                    tags=tags,
-                    hook=proposal.hook,
-                    thumbnail_text=proposal.thumbnail_text,
-                    provider_name=result.provider_name,
+                    title=composed["title"],
+                    description=composed["description"],
+                    tags=composed["tags"],
+                    hook=composed["hook"],
+                    thumbnail_text=composed["thumbnail_text"],
+                    content_warning=composed["content_warning"],
+                    ai_disclosure=composed["ai_disclosure"],
+                    provider_name=provider_name,
                 )
             )
             record_event(
@@ -441,7 +552,7 @@ class MetadataService:
                 {
                     "source_video_id": source_video_id,
                     "revision": revision,
-                    "provider": result.provider_name,
+                    "provider": provider_name,
                     "orientation": "horizontal",
                 },
             )
@@ -449,8 +560,10 @@ class MetadataService:
         return {
             "source_video_id": source_video_id,
             "revision": revision,
-            "title": title,
-            "tags": len(tags),
+            "title": composed["title"],
+            "tags": len(composed["tags"]),
+            "content_warning": composed["content_warning"],
+            "ai_disclosure": composed["ai_disclosure"],
         }
 
     async def latest(self, clip_candidate_id: int) -> ClipMetadata | None:
@@ -471,6 +584,37 @@ class MetadataService:
             )
 
     # --- yardimcilar ---
+
+    @staticmethod
+    async def _profile_modes(
+        session: AsyncSession, channel_id: int
+    ) -> tuple[dict[str, str], str | None]:
+        """Kanalin auto/on/off modlari ve kanal sistem promptu."""
+        from app.models import PublishingProfile
+
+        profile = (
+            (
+                await session.execute(
+                    sa.select(PublishingProfile).where(
+                        PublishingProfile.channel_id == channel_id
+                    )
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if profile is None:
+            return {}, None
+        return (
+            {
+                "title_mode": profile.title_mode,
+                "description_mode": profile.description_mode,
+                "tags_mode": profile.tags_mode,
+                "content_warning_mode": profile.content_warning_mode,
+                "ai_disclosure_mode": profile.ai_disclosure_mode,
+            },
+            profile.channel_system_prompt,
+        )
 
     @staticmethod
     async def _character_system_prompt(
@@ -543,6 +687,9 @@ class MetadataService:
             .scalars()
             .one_or_none()
         )
+        modes, channel_prompt = await MetadataService._profile_modes(
+            session, channel.id
+        )
         return {
             "video_title": video.title,
             "channel_name": channel.name,
@@ -560,6 +707,8 @@ class MetadataService:
             "character_system_prompt": await MetadataService._character_system_prompt(
                 session, source
             ),
+            "channel_system_prompt": channel_prompt,
+            "modes": modes,
         }
 
     @staticmethod
@@ -622,6 +771,9 @@ class MetadataService:
             .scalars()
             .one_or_none()
         )
+        modes, channel_prompt = await MetadataService._profile_modes(
+            session, channel.id
+        )
         return {
             "video_title": video.title,
             "channel_name": channel.name,
@@ -639,6 +791,8 @@ class MetadataService:
             "character_system_prompt": await MetadataService._character_system_prompt(
                 session, source
             ),
+            "channel_system_prompt": channel_prompt,
+            "modes": modes,
         }
 
 

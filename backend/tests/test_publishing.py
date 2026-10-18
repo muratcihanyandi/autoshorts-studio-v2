@@ -175,6 +175,7 @@ async def _seed(
         session.add(
             PublishingProfile(
                 channel_id=channel.id,
+                automation_state="running",
                 settings={"auto_approve_metadata": auto_approve},
             )
         )

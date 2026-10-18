@@ -309,6 +309,10 @@ class PublishingService:
                 .all()
             )
         for profile in profiles:
+            # Start/Stop donemi: yayinlama yalnizca 'running' kanallarda
+            # beslenir (paused/stopped/error kanallar due sayilmaz).
+            if profile.automation_state != "running":
+                continue
             if (profile.settings or {}).get("paused"):
                 continue  # M11: duraklatilmis kanal due sayilmaz
             async with self._sessionmaker() as session:

@@ -65,6 +65,27 @@ class Settings(BaseSettings):
     planned_poll_interval_minutes: int = 5
     publish_check_interval_minutes: int = 10
 
+    # Start/Stop otomasyon donemi: kaynak limitleri ve uretim ayarlari.
+    # 0 = sinir kapali; doldugunda worker yeni is almaya bekler.
+    cpu_target_percent: int = 0
+    ram_target_percent: int = 0
+    # ffmpeg -threads N (0 = otomatik); agir isler ayni anda bu kadar
+    # kolatek ile kosar (indirme + render tek kilit uzerinden siralanir).
+    ffmpeg_threads: int = 0
+    max_heavy_jobs: int = 1
+    # Is yeniden deneme politikasi.
+    retry_max_attempts: int = 3
+    retry_backoff_seconds: int = 60
+    # Yatay stok hedefi varsayilani (kanal profili olusurken kullanilir).
+    horizontal_stock_target_default: int = 3
+    # Transkripsiyon: 'sidecar' (yalnizca mevcut altyazi) veya
+    # 'whisper' (altyazi yoksa yerel Whisper CLI fallback).
+    transcription_method: str = "sidecar"
+    whisper_model: str = "tiny"
+    whisper_language: str = "tr"
+    # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
+    shorts_per_video: int = 3
+
     @property
     def oauth_configured(self) -> bool:
         return bool(

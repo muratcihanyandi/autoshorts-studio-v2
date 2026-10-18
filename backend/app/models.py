@@ -47,7 +47,22 @@ class ChannelStatus(str, enum.Enum):
 
 SOURCE_PERMISSION_STATUSES = ("pending", "authorized", "rejected")
 
-SOURCE_VIDEO_STATUSES = ("discovered", "excluded", "planned", "processed")
+SOURCE_VIDEO_STATUSES = (
+    "discovered",
+    "excluded",
+    "planned",
+    "processed",
+    "confirmed",
+)
+
+# Kanal otomasyon durum makinesi (Baslat/Durdur): 'stopped' tum isleri
+# durdurur, 'running' tam otomasyon, 'paused' yayinlamayi bekletir
+# (uretim surer), 'error' kalici is hatasi sonrasi mudahale bekler.
+AUTOMATION_STATES = ("stopped", "running", "paused", "error")
+
+# Kanal ayarlarindaki uc durumlu secimler: 'auto' = LLM karar verir,
+# 'on' = dogrudan acik, 'off' = dogrudan kapali.
+SETTING_MODES = ("auto", "on", "off")
 
 MEDIA_ASSET_STATUSES = (
     "downloading",
@@ -231,7 +246,15 @@ class SourceChannel(Base):
 
 
 class PublishingProfile(Base):
-    """Channel-specific publishing settings."""
+    """Channel-specific publishing and automation settings.
+
+    automation_state is the engine's persistent Start/Stop state
+    (stopped/running/paused/error); horizontal_stock_target drives the
+    stock-aware download feed (default 3); the *_mode fields are the
+    auto/on/off choices for metadata generation and content
+    notifications; channel_system_prompt feeds this channel's LLM calls
+    before the character/global prompts.
+    """
 
     __tablename__ = "publishing_profiles"
 
@@ -245,6 +268,64 @@ class PublishingProfile(Base):
     timezone: Mapped[str] = mapped_column(Text, nullable=False, default="Europe/Istanbul")
     publish_window_start: Mapped[str | None] = mapped_column(Text)
     publish_window_end: Mapped[str | None] = mapped_column(Text)
+    automation_state: Mapped[str] = mapped_column(
+        String(12),
+        CheckConstraint(
+            "automation_state IN ('stopped', 'running', 'paused', 'error')",
+            name="ck_publishing_profiles_automation_state",
+        ),
+        default="stopped",
+        nullable=False,
+    )
+    horizontal_stock_target: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3
+    )
+    title_mode: Mapped[str] = mapped_column(
+        String(8),
+        CheckConstraint(
+            "title_mode IN ('auto', 'on', 'off')",
+            name="ck_publishing_profiles_title_mode",
+        ),
+        default="auto",
+        nullable=False,
+    )
+    description_mode: Mapped[str] = mapped_column(
+        String(8),
+        CheckConstraint(
+            "description_mode IN ('auto', 'on', 'off')",
+            name="ck_publishing_profiles_description_mode",
+        ),
+        default="auto",
+        nullable=False,
+    )
+    tags_mode: Mapped[str] = mapped_column(
+        String(8),
+        CheckConstraint(
+            "tags_mode IN ('auto', 'on', 'off')",
+            name="ck_publishing_profiles_tags_mode",
+        ),
+        default="auto",
+        nullable=False,
+    )
+    content_warning_mode: Mapped[str] = mapped_column(
+        String(8),
+        CheckConstraint(
+            "content_warning_mode IN ('auto', 'on', 'off')",
+            name="ck_publishing_profiles_content_warning_mode",
+        ),
+        default="auto",
+        nullable=False,
+    )
+    ai_disclosure_mode: Mapped[str] = mapped_column(
+        String(8),
+        CheckConstraint(
+            "ai_disclosure_mode IN ('auto', 'on', 'off')",
+            name="ck_publishing_profiles_ai_disclosure_mode",
+        ),
+        default="auto",
+        nullable=False,
+    )
+    channel_system_prompt: Mapped[str | None] = mapped_column(Text)
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONColumn, nullable=False, default=dict
     )
@@ -253,6 +334,28 @@ class PublishingProfile(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class ChannelCharacter(Base):
+    """Which characters a publishing channel follows (channel settings
+    modal). Stock refill only processes sources bound to followed
+    characters; the unique pair prevents duplicate follows."""
+
+    __tablename__ = "channel_characters"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "character_id", name="uq_channel_character"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), nullable=False
+    )
+    character_id: Mapped[int] = mapped_column(
+        ForeignKey("characters.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -297,7 +400,8 @@ class SourceVideo(Base):
     status: Mapped[str] = mapped_column(
         String(16),
         CheckConstraint(
-            "status IN ('discovered', 'excluded', 'planned', 'processed')",
+            "status IN ('discovered', 'excluded', 'planned', 'processed', "
+            "'confirmed')",
             name="ck_source_videos_status",
         ),
         default="discovered",
@@ -453,6 +557,8 @@ class Job(Base):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Yeniden deneme bekleme araligi: run_at gelmeden is alınmaz.
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
     worker_id: Mapped[str | None] = mapped_column(String(64))
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -574,7 +680,8 @@ class Transcript(Base):
     source: Mapped[str] = mapped_column(
         String(16),
         CheckConstraint(
-            "source IN ('sidecar', 'auto_caption')", name="ck_transcripts_source"
+            "source IN ('sidecar', 'auto_caption', 'whisper')",
+            name="ck_transcripts_source",
         ),
         nullable=False,
     )
@@ -813,6 +920,13 @@ class ClipMetadata(Base):
     # M13: viral kanca (hook) ve thumbnail uzerine yazilacak kisa metin.
     hook: Mapped[str] = mapped_column(Text, nullable=False, default="")
     thumbnail_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Icerik bildirimleri (kanal modu + LLM karari sonucu donen deger).
+    content_warning: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    ai_disclosure: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     status: Mapped[str] = mapped_column(
         String(16),
         CheckConstraint(

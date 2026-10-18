@@ -31,6 +31,16 @@ from app.services.channel_service import record_event
 
 RUNTIME_SETTINGS_KEY = "runtime_settings"
 
+# Hint yalnızca yeterince uzun değerlerde verilir; kısa değerlerde son 4
+# karakterin kendisi büyük kısmı olabilir.
+HINT_MIN_LENGTH = 8
+
+DAILY_QUOTA_MIN = 1
+DAILY_QUOTA_MAX = 1_000_000
+
+# Metaveri sistem promptu için makul üst sınır (M13).
+METADATA_PROMPT_MAX_LENGTH = 8000
+
 SECRET_FIELDS = (
     "youtube_api_key",
     "google_client_secret",
@@ -46,20 +56,55 @@ EDITABLE_FIELDS = (
     "youtube_api_key",
     "daily_quota_units",
     "metadata_system_prompt",
+    # Kaynak limitleri ve uretim ayarlari (Start/Stop donemi). Worker
+    # her dongude efektif ayarlari yeniden okur: buradan degistirilen
+    # degerler yeniden baslatma olmadan is akisina uygulanir.
+    "cpu_target_percent",
+    "ram_target_percent",
+    "ffmpeg_threads",
+    "max_heavy_jobs",
+    "max_concurrent_jobs",
+    "retry_max_attempts",
+    "retry_backoff_seconds",
+    "horizontal_stock_target_default",
+    "shorts_per_video",
+    "min_free_disk_gb",
+    "download_rate_limit_kbps",
+    "planned_poll_interval_minutes",
+    "transcription_method",
+    "whisper_model",
+    "whisper_language",
 )
 
 URL_FIELDS = ("oauth_redirect_base", "frontend_base_url")
 
-# Hint yalnızca yeterince uzun değerlerde verilir; kısa değerlerde son 4
-# karakterin kendisi büyük kısmı olabilir.
-HINT_MIN_LENGTH = 8
+# Sayisal alanlar: (alt, ust) sinirlariyla. 0 genellikle "kapali".
+INT_FIELDS: dict[str, tuple[int, int]] = {
+    "daily_quota_units": (DAILY_QUOTA_MIN, DAILY_QUOTA_MAX),
+    "cpu_target_percent": (0, 100),
+    "ram_target_percent": (0, 100),
+    "ffmpeg_threads": (0, 32),
+    "max_heavy_jobs": (1, 8),
+    "max_concurrent_jobs": (1, 8),
+    "retry_max_attempts": (1, 10),
+    "retry_backoff_seconds": (0, 3600),
+    "horizontal_stock_target_default": (1, 50),
+    "shorts_per_video": (1, 10),
+    "download_rate_limit_kbps": (0, 10_000_000),
+    "planned_poll_interval_minutes": (1, 1440),
+}
 
-DAILY_QUOTA_MIN = 1
-DAILY_QUOTA_MAX = 1_000_000
+FLOAT_FIELDS: dict[str, tuple[float, float]] = {
+    "min_free_disk_gb": (0.0, 10000.0),
+}
 
-# Metaveri sistem promptu için makul üst sınır (M13).
-METADATA_PROMPT_MAX_LENGTH = 8000
+CHOICE_FIELDS: dict[str, tuple[str, ...]] = {
+    "transcription_method": ("sidecar", "whisper"),
+}
 
+# Sadece okunur goruntelenen ortam alanlari (degistirilmesi calisan
+# dosya yollarini bozar); ayarlar ekraninda bilgi amaclidir.
+READ_ONLY_FIELDS = ("media_root",)
 
 class SettingsServiceError(Exception):
     """Validation failure with a user-facing Turkish message."""
@@ -84,13 +129,27 @@ def _validate(field: str, value: object) -> None:
                 "token_encryption_key geçerli bir Fernet anahtarı değil "
                 "(32 bayt urlsafe base64 bekleniyor)."
             ) from exc
-    elif field == "daily_quota_units":
-        if not isinstance(value, int) or not (
-            DAILY_QUOTA_MIN <= value <= DAILY_QUOTA_MAX
+    elif field in INT_FIELDS:
+        low, high = INT_FIELDS[field]
+        if not isinstance(value, int) or isinstance(value, bool) or not (
+            low <= value <= high
         ):
             raise SettingsServiceError(
-                f"daily_quota_units {DAILY_QUOTA_MIN}..{DAILY_QUOTA_MAX} "
-                "aralığında olmalı."
+                f"{field} {low}..{high} aralığında bir tam sayı olmalı."
+            )
+    elif field in FLOAT_FIELDS:
+        low, high = FLOAT_FIELDS[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not (
+            low <= float(value) <= high
+        ):
+            raise SettingsServiceError(
+                f"{field} {low}..{high} aralığında bir sayı olmalı."
+            )
+    elif field in CHOICE_FIELDS:
+        allowed = CHOICE_FIELDS[field]
+        if str(value) not in allowed:
+            raise SettingsServiceError(
+                f"{field} şu değerlerden biri olmalı: {', '.join(allowed)}."
             )
     elif field == "metadata_system_prompt":
         if len(str(value)) > METADATA_PROMPT_MAX_LENGTH:
@@ -158,6 +217,12 @@ class SettingsService:
                 hint=_hint(value),
             )
 
+        def number(field: str) -> IntSettingOut:
+            return IntSettingOut(
+                value=int(getattr(effective, field) or 0),
+                source=self._source_of(field, overrides),
+            )
+
         return SettingsOut(
             google_client_id=plain("google_client_id"),
             google_client_secret=secret("google_client_secret"),
@@ -165,11 +230,31 @@ class SettingsService:
             oauth_redirect_base=plain("oauth_redirect_base"),
             frontend_base_url=plain("frontend_base_url"),
             youtube_api_key=secret("youtube_api_key"),
-            daily_quota_units=IntSettingOut(
-                value=effective.daily_quota_units,
-                source=self._source_of("daily_quota_units", overrides),
-            ),
+            daily_quota_units=number("daily_quota_units"),
             metadata_system_prompt=plain("metadata_system_prompt"),
+            cpu_target_percent=number("cpu_target_percent"),
+            ram_target_percent=number("ram_target_percent"),
+            ffmpeg_threads=number("ffmpeg_threads"),
+            max_heavy_jobs=number("max_heavy_jobs"),
+            max_concurrent_jobs=number("max_concurrent_jobs"),
+            retry_max_attempts=number("retry_max_attempts"),
+            retry_backoff_seconds=number("retry_backoff_seconds"),
+            horizontal_stock_target_default=number(
+                "horizontal_stock_target_default"
+            ),
+            shorts_per_video=number("shorts_per_video"),
+            min_free_disk_gb=plain("min_free_disk_gb"),
+            download_rate_limit_kbps=number("download_rate_limit_kbps"),
+            planned_poll_interval_minutes=number(
+                "planned_poll_interval_minutes"
+            ),
+            transcription_method=plain("transcription_method"),
+            whisper_model=plain("whisper_model"),
+            whisper_language=plain("whisper_language"),
+            media_root=PlainSettingOut(
+                value=str(effective.media_root or ""),
+                source=SettingSource.environment,
+            ),
         )
 
     async def view(self) -> SettingsOut:
@@ -195,9 +280,11 @@ class SettingsService:
                         del blob[field]
                         cleared.append(field)
                     continue
-                if field == "daily_quota_units":
+                if field in INT_FIELDS or field in FLOAT_FIELDS:
                     _validate(field, value)
-                    blob[field] = value
+                    blob[field] = (
+                        float(value) if field in FLOAT_FIELDS else int(value)
+                    )
                     changed.append(field)
                     continue
                 value = str(value).strip()

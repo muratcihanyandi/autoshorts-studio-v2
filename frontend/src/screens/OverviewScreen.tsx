@@ -1,10 +1,17 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchOverview, type Overview, type StudioPhase } from '../api/overview'
 import { fetchSystemResources } from '../api/system'
-import { fetchChannels, STATUS_LABEL } from '../api/channels'
+import {
+  ACTIVITY_LABEL,
+  AUTOMATION_STATE_LABEL,
+  startAutomation,
+  stopAutomation,
+  type ChannelRow,
+} from '../api/automation'
 import { usePolling } from '../hooks/usePolling'
 import { Gauge } from '../components/Studio'
+import { ChannelSettingsModal } from '../components/ChannelSettingsModal'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 
 const PHASE_PILL: Record<
@@ -26,13 +33,132 @@ function gaugeTone(percent: number): 'plain' | 'warn' {
   return percent >= 80 ? 'warn' : 'plain'
 }
 
+function stateTone(state: string): 'ok' | 'warn' | 'error' | 'idle' {
+  if (state === 'running') return 'ok'
+  if (state === 'paused') return 'warn'
+  if (state === 'error') return 'error'
+  return 'idle'
+}
+
+function activityTone(activity: string): 'ok' | 'run' | 'idle' {
+  if (activity === 'stock_ready') return 'ok'
+  if (activity === 'stopped' || activity === 'idle') return 'idle'
+  return 'run'
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString('tr-TR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return '—'
+  }
+}
+
+/** Bir kanalın kontrol satırı: Başlat/Durdur, kalıcı otomasyon durumu,
+ * gerçek motor aktivitesi, stok/kuyruk/shorts sayıları, son hata. */
+function OverviewChannelRow({
+  row,
+  onToggle,
+  onOpenSettings,
+  busy,
+}: {
+  row: ChannelRow
+  onToggle: (row: ChannelRow) => void
+  onOpenSettings: (row: ChannelRow) => void
+  busy: boolean
+}) {
+  const running = row.automation_state === 'running'
+  return (
+    <div className="overview-channel">
+      <div className="oc-identity">
+        <i style={{ background: row.ribbon_color }} aria-hidden="true" />
+        <b>{row.name}</b>
+      </div>
+      <span className={`pill pill--${stateTone(row.automation_state)}`}>
+        {AUTOMATION_STATE_LABEL[row.automation_state]}
+      </span>
+      <div className="oc-metrics">
+        <span>
+          stok{' '}
+          <span className="nums">
+            {row.horizontal_stock}/{row.horizontal_stock_target}
+          </span>
+        </span>
+        <span>
+          sırada <span className="nums">{row.queued_horizontal}</span>
+        </span>
+        <span>
+          Shorts <span className="nums">{row.shorts_ready}</span>
+        </span>
+        {row.full_cuts_ready > 0 && (
+          <span>
+            tam kesit <span className="nums">{row.full_cuts_ready}</span>
+          </span>
+        )}
+      </div>
+      <div className="oc-actions">
+        <button
+          className={`btn${running ? ' btn--danger' : ''}`}
+          disabled={busy}
+          onClick={() => onToggle(row)}
+        >
+          {running ? 'Durdur' : 'Başlat'}
+        </button>
+        <button className="btn btn--ghost" onClick={() => onOpenSettings(row)}>
+          Ayarlar
+        </button>
+      </div>
+      <div className="oc-activity">
+        <span className={`pill pill--${activityTone(row.engine_activity)}`}>
+          {ACTIVITY_LABEL[row.engine_activity]}
+        </span>
+        <span>son işlem: {formatTime(row.last_success_at)}</span>
+        {row.last_error && (
+          <span className="error" title={row.last_error}>
+            son hata: {row.last_error.slice(0, 80)}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function OverviewScreen() {
   const fetchOverviewCb = useCallback(() => fetchOverview(), [])
   const fetchSystemCb = useCallback(() => fetchSystemResources(), [])
-  const fetchChannelsCb = useCallback(() => fetchChannels(), [])
-  const overview = usePolling(fetchOverviewCb, 15000)
+  const overview = usePolling(fetchOverviewCb, 10000)
   const system = usePolling(fetchSystemCb, 10000)
-  const channels = usePolling(fetchChannelsCb, 20000)
+  const [busyChannel, setBusyChannel] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [modalChannel, setModalChannel] = useState<ChannelRow | null>(null)
+
+  async function toggleChannel(row: ChannelRow) {
+    setBusyChannel(row.channel_id)
+    setActionError(null)
+    try {
+      if (row.automation_state === 'running') {
+        await stopAutomation(row.channel_id)
+      } else {
+        await startAutomation(row.channel_id)
+      }
+      await overview.retry()
+    } catch (exc) {
+      setActionError(
+        exc instanceof Error ? exc.message : 'İşlem başarısız oldu.',
+      )
+    } finally {
+      setBusyChannel(null)
+    }
+  }
+
+  const rows = overview.state.status === 'ok' ? overview.state.data.channel_rows ?? [] : []
+  const worker = overview.state.status === 'ok' ? overview.state.data.worker : undefined
 
   return (
     <>
@@ -59,6 +185,34 @@ export function OverviewScreen() {
       {overview.state.status === 'ok' && (
         <>
           {overview.state.stale && <StaleNote onRetry={overview.retry} />}
+
+          {worker && (
+            <div className={`worker-banner${worker.running ? '' : ' off'}`}>
+              <span
+                className={`pill ${worker.running ? 'pill--ok' : 'pill--error'}`}
+              >
+                {worker.running ? 'Worker çalışıyor' : 'Worker kapalı'}
+              </span>
+              {worker.running ? (
+                <span className="nums">
+                  {worker.jobs_processed} iş · son sinyal{' '}
+                  {formatTime(worker.last_tick_at)}
+                </span>
+              ) : worker.enabled ? (
+                <span>
+                  Worker açıktı ama sinyal gelmiyor — konteyneri yeniden
+                  başlatın.
+                </span>
+              ) : (
+                <span>
+                  Otomasyon motoru bu dağıtımda kapalı (WORKER_ENABLED). Compose
+                  dosyasında açın; Başlat/Durdur ancak motor çalışırken iş
+                  üretir.
+                </span>
+              )}
+            </div>
+          )}
+
           {(() => {
             const pill = PHASE_PILL[overview.state.data.phase]
             return <span className={`pill pill--${pill.tone}`}>{pill.text}</span>
@@ -84,14 +238,10 @@ export function OverviewScreen() {
               <b className="nums">
                 {overview.state.data.channels.connected}
                 <small>
-                  / {overview.state.data.channels.total} kayıtlı
+                  / {overview.state.data.channels.total ?? 0} kayıtlı
                 </small>
               </b>
-              <small>
-                {overview.state.data.channels.connected > 0
-                  ? 'otomasyon aktif'
-                  : 'ilk kanalı bağlayınca hattı döner'}
-              </small>
+              <small>otomasyon kanal bazında yönetilir</small>
             </div>
             <div className="stat-card">
               <span>İş kuyruğu</span>
@@ -106,56 +256,26 @@ export function OverviewScreen() {
             <div className="stack">
               <section className="ink-panel" aria-label="Kanallar">
                 <h2>Kanallar</h2>
-                {channels.state.status === 'ok' &&
-                channels.state.data.channels.length > 0 ? (
-                  <table className="info-table">
-                    <tbody>
-                      {channels.state.data.channels.slice(0, 5).map((channel) => (
-                        <tr key={channel.id}>
-                          <th>
-                            <i
-                              style={{
-                                display: 'inline-block',
-                                width: 10,
-                                height: 10,
-                                borderRadius: 3,
-                                background: channel.ribbon_color,
-                                marginRight: 8,
-                              }}
-                            />
-                            {channel.name}
-                          </th>
-                          <td className="nums">{channel.handle ?? '—'}</td>
-                          <td>
-                            <span
-                              className={`pill ${
-                                channel.status === 'connected'
-                                  ? 'pill--ok'
-                                  : 'pill--idle'
-                              }`}
-                            >
-                              {STATUS_LABEL[channel.status]}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {actionError && (
+                  <p className="plate-note error">{actionError}</p>
+                )}
+                {rows.length > 0 ? (
+                  rows.map((row) => (
+                    <OverviewChannelRow
+                      key={row.channel_id}
+                      row={row}
+                      onToggle={(r) => void toggleChannel(r)}
+                      onOpenSettings={setModalChannel}
+                      busy={busyChannel === row.channel_id}
+                    />
+                  ))
                 ) : (
                   <p className="plate-note">
-                    Henüz bağlı kanal yok.{' '}
+                    Henüz kanal yok.{' '}
                     <Link to="/kanallar">Kanallar ekranına git</Link> — ilk
-                    kanalı bağlayınca burada listelenir.
+                    kanalı ekleyince burada kontrol satırı açılır.
                   </p>
                 )}
-                {channels.state.status === 'ok' &&
-                  channels.state.data.channels.length > 5 && (
-                    <p className="plate-note">
-                      <Link to="/kanallar">
-                        +{channels.state.data.channels.length - 5} kanal daha
-                      </Link>
-                    </p>
-                  )}
               </section>
 
               <section className="ink-panel" aria-label="Boru hattı">
@@ -275,6 +395,15 @@ export function OverviewScreen() {
             </section>
           </div>
         </>
+      )}
+
+      {modalChannel && (
+        <ChannelSettingsModal
+          channelId={modalChannel.channel_id}
+          channelName={modalChannel.name}
+          onClose={() => setModalChannel(null)}
+          onSaved={() => void overview.retry()}
+        />
       )}
     </>
   )

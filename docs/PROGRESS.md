@@ -10,13 +10,13 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 13 (Characters and Multi-Platform
-Sources) COMPLETE; Milestone 12 production hardening continues in
-parallel on the Pi.
+**Current milestone:** Milestone 14 (Channel Automation — Start/Stop,
+stock-target refill, status tags) COMPLETE; Milestone 12 production
+hardening continues in parallel on the Pi.
 
-**Current task:** M13 verification done (backend 330/330, frontend
-14/14); next: Pi deployment of M13 (image rebuild + restart, migration
-0011) and M12 field verification on real workloads.
+**Current task:** M14 verification done (backend 352/352, frontend
+14/14); next: Pi deployment of M14 (image rebuild + restart, migration
+0012) and live verification of the worker heartbeat banner.
 
 **Last updated:** 2026-10-18
 
@@ -111,7 +111,8 @@ marked otherwise. Evidence commands are listed; none expose secrets.
 | 9. Subtitles and Metadata | COMPLETED | LLM subtitle correction (timestamps preserved, uncertainty flagged), channel templates, revisioned metadata (2026-10-17) |
 | 10. Upload and Publishing | COMPLETED | Resumable private-first uploads with rights/approval guards, timezone-aware schedules, reconciliation (2026-10-17) |
 | 11. End-to-End Automation | COMPLETED | Auto-plan chaining, target/stock/pause-aware publishing, channel isolation, ops summaries (2026-10-17) |
-| 12. Production Hardening | NOT_STARTED | Stress, recovery, and security tests |
+| 12. Production Hardening | IN_PROGRESS | Fault injection, backup/restore, guide screen done; Pi field verification pending |
+| 14. Channel Automation (Start/Stop) | COMPLETED | Per-channel state machine, stock-target refill, #done/#confirmed tags, hype evaluation, content modes (2026-10-18) |
 
 ## 3. Completed Tasks
 
@@ -826,20 +827,24 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-18 (post-M13 "characters + multi-platform sources"
+Verified 2026-10-18 (post-M14 "channel automation / Start/Stop"
 session) on the dev machine (Windows 11, Python 3.11.9 venv, Node
 24.13.0). Commands run from the stated directories. NOTE: on this
 machine pytest must be run with file redirection, not through pipes —
-piped runs hang (known dev-env quirk).
+piped runs hang (known dev-env quirk); one flaky full-suite hang in
+the test_jobs region reproduced once and did not recur (matches the
+pre-existing environment quirk recorded at M11; single-file and
+repeat runs are stable).
 
-- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -v -x`
+- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -v`
   (output redirected to a log file)
-  - Passed: **330**, Failed: 0, Skipped: 0 in 81s (M13 added 82:
-    characters CRUD/photo 16, sources platform/reaction/manual-VOD 8,
-    settings prompt 2, character matching 12, thumbnails 11, webcam
-    photo validation +4, horizontal render +6, full-cut pipeline +10,
-    metadata prompt chain +11, dual-orientation publishing +3, plus
-    suite growth from concurrent workstreams).
+  - Passed: **352**, Failed: 0, Skipped: 0 in 110 s (M14 added 21:
+    test_channel_automation 20 — start/stop state machine, stock
+    refill rules, no-reprocessing, multi-Shorts selection, tag
+    vocabulary, whisper fallback, content modes, resource gate, API
+    roundtrips — plus the 0012 offline-SQL migration test; existing
+    tests updated for the channel-state gates and the selected-only
+    render feed).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
@@ -847,8 +852,12 @@ piped runs hang (known dev-env quirk).
 - Frontend — `cd frontend && npx vitest run`: 14 passed, 0 failed
   (App 4, SettingsScreen 3, AutomationScreen 3, CharactersScreen 4).
 - Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0 errors
-  (1 pre-existing React Compiler advisory in SettingsScreen).
+  (3 pre-existing React Compiler advisories).
+- Frontend production build — `npm run build`: succeeded.
 - Secret scan — `python tools/scan_secrets.py`: clean.
+
+Previous full-suite record (2026-10-18, post-M13): backend 330/330
+(81 s), frontend 14/14 — superseded by the totals above.
 
 Previous full-suite record (2026-10-17, connection-guide + LLM
 management session):
@@ -952,6 +961,50 @@ historical, superseded by the totals above):
 4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
+
+- What was implemented (2026-10-18, M14 "channel automation /
+  Start/Stop"): the automation root cause was deployment-side — the
+  compose templates in actual use did not set `WORKER_ENABLED` or
+  `MEDIA_ROOT` on the backend, so the worker never started on the Pi
+  (all three templates now set both; the local generated file's real
+  DB password was scrubbed to a placeholder — the file is gitignored
+  and never pushed, but the user should still rotate that password as
+  hygiene). On top of that, the engine became genuinely controllable:
+  per-channel `automation_state` (stopped/running/paused/error) with
+  Start/Stop/Pause API + Overview buttons (stop cancels the channel's
+  queued jobs, running jobs finish, state and queue survive
+  restarts); stock-target refill enqueues exactly ONE media_process
+  when ready horizontal stock (#done, not #confirmed) is below the
+  channel target (default 3) and no source is in-flight globally;
+  heavy jobs serialize on a shared lock with `max_heavy_jobs`; the
+  central StatusService computes the #queued/#downloading/
+  #processing/#done/#confirmed/#shorts/#error tags and the
+  #confirmed transition; hype_evaluate (LLM with transcript context,
+  validated + sentence-snapped windows, score fallback on provider
+  outage) selects the candidates the render feed takes; metadata
+  gained the auto/on/off modes with independent +18/AI disclosure
+  decisions; whisper fallback (PATH-probed CLI) when no sidecar
+  exists; worker heartbeats into `app_meta.worker_state` and the
+  Overview shows a live worker banner + per-channel rows; Settings
+  gained the resource-limit section (CPU/RAM/threads/retry/stock
+  defaults/transcription), applied live by the worker loop. Tests:
+  backend 352/352 (110 s), frontend 14/14, tsc/oxlint/build clean,
+  secret scan clean — see section 7.
+- Deployment (M14): migration `0012` runs automatically on container
+  start (additive columns/tables only — no data migration, existing
+  rows default to `stopped`/3/auto). The Pi needs an image rebuild +
+  app restart (push to `main` triggers GHCR), AND the compose used on
+  the Pi must now carry `WORKER_ENABLED: "true"` and `MEDIA_ROOT:
+  /data/media` + the media volume — the updated
+  `deploy/casaos/docker-compose.ghcr.yml` shows the exact backend
+  block. After restart, verify the Overview worker banner reads
+  "Worker çalışıyor" before pressing Başlat.
+- Known limitations (do not present as complete): Whisper CLI is not
+  inside the image (operator installs it or keeps 'sidecar');
+  external transcription services are not implemented; YouTube
+  age-restriction fields are not set at upload (decisions live on
+  metadata rows + UI); live YouTube/Kick flows remain mock-tested
+  only (ADR-008) — real-platform verification is a Pi-time step.
 
 - What was implemented (2026-10-18, M13 "characters + multi-platform
   sources", built via three parallel subagents per

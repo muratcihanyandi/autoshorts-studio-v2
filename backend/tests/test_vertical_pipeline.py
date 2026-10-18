@@ -75,6 +75,14 @@ async def _seed_chain(
         channel = Channel(name="Kanal")
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        # Start/Stop donemi: render isleri yalnizca calisan kanalda yurur.
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id="UCkaynak",
@@ -129,7 +137,9 @@ async def _seed_chain(
             end_seconds=4.0,
             duration_seconds=3.0,
             score=0.8,
-            status="candidate",
+            # Start/Stop donemi: render beslemesi yalnizca hype secimi
+            # ('selected') yapmis adaylari alir.
+            status="selected",
         )
         session.add(candidate)
         await session.commit()

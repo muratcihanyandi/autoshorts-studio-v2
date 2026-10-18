@@ -65,6 +65,8 @@ services:
       APP_ENV: production
       LOG_LEVEL: info
       DATABASE_URL: postgresql+asyncpg://autoshorts:__GENERATED_PASSWORD__@postgres:5432/autoshorts_studio
+      # Otomasyon motoru: worker'i acar (kapaliysa motor hic baslamaz).
+      WORKER_ENABLED: "true"
       # Etiketli medya agaci: downloads / edited / clips / stock / tmp.
       MEDIA_ROOT: /data/media
     volumes:

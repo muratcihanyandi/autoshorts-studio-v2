@@ -33,6 +33,12 @@ services:
       APP_ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-autoshorts}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autoshorts_studio}
+      # Otomasyon motoru: worker'i acar (kapaliysa motor hic baslamaz).
+      WORKER_ENABLED: "true"
+      # Etiketli medya agaci: downloads / edited / clips / stock / tmp.
+      MEDIA_ROOT: /data/media
+    volumes:
+      - ${MEDIA_DATA_DIR:-./media}:/data/media
     depends_on:
       postgres:
         condition: service_healthy

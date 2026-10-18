@@ -357,6 +357,42 @@ Acceptance criteria:
 - Webcam uncertainty still routes to review, never a wrong crop.
 - Verified by tests: backend 330/330, frontend 14/14.
 
+## Milestone 14 — Channel Automation (Start/Stop)
+
+Status: COMPLETED (2026-10-18; evidence in `docs/PROGRESS.md` sections
+3 and 7.)
+
+Tasks:
+- Find and fix why the deployed automation never ran (missing
+  WORKER_ENABLED/MEDIA_ROOT in the compose templates in actual use).
+- Implement the per-channel automation state machine
+  (stopped/running/paused/error) with Start/Stop/Pause APIs and
+  Overview controls; stop cancels queued jobs, state survives
+  restarts.
+- Implement the stock-target horizontal refill (default 3, exactly one
+  source in-flight globally) and the central status-tag vocabulary
+  (#queued/#downloading/#processing/#done/#confirmed/#shorts/#error)
+  with the #confirmed terminal transition.
+- Implement LLM hype evaluation (transcript-context windows,
+  validated + sentence-snapped boundaries, confidence scores,
+  score-fallback on provider outage) and select-only rendering.
+- Implement the auto/on/off content modes with independent +18 and
+  AI-use disclosure decisions.
+- Implement the whisper transcription fallback (PATH-probed CLI) and
+  the live-effective resource settings (CPU/RAM targets, ffmpeg
+  threads, heavy-job limits, retry backoff).
+- Prove worker liveness in the UI (app_meta heartbeat banner).
+
+Acceptance criteria:
+- Start makes the worker actually take work; stop blocks new jobs
+  without corrupting half-done output (verified by tests).
+- The stock target stops new downloads at 3 and resumes on depletion;
+  a source is never processed twice; one video yields multiple
+  Shorts (verified by tests).
+- Overview shows real stock/published numbers, per-channel engine
+  rows, and worker health (hardcoded zeros removed).
+- Verified by tests: backend 352/352, frontend 14/14.
+
 ---
 
 ## Cross-Milestone Rules

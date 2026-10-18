@@ -129,3 +129,103 @@ def transcript_text_in_range(
         if seg["end"] > start and seg["start"] < end
     ]
     return " ".join(parts).strip()
+
+
+class TranscriptError(Exception):
+    """Transcription failure with a user-facing Turkish message."""
+
+
+class WhisperTranscriber:
+    """Local Whisper CLI fallback (PATH-probed, like yt-dlp).
+
+    Runs `whisper <media> --model <m> --language <l> --output_format
+    srt --output_dir <tmp>` and parses the produced SRT with the
+    existing in-process parser. The binary is NOT part of the image by
+    default (torch is too heavy for the Pi): the settings screen
+    documents that the operator installs it or keeps the 'sidecar'
+    method. Test doubles inject a runner.
+    """
+
+    def __init__(self, runner=None) -> None:
+        # None -> gercek subprocess; testler sahte runner enjekte eder.
+        self._runner = runner
+
+    def build_command(
+        self,
+        media_path: str | Path,
+        output_dir: Path,
+        *,
+        model: str,
+        language: str,
+    ) -> list[str]:
+        cmd = [
+            "whisper",
+            str(media_path),
+            "--model", model,
+            "--language", language,
+            "--output_format", "srt",
+            "--output_dir", str(output_dir),
+            "--fp16", "False",
+        ]
+        return cmd
+
+    async def _run_subprocess(self, cmd: list[str]) -> int:
+        import asyncio
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        # Whisper kucuk modellerde bile yavastir; uzun video icin bol
+        # zaman taninir (is kuyrugu zaten sirali).
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), 14400.0)
+        if proc.returncode != 0:
+            tail = stderr.decode("utf-8", "replace").strip()[-500:]
+            raise TranscriptError(f"whisper basarisiz: {tail}")
+        return proc.returncode
+
+    async def transcribe(
+        self,
+        media_path: str | Path,
+        output_dir: Path,
+        *,
+        model: str = "tiny",
+        language: str = "tr",
+    ) -> list[dict]:
+        """Run Whisper and return parsed segments."""
+        import shutil
+
+        media = Path(media_path)
+        if not media.is_file():
+            raise TranscriptError(f"Medya dosyasi yok: {media}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        cmd = self.build_command(
+            media, output_dir, model=model, language=language
+        )
+        if self._runner is None:
+            if shutil.which("whisper") is None:
+                raise TranscriptError(
+                    "whisper bulunamadi; 'sidecar' yontemini kullanin "
+                    "veya sunucuya whisper kurun."
+                )
+            runner = self._run_subprocess
+        else:
+            runner = self._runner
+        await runner(cmd)
+        srt = output_dir / f"{media.stem}.srt"
+        if not srt.is_file():
+            raise TranscriptError("whisper cikti dosyasi olusturmadi.")
+        text = await _read_text(srt)
+        segments = parse_srt(text)
+        if not segments:
+            raise TranscriptError("whisper ciktisi bos/ayristirilamadi.")
+        return segments
+
+
+async def _read_text(path: Path) -> str:
+    import asyncio
+
+    return await asyncio.to_thread(
+        path.read_text, encoding="utf-8", errors="replace"
+    )

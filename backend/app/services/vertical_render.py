@@ -169,9 +169,13 @@ async def render_vertical(
     out_path: str | Path,
     *,
     subtitle_path: str | Path | None = None,
+    threads: int = 0,
     timeout: float = 1800.0,
 ) -> Path:
-    """Render the composed 9:16 clip; raises on ffmpeg failure."""
+    """Render the composed 9:16 clip; raises on ffmpeg failure.
+
+    threads > 0 appends -threads N (Pi CPU limit); 0 leaves ffmpeg's
+    own default."""
     if end_seconds <= start_seconds:
         raise VerticalRenderError("Gecersiz klip araligi.")
     out = Path(out_path)
@@ -191,8 +195,10 @@ async def render_vertical(
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
-        str(out),
     ]
+    if threads > 0:
+        cmd += ["-threads", str(threads)]
+    cmd.append(str(out))
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -241,6 +247,7 @@ async def render_horizontal(
     trim_start: float = 0.0,
     trim_end: float = 0.0,
     source_duration: float | None = None,
+    threads: int = 0,
     timeout: float = 1800.0,
 ) -> Path:
     """Render the trimmed 16:9 full cut; raises on ffmpeg failure.
@@ -248,6 +255,7 @@ async def render_horizontal(
     Input seeking (-ss/-to, both in the source's own timeline) keeps
     trimming fast; -to is the source duration minus the end trim and
     is omitted when the duration is unknown (no end trim then).
+    threads > 0 appends -threads N (Pi CPU limit).
     """
     if trim_start < 0 or trim_end < 0:
         raise VerticalRenderError("Budama degerleri negatif olamaz.")
@@ -276,8 +284,10 @@ async def render_horizontal(
         "-c:a", "aac",
         "-b:a", "128k",
         "-movflags", "+faststart",
-        str(out),
     ]
+    if threads > 0:
+        cmd += ["-threads", str(threads)]
+    cmd.append(str(out))
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,

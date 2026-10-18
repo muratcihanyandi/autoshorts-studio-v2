@@ -56,6 +56,13 @@ async def _seed_planned(sessionmaker, name="Kanal") -> tuple[int, int]:
         channel = Channel(name=name, status="connected")
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id=f"UC-{name}",

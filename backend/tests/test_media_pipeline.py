@@ -60,6 +60,14 @@ async def _seed_planned_video(sessionmaker) -> tuple[int, int, int]:
         channel = Channel(name="Kanal")
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        # Start/Stop donemi: isleyici guvenligi calisan kanal ister.
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id="UCkaynak",

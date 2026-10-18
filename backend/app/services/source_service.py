@@ -213,6 +213,12 @@ class SourceService:
             video_id = video.id
         await jobs.enqueue(
             "media_process",
-            {"source_video_id": video_id, "import_path": data.url},
+            {
+                "source_video_id": video_id,
+                "import_path": data.url,
+                # Manuel operator istegi: otomasyon durdurulmus olsa bile
+                # islenir (worker guard'u bu bayraga saygi gosterir).
+                "manual": True,
+            },
         )
         return video

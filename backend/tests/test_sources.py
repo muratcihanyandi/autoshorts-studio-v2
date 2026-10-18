@@ -320,9 +320,10 @@ def test_manual_vod_creates_planned_video_and_media_process_job(
     assert video["published_at"] is None
 
     payloads = _job_payloads(client_db)
-    assert ("media_process", {"source_video_id": video["id"], "import_path": url}) in (
-        payloads
-    )
+    assert (
+        "media_process",
+        {"source_video_id": video["id"], "import_path": url, "manual": True},
+    ) in payloads
 
     # Aynı URL ikinci kez 409 verir; yeni iş de kuyruklanmaz.
     duplicate = client_db.post(

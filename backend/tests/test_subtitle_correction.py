@@ -81,6 +81,14 @@ async def _seed(sessionmaker) -> tuple[int, int]:
         channel = Channel(name="Kanal")
         session.add(channel)
         await session.flush()
+        from app.models import PublishingProfile
+
+        # Start/Stop donemi: icerik beslemesi yalnizca calisan kanalda.
+        session.add(
+            PublishingProfile(
+                channel_id=channel.id, automation_state="running"
+            )
+        )
         source = SourceChannel(
             channel_id=channel.id,
             youtube_channel_id="UCkaynak",

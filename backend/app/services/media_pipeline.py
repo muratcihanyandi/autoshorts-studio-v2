@@ -342,13 +342,37 @@ class MediaPipelineService:
         sidecar = find_sidecar(media_path) if media_path else None
         segments: list[dict] = []
         raw_path: str | None = None
+        source_kind = "sidecar" if origin == "local_import" else "auto_caption"
+        whisper_used = False
+        whisper_error: str | None = None
         if sidecar is not None:
             text = await asyncio.to_thread(
                 sidecar.read_text, encoding="utf-8", errors="replace"
             )
             segments = parse_sidecar_text(text)
             raw_path = str(sidecar)
-        source_kind = "sidecar" if origin == "local_import" else "auto_caption"
+        elif self._settings.transcription_method == "whisper" and media_path:
+            # Altyazi yok: yerel Whisper CLI fallback (PATH-probe).
+            from app.services.media_storage import media_subdir
+            from app.services.media_transcript import (
+                TranscriptError,
+                WhisperTranscriber,
+            )
+
+            tmp_dir = media_subdir(self._settings.media_root, "tmp")
+            try:
+                segments = await WhisperTranscriber().transcribe(
+                    media_path,
+                    tmp_dir,
+                    model=self._settings.whisper_model,
+                    language=self._settings.whisper_language,
+                )
+                source_kind = "whisper"
+                whisper_used = True
+            except TranscriptError as exc:
+                # Transkript uretilemedi: is kaybolmaz, hata kayda gecer
+                # ve hat bicimi (enerji/sahne) uzerinden devam eder.
+                whisper_error = str(exc)
 
         async with self._sessionmaker() as session:
             existing = (
@@ -382,6 +406,8 @@ class MediaPipelineService:
                     "source_video_id": source_video_id,
                     "segment_count": len(segments),
                     "found": sidecar is not None,
+                    "whisper_used": whisper_used,
+                    "whisper_error": whisper_error,
                 },
             )
             await session.commit()

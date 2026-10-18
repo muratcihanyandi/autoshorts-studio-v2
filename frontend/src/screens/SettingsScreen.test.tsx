@@ -11,6 +11,22 @@ const settingsPayload = {
   youtube_api_key: { configured: true, source: 'database', hint: '9876' },
   daily_quota_units: { value: 10000, source: 'environment' },
   metadata_system_prompt: { value: '', source: 'unset' },
+  cpu_target_percent: { value: 0, source: 'environment' },
+  ram_target_percent: { value: 0, source: 'environment' },
+  ffmpeg_threads: { value: 0, source: 'environment' },
+  max_heavy_jobs: { value: 1, source: 'environment' },
+  max_concurrent_jobs: { value: 2, source: 'environment' },
+  retry_max_attempts: { value: 3, source: 'environment' },
+  retry_backoff_seconds: { value: 60, source: 'environment' },
+  horizontal_stock_target_default: { value: 3, source: 'environment' },
+  shorts_per_video: { value: 3, source: 'environment' },
+  min_free_disk_gb: { value: '2.0', source: 'environment' },
+  download_rate_limit_kbps: { value: 0, source: 'environment' },
+  planned_poll_interval_minutes: { value: 5, source: 'environment' },
+  transcription_method: { value: 'sidecar', source: 'environment' },
+  whisper_model: { value: 'tiny', source: 'environment' },
+  whisper_language: { value: 'tr', source: 'environment' },
+  media_root: { value: '/data/media', source: 'environment' },
 }
 
 const overviewPayload = {
@@ -106,7 +122,7 @@ describe('SettingsScreen', () => {
         youtube_api_key: 'yeni-gizli-anahtar',
       })
     })
-    expect(await screen.findByText('Kaydedildi.')).toBeInTheDocument()
+    expect(await screen.findAllByText('Kaydedildi.')).not.toHaveLength(0)
   })
 
   it('keeps untouched secrets out of the payload', async () => {

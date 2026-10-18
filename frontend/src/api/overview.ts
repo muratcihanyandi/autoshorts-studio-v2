@@ -1,4 +1,5 @@
 import { getJson } from './client'
+import type { ChannelRow, WorkerHealth } from './automation'
 
 export type StudioPhase = 'setup' | 'awaiting_channels' | 'running'
 
@@ -14,6 +15,8 @@ export interface Overview {
   jobs: { active: number; queued: number }
   stock: { clips: number }
   today_published: number
+  channel_rows?: ChannelRow[]
+  worker?: WorkerHealth
 }
 
 export function fetchOverview(): Promise<Overview> {
