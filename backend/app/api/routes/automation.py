@@ -129,6 +129,8 @@ async def get_channel_settings(
         channel_id=channel_id,
         automation_state=profile.automation_state,
         horizontal_stock_target=profile.horizontal_stock_target,
+        daily_vertical_limit=profile.daily_clip_target,
+        daily_horizontal_limit=profile.daily_horizontal_limit,
         title_mode=profile.title_mode,
         description_mode=profile.description_mode,
         tags_mode=profile.tags_mode,
@@ -158,6 +160,8 @@ async def update_channel_settings(
         await service.update_channel_settings(
             channel_id,
             horizontal_stock_target=data.horizontal_stock_target,
+            daily_vertical_limit=data.daily_vertical_limit,
+            daily_horizontal_limit=data.daily_horizontal_limit,
             title_mode=data.title_mode,
             description_mode=data.description_mode,
             tags_mode=data.tags_mode,

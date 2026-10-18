@@ -112,6 +112,25 @@ class YouTubeUploadClient:
             raise UploadError("Yukleme yanitinda video kimligi yok.") from exc
         return video_id
 
+    async def set_privacy_public(
+        self, http: httpx.AsyncClient, video_id: str
+    ) -> None:
+        """videos.update ile gorunurlugu herkese acik yap (zamanli
+        yayin adimi: yukleme her zaman gizlidir, acilis plan saatinde
+        burada gerceklesir)."""
+        response = await http.put(
+            f"{VIDEOS_URL}?part=status",
+            headers=self._headers(),
+            json={
+                "id": video_id,
+                "status": {"privacyStatus": "public"},
+            },
+        )
+        if response.status_code not in (200, 201):
+            raise UploadError(
+                f"Video herkese acik yapilamadi (HTTP {response.status_code})."
+            )
+
     async def fetch_status(
         self, http: httpx.AsyncClient, video_id: str
     ) -> VideoStatus:

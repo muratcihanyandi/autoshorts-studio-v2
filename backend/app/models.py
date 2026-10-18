@@ -265,6 +265,10 @@ class PublishingProfile(Base):
         nullable=False,
     )
     daily_clip_target: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Gunluk yatay (tam kesit) yayin limiti; dikeyde daily_clip_target.
+    daily_horizontal_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3
+    )
     timezone: Mapped[str] = mapped_column(Text, nullable=False, default="Europe/Istanbul")
     publish_window_start: Mapped[str | None] = mapped_column(Text)
     publish_window_end: Mapped[str | None] = mapped_column(Text)
@@ -965,6 +969,13 @@ class PublishedVideo(Base):
         ForeignKey("clip_candidates.id", ondelete="CASCADE"),
         nullable=True,
     )
+    # Yatay tam kesit satirlarinda kaynak video (klip satirlarinda NULL);
+    # temizlik ve tek-yayin guvenligi icin dogrudan bag.
+    source_video_id: Mapped[int | None] = mapped_column(
+        ForeignKey("source_videos.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     orientation: Mapped[str] = mapped_column(
         String(12),
         CheckConstraint(
@@ -999,6 +1010,9 @@ class PublishedVideo(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_error: Mapped[str | None] = mapped_column(Text)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Herkese acik yapilma ani: gizli yukleme ile yayin anini ayirir;
+    # medya temizligi (retention) bu andan sayilir.
+    public_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

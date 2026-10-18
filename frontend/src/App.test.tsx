@@ -13,7 +13,12 @@ const overviewPayload = {
   llm_providers: { configured: 0 },
   jobs: { active: 0, queued: 0 },
   stock: { clips: 0 },
-  today_published: 0,
+  today_published: {
+    vertical: 0,
+    horizontal: 0,
+    vertical_limit: 0,
+    horizontal_limit: 0,
+  },
 }
 
 const channelsPayload = {
@@ -74,10 +79,10 @@ describe('App', () => {
     render(<App />)
 
     expect(screen.getByRole('navigation', { name: 'Stüdyo gezinme' })).toBeInTheDocument()
-    expect(await screen.findByText('Bugün yayınlanan')).toBeInTheDocument()
+    expect(await screen.findByText('Bugün yayınlanan yatay')).toBeInTheDocument()
     expect(screen.getByText('Kanal bekleniyor')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Genel Bakış' })).toBeInTheDocument()
-    expect(screen.getByText('Özel stok')).toBeInTheDocument()
+    expect(screen.getByText('günlük yatay limiti')).toBeInTheDocument()
     expect(screen.getByText('Pi kaynakları')).toBeInTheDocument()
     expect(screen.getByText('CPU')).toBeInTheDocument()
     expect(screen.getByText('38%')).toBeInTheDocument()

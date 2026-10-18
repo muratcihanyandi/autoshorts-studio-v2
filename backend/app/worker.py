@@ -66,7 +66,12 @@ async def resolve_job_channel(
         cid = payload.get("channel_id")
         return cid if isinstance(cid, int) else None
     source_video_id = None
-    if job_type in ("media_process", "hype_evaluate", "clip_render_full_cut"):
+    if job_type in (
+        "media_process",
+        "hype_evaluate",
+        "clip_render_full_cut",
+        "publish_full_cut",
+    ):
         vid = payload.get("source_video_id")
         source_video_id = vid if isinstance(vid, int) else None
     elif job_type == "clip_render":
@@ -295,6 +300,16 @@ def build_handlers(
         service = PublishingService(sessionmaker, settings)
         return await service.publish_clip(clip_candidate_id)
 
+    async def publish_full_cut(payload: dict[str, Any]) -> dict:
+        """Yatay tam kesitin gizli yuklemesi (onay tetikleyicili)."""
+        from app.services.publishing_service import PublishingService
+
+        source_video_id = payload.get("source_video_id")
+        if not isinstance(source_video_id, int):
+            raise ValueError("payload.source_video_id gerekli.")
+        service = PublishingService(sessionmaker, settings)
+        return await service.publish_full_cut(source_video_id)
+
     async def publish_due(payload: dict[str, Any]) -> dict:
         from app.services.automation_service import AutomationService
 
@@ -322,6 +337,7 @@ def build_handlers(
         "subtitle_correct": subtitle_correct,
         "metadata_generate": metadata_generate,
         "publish_clip": publish_clip,
+        "publish_full_cut": publish_full_cut,
         "publish_due": publish_due,
         "ops_summary": ops_summary,
     }
@@ -353,6 +369,7 @@ class JobWorker:
         self._last_content_enqueue = 0.0
         self._last_hype_enqueue = 0.0
         self._last_publish_enqueue = 0.0
+        self._last_media_cleanup = 0.0
         self._last_summary_day = ""
         self._last_tmp_cleanup = 0.0
         self._last_state_write = 0.0
@@ -885,6 +902,25 @@ class JobWorker:
         self._last_tmp_cleanup = now
         await self.cleanup_tmp_once()
 
+    async def cleanup_media_once(self) -> dict:
+        """Retention dolumu gelen yayin dosyalarini temizle."""
+        from app.services.media_cleanup import cleanup_published_media
+
+        try:
+            return await cleanup_published_media(
+                self._sessionmaker, self._effective
+            )
+        except Exception:  # noqa: BLE001 - temizlik best-effort
+            return {"cleaned": 0}
+
+    async def _maybe_cleanup_media(self) -> None:
+        """Run the retention cleanup at most once per hour."""
+        now = time.monotonic()
+        if self._last_media_cleanup and now - self._last_media_cleanup < 3600:
+            return
+        self._last_media_cleanup = now
+        await self.cleanup_media_once()
+
     # --- worker saglik durumu (UI kaniti) ---
 
     async def write_worker_state(self) -> None:
@@ -943,6 +979,7 @@ class JobWorker:
                     await self.enqueue_publish_jobs()
                     await self.enqueue_summary_jobs()
                     await self._maybe_cleanup_tmp()
+                    await self._maybe_cleanup_media()
                     await self.write_worker_state()
                     if self._resource_ok():
                         await self.claim_batch()

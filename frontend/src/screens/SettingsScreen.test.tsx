@@ -23,6 +23,7 @@ const settingsPayload = {
   min_free_disk_gb: { value: '2.0', source: 'environment' },
   download_rate_limit_kbps: { value: 0, source: 'environment' },
   planned_poll_interval_minutes: { value: 5, source: 'environment' },
+  media_retention_days: { value: 0, source: 'environment' },
   transcription_method: { value: 'sidecar', source: 'environment' },
   whisper_model: { value: 'tiny', source: 'environment' },
   whisper_language: { value: 'tr', source: 'environment' },
@@ -40,7 +41,12 @@ const overviewPayload = {
   llm_providers: { configured: 0 },
   jobs: { active: 0, queued: 0 },
   stock: { clips: 0 },
-  today_published: 0,
+  today_published: {
+    vertical: 0,
+    horizontal: 0,
+    vertical_limit: 0,
+    horizontal_limit: 0,
+  },
 }
 
 const whisperState = { installed: false }

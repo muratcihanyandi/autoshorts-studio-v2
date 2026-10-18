@@ -39,6 +39,7 @@ export interface SettingsView {
   min_free_disk_gb: PlainSetting
   download_rate_limit_kbps: IntSetting
   planned_poll_interval_minutes: IntSetting
+  media_retention_days: IntSetting
   transcription_method: PlainSetting
   whisper_model: PlainSetting
   whisper_language: PlainSetting
@@ -67,6 +68,7 @@ export type SettingsPatch = Partial<{
   min_free_disk_gb: number
   download_rate_limit_kbps: number
   planned_poll_interval_minutes: number
+  media_retention_days: number
   transcription_method: string
   whisper_model: string
   whisper_language: string

@@ -194,7 +194,11 @@ async def _seed(
 
 
 def youtube_handler(fail_put=False, privacy="private"):
-    """YouTube resumable protokolunun sadik mock'u."""
+    """YouTube resumable protokolunun sadik mock'u. Gorunurluk
+    state'lidir: videos.update (herkese acik yapma) geldikten sonra
+    videos.list ayni gizliligi rapor eder."""
+
+    state = {"privacy": privacy}
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -206,6 +210,10 @@ def youtube_handler(fail_put=False, privacy="private"):
                     return httpx.Response(500, json={"error": "upload broke"})
                 return httpx.Response(201, json={"id": "yt-vid-123"})
         if url.startswith("https://www.googleapis.com/youtube/v3/videos"):
+            if request.method == "PUT":
+                # videos.update: herkese acik yapma.
+                state["privacy"] = "public"
+                return httpx.Response(200, json={"id": "yt-vid-123"})
             return httpx.Response(
                 200,
                 json={
@@ -213,7 +221,7 @@ def youtube_handler(fail_put=False, privacy="private"):
                         {
                             "id": "yt-vid-123",
                             "status": {
-                                "privacyStatus": privacy,
+                                "privacyStatus": state["privacy"],
                                 "uploadStatus": "uploaded",
                             },
                         }
@@ -227,6 +235,19 @@ def youtube_handler(fail_put=False, privacy="private"):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+async def _published_row_id(sessionmaker, clip_candidate_id: int) -> int:
+    from app.models import PublishedVideo
+
+    async with sessionmaker() as session:
+        return (
+            await session.execute(
+                sa.select(PublishedVideo.id).where(
+                    PublishedVideo.clip_candidate_id == clip_candidate_id
+                )
+            )
+        ).scalar_one()
 
 
 class TestSchedule:
@@ -291,20 +312,27 @@ class TestPublishFlow:
                     transport=httpx.MockTransport(youtube_handler())
                 ) as http:
                     result = await service.publish_clip(candidate_id, http=http)
-                return result
+                    # Zamanli yayin: gizli yuklemeden sonra ayni oturumda
+                    # herkese acik yapma ayri bir adimdir.
+                    row_id = (
+                        await _published_row_id(sessionmaker, candidate_id)
+                    )
+                    public = await service.make_public(row_id, http=http)
+                return result, public
             finally:
                 await engine.dispose()
 
-        result = _run(scenario())
+        result, public = _run(scenario())
         assert result["youtube_video_id"] == "yt-vid-123"
         assert result["visibility"] == "private"
+        assert public["visibility"] == "public"
 
         engine = sa.create_engine(f"sqlite:///{tmp_path}/m10.db")
         with engine.connect() as conn:
             row = conn.execute(
                 sa.text(
-                    "SELECT youtube_video_id, status, visibility, published_at"
-                    " FROM published_videos"
+                    "SELECT youtube_video_id, status, visibility, published_at,"
+                    " public_at FROM published_videos"
                 )
             ).one()
             events = conn.execute(
@@ -313,9 +341,12 @@ class TestPublishFlow:
         engine.dispose()
         assert row[0] == "yt-vid-123"
         assert row[1] == "verified"  # gorunurluk dogrulandi
-        assert row[2] == "private"
+        assert row[2] == "public"
+        # Yayin ani public adiminda yazilir; her iki alan da dolu.
         assert row[3] is not None
+        assert row[4] is not None
         assert "publish.done" in events
+        assert "publish.public" in events
 
     def test_duplicate_publish_skipped(self, tmp_path):
         from app.services.publishing_service import PublishingService
@@ -518,13 +549,14 @@ class TestPublishFlow:
         assert rows[0][1] == SESSION_URI  # oturum adresi korunmus
 
     def test_worker_publish_due_job_end_to_end(self, tmp_path, monkeypatch):
-        """publish_due is turu, mock HTTP istemcisiyle tam akista."""
+        """Onay sonrasi gizli yukleme (publish_clip isleri), sonra
+        publish_due: herkese acik yapma tam akis."""
         from app.worker import JobWorker, build_handlers
 
         async def scenario():
             sessionmaker, settings, engine, db = _env(tmp_path)
             try:
-                channel_id, _ = await _seed(
+                channel_id, candidate_id = await _seed(
                     sessionmaker, settings.token_encryption_key, tmp_path
                 )
                 monkeypatch.setattr(
@@ -535,6 +567,13 @@ class TestPublishFlow:
                 )
                 handlers = build_handlers(sessionmaker, settings)
                 worker = JobWorker(sessionmaker, settings, handlers=handlers)
+                # 1) Onay tetikledigi gizli yukleme isleri.
+                upload = await worker._jobs.enqueue(
+                    "publish_clip", {"clip_candidate_id": candidate_id}
+                )
+                await worker._jobs.claim_next(worker._worker_id)
+                await worker.run_job(upload.id)
+                # 2) Plan saati: herkese acik yapma.
                 job = await worker._jobs.enqueue(
                     "publish_due", {"channel_id": channel_id}
                 )
@@ -552,13 +591,15 @@ class TestPublishFlow:
             ).scalar()
             published = conn.execute(
                 sa.text(
-                    "SELECT status, youtube_video_id FROM published_videos"
+                    "SELECT status, youtube_video_id, visibility FROM"
+                    " published_videos"
                 )
             ).one()
         engine.dispose()
         assert job_status == "succeeded"
         assert published[0] == "verified"
         assert published[1] == "yt-vid-123"
+        assert published[2] == "public"
 
     def test_worker_feed_enqueues_due_channels(self, tmp_path):
         from app.worker import JobWorker

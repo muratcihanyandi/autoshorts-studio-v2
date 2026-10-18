@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     scene_threshold: float = 0.4
     planned_poll_interval_minutes: int = 5
     publish_check_interval_minutes: int = 10
+    # Yayinlanmis (herkese acik) medyanin temizligi: 0 = herkese acik
+    # yapildiktan hemen sonra sil, N = N gun sonra sil, -1 = hicbir zaman.
+    media_retention_days: int = 0
 
     # Start/Stop otomasyon donemi: kaynak limitleri ve uretim ayarlari.
     # 0 = sinir kapali; doldugunda worker yeni is almaya bekler.

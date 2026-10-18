@@ -71,6 +71,9 @@ EDITABLE_FIELDS = (
     "min_free_disk_gb",
     "download_rate_limit_kbps",
     "planned_poll_interval_minutes",
+    # Yayinlanmis medyanin temizligi: -1 hicbir zaman, 0 yayin aninda,
+    # N gun sonra (public_at tabanli).
+    "media_retention_days",
     "transcription_method",
     "whisper_model",
     "whisper_language",
@@ -92,6 +95,7 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "shorts_per_video": (1, 10),
     "download_rate_limit_kbps": (0, 10_000_000),
     "planned_poll_interval_minutes": (1, 1440),
+    "media_retention_days": (-1, 3650),
 }
 
 FLOAT_FIELDS: dict[str, tuple[float, float]] = {
@@ -248,6 +252,7 @@ class SettingsService:
             planned_poll_interval_minutes=number(
                 "planned_poll_interval_minutes"
             ),
+            media_retention_days=number("media_retention_days"),
             transcription_method=plain("transcription_method"),
             whisper_model=plain("whisper_model"),
             whisper_language=plain("whisper_language"),

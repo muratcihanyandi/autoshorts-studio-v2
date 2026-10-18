@@ -178,6 +178,7 @@ interface FormState {
   quota: string
   numbers: Record<NumberKey, string>
   method: string
+  retention: string
   whisperModel: string
   whisperLanguage: string
 }
@@ -202,6 +203,7 @@ function initForm(view: SettingsView): FormState {
     quota: String(view.daily_quota_units.value),
     numbers,
     method: view.transcription_method.value || 'sidecar',
+    retention: String(view.media_retention_days.value),
     whisperModel: view.whisper_model.value,
     whisperLanguage: view.whisper_language.value,
   }
@@ -274,6 +276,13 @@ export function SettingsScreen() {
     }
     if (form.method !== view.transcription_method.value) {
       patch.transcription_method = form.method
+    }
+    const retention = Number(form.retention)
+    if (
+      Number.isInteger(retention) &&
+      retention !== view.media_retention_days.value
+    ) {
+      patch.media_retention_days = retention
     }
     if (form.whisperModel.trim() !== view.whisper_model.value) {
       patch.whisper_model = form.whisperModel.trim()
@@ -484,6 +493,34 @@ export function SettingsScreen() {
                     <span className="field-help">{help}</span>
                   </div>
                 ))}
+                <div className="field">
+                  <label htmlFor="set-retention">
+                    Yayınlanan videoların temizliği
+                    <span className="source-badge">
+                      {SOURCE_LABEL[view.media_retention_days.source]}
+                    </span>
+                  </label>
+                  <select
+                    id="set-retention"
+                    value={form.retention}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, retention: e.target.value } : f))
+                    }
+                  >
+                    <option value="0">Yayınladıktan hemen sonra</option>
+                    <option value="1">1 gün sonra</option>
+                    <option value="3">3 gün sonra</option>
+                    <option value="7">7 gün sonra</option>
+                    <option value="14">14 gün sonra</option>
+                    <option value="30">30 gün sonra</option>
+                    <option value="-1">Hiçbir zaman</option>
+                  </select>
+                  <span className="field-help">
+                    Video YouTube'da herkese açık yapıldıktan sonra yerel
+                    dosyası diskten silinir; kayıt ve denetim izi kalır.
+                    Varsayılan: yayınladıktan hemen sonra.
+                  </span>
+                </div>
                 <div className="field">
                   <label htmlFor="set-method">
                     Transkripsiyon Yöntemi

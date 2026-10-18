@@ -207,24 +207,43 @@ def _llm_handler(request: httpx.Request) -> httpx.Response:
 
 
 def _youtube_handler(request: httpx.Request) -> httpx.Response:
+    """State'li mock: videos.update (herkese acik yapma) sonrasi
+    videos.list public rapor eder (zamanli yayin akisi)."""
     url = str(request.url)
     if url.startswith("https://www.googleapis.com/upload/youtube/v3/videos"):
         if request.method == "POST":
             return httpx.Response(200, headers={"Location": SESSION_URI})
         return httpx.Response(201, json={"id": "yt-e2e-1"})
     if url.startswith("https://www.googleapis.com/youtube/v3/videos"):
+        if request.method == "PUT":
+            _youtube_state["privacy"] = "public"
+            return httpx.Response(200, json={"id": "yt-e2e-1"})
         return httpx.Response(
             200,
             json={
                 "items": [
                     {
                         "id": "yt-e2e-1",
-                        "status": {"privacyStatus": "private", "uploadStatus": "uploaded"},
+                        "status": {
+                            "privacyStatus": _youtube_state["privacy"],
+                            "uploadStatus": "uploaded",
+                        },
                     }
                 ]
             },
         )
     return httpx.Response(404)
+
+
+_youtube_state = {"privacy": "private"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_youtube_privacy():
+    """Mock gizliligi testler arasinda sizmasin: her test gizli ile
+    baslar (zincir icindeki public adimi testin kendisinde olur)."""
+    _youtube_state["privacy"] = "private"
+    yield
 
 
 @pytest.fixture(scope="module")
@@ -307,7 +326,23 @@ class TestFullChain:
                     await service.claim_next(worker._worker_id)
                     await worker.run_job(job.id)
 
-                # Yayin: hedef/stok farkindaligiyla.
+                # Onay tetikledigi gizli yukleme isini kos.
+                from app.models import ClipCandidate
+
+                async with sessionmaker() as session:
+                    candidate_id = (
+                        await session.execute(
+                            sa.select(ClipCandidate.id).limit(1)
+                        )
+                    ).scalar()
+                if candidate_id is not None:
+                    upload_job = await service.enqueue(
+                        "publish_clip", {"clip_candidate_id": candidate_id}
+                    )
+                    await service.claim_next(worker._worker_id)
+                    await worker.run_job(upload_job.id)
+
+                # Yayin: hedef/stok farkindaligiyla herkese acik yapma.
                 publish_job = await service.enqueue(
                     "publish_due", {"channel_id": channel_id}
                 )
@@ -365,7 +400,7 @@ class TestFullChain:
         assert metadata[0] == "draft"  # auto_approve profili yayina izin verdi
         assert published[0] == "verified"
         assert published[1] == "yt-e2e-1"
-        assert published[2] == "private"
+        assert published[2] == "public"
         # Kabul kriteri: isler gecerli durumlarda ilerledi.
         assert all(status == "succeeded" for status, _ in job_stats)
 
@@ -459,7 +494,7 @@ class TestAutomationDecisions:
             ).scalars().all()
         engine.dispose()
         assert published == 0
-        assert "publish.stock_low" in events
+        assert "publish.no_ready" in events
 
 class TestDailyTarget:
     def test_target_reached_returns_reason(self, tmp_path):
@@ -496,9 +531,10 @@ class TestDailyTarget:
                             channel_id=channel_id,
                             youtube_video_id="yt-existing",
                             status="verified",
-                            visibility="private",
+                            visibility="public",
                             title="Var olan",
                             published_at=datetime.now(UTC),
+                            public_at=datetime.now(UTC),
                         )
                     )
                     await session.commit()
@@ -509,7 +545,8 @@ class TestDailyTarget:
 
         result = _run(scenario())
         assert result["published"] == 0
-        assert "hedef" in result["reason"]
+        # Gunluk dikey limit dolu: yeni video herkese acik yapilmaz.
+        assert "limit" in result["reason"]
 
 
 def AutomationService_(sessionmaker, settings):
@@ -563,6 +600,7 @@ class TestPauseAndIsolation:
                     credential=False,  # OAuth yok -> yayin hatasi
                 )
                 # Iki kanala da hazir klip: render + onayli metaveri.
+                candidate_ids: dict[int, int] = {}
                 for channel_id in (good, bad):
                     video_id = await _seed_planned_video(
                         sessionmaker, channel_id
@@ -578,6 +616,7 @@ class TestPauseAndIsolation:
                         )
                         session.add(candidate)
                         await session.flush()
+                        candidate_ids[channel_id] = candidate.id
                         session.add(
                             RenderedClip(
                                 clip_candidate_id=candidate.id,
@@ -607,11 +646,17 @@ class TestPauseAndIsolation:
                 handlers = build_handlers(sessionmaker, settings)
                 worker = JobWorker(sessionmaker, settings, handlers=handlers)
                 service = worker._jobs
+                # Onay tetikledigi gizli yukleme isleri: OAuth'suz kanal
+                # kendi hatasinda kalir, iyi kanal yuklemesini tamamlar.
                 good_job = await service.enqueue(
-                    "publish_due", {"channel_id": good}, max_attempts=1
+                    "publish_clip",
+                    {"clip_candidate_id": candidate_ids[good]},
+                    max_attempts=1,
                 )
                 bad_job = await service.enqueue(
-                    "publish_due", {"channel_id": bad}, max_attempts=1
+                    "publish_clip",
+                    {"clip_candidate_id": candidate_ids[bad]},
+                    max_attempts=1,
                 )
                 for job in (good_job, bad_job):
                     await service.claim_next(worker._worker_id)

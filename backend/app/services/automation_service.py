@@ -278,6 +278,8 @@ class AutomationService:
         channel_id: int,
         *,
         horizontal_stock_target: int | None = None,
+        daily_vertical_limit: int | None = None,
+        daily_horizontal_limit: int | None = None,
         title_mode: str | None = None,
         description_mode: str | None = None,
         tags_mode: str | None = None,
@@ -304,10 +306,20 @@ class AutomationService:
             raise AutomationError(
                 "Yatay stok hedefi 1..50 arasinda olmali."
             )
+        for label, value in (
+            ("Gunluk dikey limiti", daily_vertical_limit),
+            ("Gunluk yatay limiti", daily_horizontal_limit),
+        ):
+            if value is not None and not (0 <= value <= 50):
+                raise AutomationError(f"{label} 0..50 arasinda olmali.")
         async with self._sessionmaker() as session:
             row = await session.get(PublishingProfile, profile.id)
             if horizontal_stock_target is not None:
                 row.horizontal_stock_target = horizontal_stock_target
+            if daily_vertical_limit is not None:
+                row.daily_clip_target = daily_vertical_limit
+            if daily_horizontal_limit is not None:
+                row.daily_horizontal_limit = daily_horizontal_limit
             for field, value in modes.items():
                 if value is not None:
                     setattr(row, field, value)
@@ -322,6 +334,11 @@ class AutomationService:
             await session.commit()
             await session.refresh(row)
             return row
+
+    async def today_published_counts(self, channel_id: int) -> dict:
+        """Bugun herkese acik yapilan videolar: yon bazli sayilar
+        (Overview'in kotali kartlari bunu okur)."""
+        return await self._publishing.today_published_counts(channel_id)
 
     async def stock_level(self, channel_id: int) -> int:
         """Ready unpublished clips: rendered, rights-authorized, not
@@ -381,7 +398,11 @@ class AutomationService:
         )
 
     async def publish_for_channel(self, channel_id: int) -> dict:
-        """Target-, stock-, and pause-aware publish decision."""
+        """Scheduled-public publish decision: this step only flips an
+        already-uploaded (verified, private) video to public — uploads
+        happen when metadata is approved. Daily limits are per
+        orientation (vertical: daily_clip_target, horizontal:
+        daily_horizontal_limit)."""
         profile = await self.profile(channel_id)
         settings = profile.settings or {}
         if profile.automation_state == "stopped":
@@ -402,31 +423,31 @@ class AutomationService:
                 "published": 0,
                 "reason": "kanal duraklatildi",
             }
-        daily_target = max(0, profile.daily_clip_target)
-        published_today = await self.daily_published_count(channel_id)
-        if daily_target and published_today >= daily_target:
-            return {
-                "channel_id": channel_id,
-                "published": 0,
-                "reason": f"gunluk hedef dolu ({published_today}/{daily_target})",
-            }
-        stock = await self.stock_level(channel_id)
-        candidate_id = await self._publishing.next_ready_candidate(channel_id)
-        if candidate_id is None:
-            # Stok yetersiz: guvensiz yayin YOK, kayit dusulur.
-            await self._audit(
-                channel_id,
-                "publish.stock_low",
-                {"stock": stock, "daily_target": daily_target},
+        counts = await self._publishing.today_published_counts(channel_id)
+        for orientation, limit in (
+            ("vertical", max(0, profile.daily_clip_target)),
+            ("horizontal", max(0, profile.daily_horizontal_limit)),
+        ):
+            if limit and counts[orientation] >= limit:
+                continue
+            row_id = await self._publishing.next_ready_public(
+                channel_id, orientation
             )
-            return {
-                "channel_id": channel_id,
-                "published": 0,
-                "reason": "yayina hazir klip yok (stok bos)",
-                "stock": stock,
-            }
-        result = await self._publishing.publish_clip(candidate_id)
-        return {"channel_id": channel_id, "published": 1, **result}
+            if row_id is None:
+                continue
+            result = await self._publishing.make_public(row_id)
+            return {"channel_id": channel_id, "published": 1, **result}
+        await self._audit(
+            channel_id,
+            "publish.no_ready",
+            {"today": counts},
+        )
+        return {
+            "channel_id": channel_id,
+            "published": 0,
+            "reason": "yayina hazir video yok veya gunluk limitler dolu",
+            "today": counts,
+        }
 
     async def operational_summary(self, channel_id: int) -> dict:
         """Stage counts + today's publishing state; audited."""

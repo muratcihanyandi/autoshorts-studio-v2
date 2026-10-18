@@ -76,6 +76,118 @@ class PublishingService:
             context, clip_candidate_id=clip_candidate_id, http=http
         )
 
+    async def make_public(
+        self, row_id: int, *, http: httpx.AsyncClient | None = None
+    ) -> dict:
+        """Zamanli yayin adimi: dogrulanmis gizli videoyu herkese acik
+        yap. published_at/public_at bu anda set edilir — gunluk limit
+        sayimlari ve medya temizligi bu ana baglidir."""
+        async with self._sessionmaker() as session:
+            row = await session.get(PublishedVideo, row_id)
+        if row is None:
+            raise PublishingError("Yayin kaydi bulunamadi.")
+        if row.visibility == "public":
+            return {
+                "youtube_video_id": row.youtube_video_id,
+                "visibility": "public",
+                "skipped": True,
+            }
+        if row.status != "verified":
+            raise PublishingError(
+                "Video henuz dogrulanmadi; once gizli yukleme yapilmali."
+            )
+        if not row.youtube_video_id:
+            raise PublishingError("YouTube video kimligi yok.")
+        owned = http is None
+        client = http if http is not None else _default_client()
+        try:
+            token = await self._oauth.access_token(row.channel_id, http=client)
+            uploader = YouTubeUploadClient(token)
+            await uploader.set_privacy_public(client, row.youtube_video_id)
+            status = await uploader.fetch_status(client, row.youtube_video_id)
+            if status.privacy_status != "public":
+                raise UploadError(
+                    f"Gorunurluk dogrulanamadi: {status.privacy_status!r}"
+                )
+        except Exception as exc:  # noqa: BLE001 - hata kayda gecer
+            message = f"{type(exc).__name__}: {exc}"
+            await self._fail(row.id, message)
+            raise PublishingError(message) from exc
+        finally:
+            if owned:
+                await client.aclose()
+        now = datetime.now(UTC)
+        async with self._sessionmaker() as session:
+            fresh = await session.get(PublishedVideo, row.id)
+            fresh.visibility = "public"
+            fresh.public_at = now
+            fresh.published_at = now
+            await session.commit()
+        await self._audit(
+            row.channel_id,
+            "publish.public",
+            {
+                "youtube_video_id": row.youtube_video_id,
+                "orientation": row.orientation,
+            },
+        )
+        return {
+            "youtube_video_id": row.youtube_video_id,
+            "visibility": "public",
+            "orientation": row.orientation,
+        }
+
+    async def next_ready_public(
+        self, channel_id: int, orientation: str
+    ) -> int | None:
+        """Kanalin yayina hazir kaydi: dogrulanmis ama hala gizli.
+        Dikeyde en yuksek skorlu aday, yatayda en eski tam kesit."""
+        async with self._sessionmaker() as session:
+            statement = (
+                sa.select(PublishedVideo.id)
+                .where(
+                    PublishedVideo.channel_id == channel_id,
+                    PublishedVideo.orientation == orientation,
+                    PublishedVideo.status == "verified",
+                    PublishedVideo.visibility == "private",
+                )
+                .limit(1)
+            )
+            if orientation == "vertical":
+                statement = statement.join(
+                    ClipCandidate,
+                    PublishedVideo.clip_candidate_id == ClipCandidate.id,
+                ).order_by(ClipCandidate.score.desc())
+            else:
+                statement = statement.order_by(PublishedVideo.id)
+            return (
+                (await session.execute(statement)).scalars().one_or_none()
+            )
+
+    async def today_published_counts(self, channel_id: int) -> dict:
+        """Bugun herkese acik yapilan videolarin yon bazli sayilari.
+        published_at yalniz public aninda yazilir, sayim ona baglidir."""
+        start_of_day = datetime.now(UTC).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        async with self._sessionmaker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        sa.select(PublishedVideo.orientation).where(
+                            PublishedVideo.channel_id == channel_id,
+                            PublishedVideo.published_at >= start_of_day,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return {
+            "vertical": sum(1 for r in rows if r == "vertical"),
+            "horizontal": sum(1 for r in rows if r == "horizontal"),
+        }
+
     async def publish_full_cut(
         self, source_video_id: int, *, http: httpx.AsyncClient | None = None
     ) -> dict:
@@ -159,12 +271,9 @@ class PublishingService:
                 raise UploadError(
                     f"Gorunurluk dogrulanamadi: {status.privacy_status!r}"
                 )
-            await self._mark(
-                row.id,
-                "verified",
-                youtube_video_id=video_id,
-                published=True,
-            )
+            # Gizli yukleme tamam: yayin ani (published_at) degil, public
+            # yapma ani (make_public) doldurur — zamanli yayin akisi.
+            await self._mark(row.id, "verified", youtube_video_id=video_id)
         except Exception as exc:  # noqa: BLE001 - hata kayda gecer
             message = f"{type(exc).__name__}: {exc}"
             await self._fail(row.id, message)
@@ -430,6 +539,7 @@ class PublishingService:
         )
         return {
             "candidate": candidate,
+            "source_video_id": candidate.source_video_id,
             "channel_id": source.channel_id,
             "source_authorized": source.permission_status == "authorized",
             "render": render,
@@ -530,6 +640,7 @@ class PublishingService:
         )
         return {
             "candidate": None,
+            "source_video_id": source_video_id,
             "channel_id": source.channel_id,
             "source_authorized": source.permission_status == "authorized",
             "render": render,
@@ -554,6 +665,11 @@ class PublishingService:
                         context["candidate"].id
                         if context["candidate"] is not None
                         else None
+                    ),
+                    source_video_id=(
+                        context["candidate"].source_video_id
+                        if context["candidate"] is not None
+                        else context.get("source_video_id")
                     ),
                     orientation=context["orientation"],
                     channel_id=context["channel_id"],

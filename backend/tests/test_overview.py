@@ -11,7 +11,8 @@ def test_overview_without_database(client_no_db: TestClient) -> None:
     assert body["phase"] == "setup"
     assert body["database"] == "not_configured"
     assert body["channels"]["connected"] == 0
-    assert body["today_published"] == 0
+    assert body["today_published"]["vertical"] == 0
+    assert body["today_published"]["horizontal"] == 0
     assert body["version"]
     assert body["uptime_seconds"] is not None
 

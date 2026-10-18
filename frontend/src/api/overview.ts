@@ -3,6 +3,15 @@ import type { ChannelRow, WorkerHealth } from './automation'
 
 export type StudioPhase = 'setup' | 'awaiting_channels' | 'running'
 
+/** Bugün herkese açık yapılan videolar + günlük limitler (kanalların
+ * limitleri toplamı; 0 = limitsiz). */
+export interface TodayPublished {
+  vertical: number
+  horizontal: number
+  vertical_limit: number
+  horizontal_limit: number
+}
+
 export interface Overview {
   version: string
   app_env: string
@@ -14,7 +23,7 @@ export interface Overview {
   llm_providers: { configured: number }
   jobs: { active: number; queued: number }
   stock: { clips: number }
-  today_published: number
+  today_published: TodayPublished
   channel_rows?: ChannelRow[]
   worker?: WorkerHealth
 }

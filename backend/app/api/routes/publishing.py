@@ -30,6 +30,22 @@ def _service(request: Request) -> PublishingService:
     return PublishingService(sessionmaker, request.app.state.settings)
 
 
+async def _enqueue_private_upload(
+    request: Request, job_type: str, payload: dict
+) -> None:
+    """Onay = gizli yukleme tetikleyicisi: video YouTube'a private
+    yüklenir; herkese açık yapılması plan saatine kalır (publish_due).
+    Kuyruk yoksa (DB'siz kurulum) sessizce atlanır."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.services.job_service import JobService
+
+    await JobService(
+        sessionmaker, request.app.state.settings
+    ).enqueue(job_type, payload)
+
+
 @router.post(
     "/clips/{clip_candidate_id}/publish", response_model=PublishResult
 )
@@ -50,12 +66,16 @@ async def publish_clip(request: Request, clip_candidate_id: int) -> PublishResul
 async def approve_metadata(
     request: Request, clip_candidate_id: int
 ) -> ApproveResult:
-    """Approve the latest metadata revision for publication."""
+    """Approve the latest metadata revision: approval is the trigger for
+    the private upload (the scheduled slot later makes it public)."""
     service = _service(request)
     try:
         metadata = await service.approve_metadata(clip_candidate_id)
     except PublishingError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await _enqueue_private_upload(
+        request, "publish_clip", {"clip_candidate_id": clip_candidate_id}
+    )
     return ApproveResult(
         clip_candidate_id=clip_candidate_id, revision=metadata.revision
     )
@@ -67,12 +87,16 @@ async def approve_metadata(
 async def approve_full_cut(
     request: Request, source_video_id: int
 ) -> ApproveResult:
-    """Approve the horizontal full-cut metadata of a source video (M13)."""
+    """Approve the horizontal full-cut metadata of a source video (M13);
+    approval triggers the private upload of the full cut."""
     service = _service(request)
     try:
         metadata = await service.approve_full_cut(source_video_id)
     except PublishingError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await _enqueue_private_upload(
+        request, "publish_full_cut", {"source_video_id": source_video_id}
+    )
     return ApproveResult(
         source_video_id=source_video_id, revision=metadata.revision
     )

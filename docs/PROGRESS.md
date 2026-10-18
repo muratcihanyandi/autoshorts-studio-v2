@@ -827,25 +827,26 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-18 (post-reaction-rule session) on the dev machine
+Verified 2026-10-18 (post-scheduled-public session) on the dev machine
 (Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
 stated directories. NOTE: on this machine pytest must be run with file
-redirection, not through pipes — piped runs hang (known dev-env quirk).
+redirection, not through pipes — piped runs hang (known dev-env quirk);
+this session ran the full suite in two foreground chunks (332 + 51).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
   (output redirected to a log file)
-  - Passed: **376**, Failed: 0, Skipped: 0 in 78 s (this session added
-    7: test_reaction_rules — positive reaction-title matching including
-    "Reacting to funny moments" staying eligible, reapply semantics on
-    rule enable/disable with processed-video protection, manual video
-    status API roundtrip with the processed 422 guard, and the
-    pipeline excluded guard that skips without creating an asset).
+  - Passed: **383**, Failed: 0, Skipped: 0 (332 in 61 s + 51 in 21 s;
+    this session added 7 in test_scheduled_public.py: per-orientation
+    daily limits incl. fallback-to-horizontal and both-limits-full
+    skip, media retention cleanup incl. confirmed-source deletion,
+    never/-1 and private-row protection, approve endpoints enqueuing
+    private uploads).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
     starlette TestClient deprecation).
 - Frontend — `cd frontend && npx vitest run`: 21 passed, 0 failed
-  (App 4, SettingsScreen 3, AutomationScreen 3, CharactersScreen 4,
+  (App 4, SettingsScreen 4, AutomationScreen 3, CharactersScreen 4,
   LivePipeline 2, MediaLibraryScreen 3, LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0 errors
   (6 React Compiler advisories: 3 pre-existing + the intentional
@@ -853,8 +854,9 @@ redirection, not through pipes — piped runs hang (known dev-env quirk).
 - Frontend production build — `npm run build`: succeeded.
 - Secret scan — `python tools/scan_secrets.py`: clean.
 
-Previous full-suite record (2026-10-18, post-M13): backend 330/330
-(81 s), frontend 14/14 — superseded by the totals above.
+Previous full-suite record (2026-10-18, post-reaction-rule session):
+backend 376/376 in 78 s, frontend 21/21 — superseded by the totals
+above.
 
 Previous full-suite record (2026-10-17, connection-guide + LLM
 management session):
@@ -959,6 +961,38 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Scheduled-public session (2026-10-18, user directive): approved
+  content no longer waits for the engine to upload. `approve_metadata`
+  and `approve_full_cut` now enqueue `publish_clip` / `publish_full_cut`
+  jobs (new worker handler) that upload PRIVATE immediately
+  (`_publish` stamps visibility=private, no published_at — "Gizli
+  yukleme tamam: yayin ani degil, public yapma ani doldurur"). The
+  automation engine's `publish_for_channel` then walks both
+  orientations — ("vertical", daily_clip_target) then ("horizontal",
+  PublishingProfile.daily_horizontal_limit, new in migration 0013,
+  default 3; 0 = unlimited) — and flips one verified-private row to
+  public per free slot: `next_ready_public` picks vertical rows by
+  ClipCandidate.score desc, horizontal by row id; `make_public` calls
+  videos.update privacyStatus=public, verifies with fetch_status, then
+  stamps visibility=public + public_at + published_at and audits
+  "publish.public". Daily counts come from `today_published_counts`
+  (published_at >= local midnight, per orientation). Overview stat
+  cards now read "Bugün yayınlanan yatay n/limit" / "dikey n/limit"
+  (limits are sums across channels; ∞ when 0) and the channel settings
+  modal exposes both limits (0..50). Media retention:
+  `media_retention_days` site setting (0 = right after going public —
+  the default, N days, -1 = never) drives an hourly worker pass
+  `cleanup_published_media` that deletes render files + thumbnails of
+  public rows past the cutoff (vertical rows resolve their source via
+  the render's source_video_id fallback since PublishedVideo rows for
+  clips historically lack the FK — 0013 adds the FK for full cuts) and
+  also removes the media asset when the source is confirmed; audit
+  "media.cleaned"; private rows are never touched. Migration 0013 is
+  additive (daily_horizontal_limit, public_at, source_video_id + FK +
+  index), runs automatically on container start. Tests: backend
+  383/383 (7 new in test_scheduled_public.py), frontend 21/21 (mocks
+  updated for the TodayPublished object), tsc/oxlint/build clean,
+  secret scan clean.
 - Reaction-only content rule (2026-10-18, user directive): publishing a
   source publisher's own horizontal edits is forbidden — only their
   reaction/tepkime videos may be processed (the user's example: an

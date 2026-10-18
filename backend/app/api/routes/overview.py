@@ -116,13 +116,18 @@ async def _sources_monitored(request: Request, database: str) -> int:
         return 0
 
 
-async def _real_totals(request: Request) -> tuple[int, int, list[dict]]:
-    """(ready clip stock, published today, channel rows) — computed
-    from the database; a schema behind its migration degrades to
-    zeros/empty instead of failing the endpoint."""
+async def _real_totals(request: Request) -> tuple[int, dict, list[dict]]:
+    """(ready clip stock, today's published counts with limits, channel
+    rows) — computed from the database; a schema behind its migration
+    degrades to zeros/empty instead of failing the endpoint."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
-        return 0, 0, []
+        return 0, {
+            "vertical": 0,
+            "horizontal": 0,
+            "vertical_limit": 0,
+            "horizontal_limit": 0,
+        }, []
     try:
         from app.services.automation_service import AutomationService
         from app.services.channel_service import ChannelService
@@ -133,15 +138,30 @@ async def _real_totals(request: Request) -> tuple[int, int, list[dict]]:
         status = StatusService(sessionmaker, settings)
         channels = await ChannelService(sessionmaker).list_channels()
         stock_total = 0
-        published_today = 0
+        today = {"vertical": 0, "horizontal": 0}
+        limits = {"vertical": 0, "horizontal": 0}
         rows: list[dict] = []
         for channel in channels:
             stock_total += await automation.stock_level(channel.id)
-            published_today += await automation.daily_published_count(channel.id)
+            counts = await automation.today_published_counts(channel.id)
+            today["vertical"] += counts["vertical"]
+            today["horizontal"] += counts["horizontal"]
+            profile = await automation.profile(channel.id)
+            limits["vertical"] += max(0, profile.daily_clip_target)
+            limits["horizontal"] += max(0, profile.daily_horizontal_limit)
             rows.append(await status.channel_status_row(channel))
-        return stock_total, published_today, rows
+        today.update(
+            vertical_limit=limits["vertical"],
+            horizontal_limit=limits["horizontal"],
+        )
+        return stock_total, today, rows
     except Exception:  # noqa: BLE001 - migration'dan geride şema
-        return 0, 0, []
+        return 0, {
+            "vertical": 0,
+            "horizontal": 0,
+            "vertical_limit": 0,
+            "horizontal_limit": 0,
+        }, []
 
 
 async def _worker_health(request: Request) -> dict:

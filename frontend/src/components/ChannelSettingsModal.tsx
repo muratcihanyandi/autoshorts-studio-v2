@@ -81,6 +81,8 @@ export function ChannelSettingsModal({
   const [savedNote, setSavedNote] = useState(false)
 
   const [stockTarget, setStockTarget] = useState(3)
+  const [dailyVertical, setDailyVertical] = useState(3)
+  const [dailyHorizontal, setDailyHorizontal] = useState(3)
   const [modes, setModes] = useState<Record<string, SettingMode>>({})
   const [prompt, setPrompt] = useState('')
   const [followed, setFollowed] = useState<number[]>([])
@@ -94,6 +96,8 @@ export function ChannelSettingsModal({
       ])
       setSettings(s)
       setStockTarget(s.horizontal_stock_target)
+      setDailyVertical(s.daily_vertical_limit)
+      setDailyHorizontal(s.daily_horizontal_limit)
       setModes({
         title_mode: s.title_mode,
         description_mode: s.description_mode,
@@ -148,6 +152,8 @@ export function ChannelSettingsModal({
     try {
       await updateChannelSettings(channelId, {
         horizontal_stock_target: stockTarget,
+        daily_vertical_limit: dailyVertical,
+        daily_horizontal_limit: dailyHorizontal,
         title_mode: modes.title_mode,
         description_mode: modes.description_mode,
         tags_mode: modes.tags_mode,
@@ -224,6 +230,41 @@ export function ChannelSettingsModal({
                     stok azalınca üretim yeniden başlar. Varsayılan 3.
                   </small>
                 </section>
+
+                <div className="settings-grid">
+                  <section className="field">
+                    <span>Günlük dikey limiti</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={dailyVertical}
+                      onChange={(e) =>
+                        setDailyVertical(Number(e.target.value) || 0)
+                      }
+                    />
+                    <small className="field-help">
+                      Bir günde herkese açılacak dikey Short sayısı (0 =
+                      sınırsız).
+                    </small>
+                  </section>
+                  <section className="field">
+                    <span>Günlük yatay limiti</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={dailyHorizontal}
+                      onChange={(e) =>
+                        setDailyHorizontal(Number(e.target.value) || 0)
+                      }
+                    />
+                    <small className="field-help">
+                      Bir günde herkese açılacak yatay tam kesit sayısı (0 =
+                      sınırsız).
+                    </small>
+                  </section>
+                </div>
 
                 <section className="field">
                   <span>Takip edilen karakterler</span>

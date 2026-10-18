@@ -79,6 +79,8 @@ export interface ChannelSettings {
   channel_id: number
   automation_state: AutomationState
   horizontal_stock_target: number
+  daily_vertical_limit: number
+  daily_horizontal_limit: number
   title_mode: SettingMode
   description_mode: SettingMode
   tags_mode: SettingMode
@@ -90,6 +92,8 @@ export interface ChannelSettings {
 
 export interface ChannelSettingsInput {
   horizontal_stock_target?: number
+  daily_vertical_limit?: number
+  daily_horizontal_limit?: number
   title_mode?: SettingMode
   description_mode?: SettingMode
   tags_mode?: SettingMode

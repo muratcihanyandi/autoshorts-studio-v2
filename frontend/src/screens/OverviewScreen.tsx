@@ -221,14 +221,26 @@ export function OverviewScreen() {
 
           <div className="stat-grid" aria-label="Günün özeti">
             <div className="stat-card">
-              <span>Bugün yayınlanan</span>
-              <b className="nums">{overview.state.data.today_published}</b>
-              <small>klip</small>
+              <span>Bugün yayınlanan yatay</span>
+              <b className="nums">
+                {overview.state.data.today_published.horizontal}
+                <small>
+                  /{' '}
+                  {overview.state.data.today_published.horizontal_limit ||
+                    '∞'}
+                </small>
+              </b>
+              <small>günlük yatay limiti</small>
             </div>
             <div className="stat-card">
-              <span>Özel stok</span>
-              <b className="nums">{overview.state.data.stock.clips}</b>
-              <small>klip</small>
+              <span>Bugün yayınlanan dikey</span>
+              <b className="nums">
+                {overview.state.data.today_published.vertical}
+                <small>
+                  / {overview.state.data.today_published.vertical_limit || '∞'}
+                </small>
+              </b>
+              <small>günlük dikey limiti</small>
             </div>
             <div
               className={`stat-card${

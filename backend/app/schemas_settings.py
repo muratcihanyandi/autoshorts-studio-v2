@@ -59,6 +59,7 @@ class SettingsOut(BaseModel):
     min_free_disk_gb: PlainSettingOut
     download_rate_limit_kbps: IntSettingOut
     planned_poll_interval_minutes: IntSettingOut
+    media_retention_days: IntSettingOut
     transcription_method: PlainSettingOut
     whisper_model: PlainSettingOut
     whisper_language: PlainSettingOut
@@ -90,6 +91,7 @@ class SettingsUpdate(BaseModel):
     min_free_disk_gb: float | None = None
     download_rate_limit_kbps: int | None = None
     planned_poll_interval_minutes: int | None = None
+    media_retention_days: int | None = None
     transcription_method: str | None = None
     whisper_model: str | None = None
     whisper_language: str | None = None

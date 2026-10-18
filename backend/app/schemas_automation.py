@@ -39,6 +39,10 @@ class ChannelSettingsIn(BaseModel):
     through the start/stop/pause actions."""
 
     horizontal_stock_target: int | None = Field(default=None, ge=1, le=50)
+    # Gunluk yayin limitleri (0 = sinirsiz): dikey shortlar ve yatay
+    # tam kesitler ayri sayilir.
+    daily_vertical_limit: int | None = Field(default=None, ge=0, le=50)
+    daily_horizontal_limit: int | None = Field(default=None, ge=0, le=50)
     title_mode: str | None = None
     description_mode: str | None = None
     tags_mode: str | None = None
@@ -59,6 +63,8 @@ class ChannelSettingsOut(BaseModel):
     channel_id: int
     automation_state: str
     horizontal_stock_target: int
+    daily_vertical_limit: int
+    daily_horizontal_limit: int
     title_mode: str
     description_mode: str
     tags_mode: str
