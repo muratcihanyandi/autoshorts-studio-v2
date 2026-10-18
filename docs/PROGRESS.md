@@ -827,21 +827,19 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-18 (post-visibility-session: live pipeline panel,
-media library, logs) on the dev machine (Windows 11, Python 3.11.9
-venv, Node 24.13.0). Commands run from the stated directories. NOTE:
-on this machine pytest must be run with file redirection, not through
-pipes — piped runs hang (known dev-env quirk); the same applies to
-vitest full runs (one flaky hang in the test_jobs region reproduced
-once earlier and did not recur).
+Verified 2026-10-18 (post-reaction-rule session) on the dev machine
+(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
+stated directories. NOTE: on this machine pytest must be run with file
+redirection, not through pipes — piped runs hang (known dev-env quirk).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
   (output redirected to a log file)
-  - Passed: **369**, Failed: 0, Skipped: 0 in 75 s (this session added
-    6: test_pipeline_view — overview card fields with .part download
-    bytes and rolling-average ETA, error summaries, library tag
-    derivation (#done/#downloading/#queued/#error), audit pagination
-    + category/channel filters, and the three-endpoint API roundtrip).
+  - Passed: **376**, Failed: 0, Skipped: 0 in 78 s (this session added
+    7: test_reaction_rules — positive reaction-title matching including
+    "Reacting to funny moments" staying eligible, reapply semantics on
+    rule enable/disable with processed-video protection, manual video
+    status API roundtrip with the processed 422 guard, and the
+    pipeline excluded guard that skips without creating an asset).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
@@ -961,6 +959,38 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Reaction-only content rule (2026-10-18, user directive): publishing a
+  source publisher's own horizontal edits is forbidden — only their
+  reaction/tepkime videos may be processed (the user's example: an
+  RRaenee source must yield only reactions; funny-moments compilations
+  are banned, but "Reacting to funny moments" is a reaction and stays
+  free). Implemented as a POSITIVE title match, not an exclude list:
+  `source_rules` gained `require_reaction_content` with
+  `REACTION_TITLE_MARKERS` (react/watching/izliyorum/izlerken/tepki/
+  reaksiyon — "react" as a substring also covers reacts/reacting/
+  reaction). A title carrying a cue stays eligible whatever it watches;
+  a title without one is excluded with reason "tepkime kuralı: başlıkta
+  tepki göstergesi yok". Rules apply at discovery AND, because the
+  user's live backlog was already planned, `SourceService.update_source`
+  now reruns `_reapply_source_rules` whenever filter_rules change: it
+  re-evaluates the source's unprocessed videos (no asset or failed
+  asset — mid-flight downloads stop too) and flips them to excluded
+  with a synced planning_decisions ledger row; when the rule is turned
+  off, ONLY rows excluded by this rule (reason prefix) come back —
+  manual exclusions are never resurrected. Processed/confirmed videos
+  are untouchable. The pipeline enforces the rule mid-run:
+  `MediaPipelineService.run` returns skipped for an excluded video
+  before any stage and rechecks between stages, so a video excluded
+  while downloading stops instead of finishing. Manual correction:
+  `POST /api/sources/videos/{id}/status` (planned|excluded, 422 on
+  processed) backs the Media Library's "İşleme al"/"Hariç tut" row
+  actions; Characters' source rows gained a "Yalnız Tepki" toggle (and
+  the add-source form a checkbox) that flips the rule and triggers the
+  reapply. Tests: backend 376/376 in 78 s (7 new in
+  test_reaction_rules.py: marker semantics incl. the funny-moments
+  reaction case, reapply keep/exclude/restore semantics, API
+  roundtrip + processed guard, pipeline skip without asset);
+  frontend 21/21, tsc/oxlint/build clean.
 - Visibility session (2026-10-18, live overview + library + logs): the
   user could not see per-video progress anywhere, and the Media Library
   and Logs screens were still placeholder EmptyStates. Delivered in

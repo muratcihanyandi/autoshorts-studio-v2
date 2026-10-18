@@ -12,6 +12,7 @@ from app.schemas_sources import (
     SourceOut,
     SourceUpdate,
     SourceVideoOut,
+    SourceVideoStatusIn,
     SourceVideosOut,
     SourcesOut,
     WebcamCalibrationIn,
@@ -133,6 +134,32 @@ async def add_manual_video(
     jobs = JobService(sessionmaker, request.app.state.settings)
     try:
         video = await sources_service.add_manual_video(source_id, data, jobs)
+    except SourceServiceError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+    return SourceVideoOut.model_validate(video)
+
+
+@router.post(
+    "/sources/videos/{video_id}/status",
+    response_model=SourceVideoOut,
+)
+async def set_video_status(
+    request: Request, video_id: int, data: SourceVideoStatusIn
+) -> SourceVideoOut:
+    """Manuel sınıflandırma düzeltmesi: hariç tutulmuş bir videoyu işleme
+    geri al ('planned') ya da işlenmemiş bir videoyu hariç tut
+    ('excluded'). İşlenmiş videolar değiştirilemez."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı; video yönetimi kapalı.",
+        )
+    sources_service = SourceService(sessionmaker)
+    try:
+        video = await sources_service.set_video_status(video_id, data.status)
     except SourceServiceError as exc:
         raise HTTPException(
             status_code=exc.status_code, detail=str(exc)

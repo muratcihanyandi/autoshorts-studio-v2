@@ -16,11 +16,21 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Character, SourceChannel, SourceVideo
+from app.models import (
+    Character,
+    MediaAsset,
+    PlanningDecision,
+    SourceChannel,
+    SourceVideo,
+)
 from app.repositories.sources import SourceRepository
 from app.schemas_sources import ManualVideoCreate, SourceCreate, SourceUpdate
 from app.services.channel_service import record_event
 from app.services.job_service import JobService
+from app.services.source_rules import (
+    REACTION_RULE_PREFIX,
+    evaluate_source_rules,
+)
 
 
 def _utcnow() -> datetime:
@@ -114,9 +124,10 @@ class SourceService:
                 return None
 
             changes = data.model_dump(exclude_unset=True)
+            rules_changed = "filter_rules" in changes
             if "title" in changes:
                 source.title = changes["title"]
-            if "filter_rules" in changes:
+            if rules_changed:
                 source.filter_rules = changes["filter_rules"] or {}
             if "platform" in changes:
                 source.platform = changes["platform"]
@@ -156,9 +167,206 @@ class SourceService:
                 # Aynı duruma geçiş hak kaydı yazmaz (idempotent).
                 return source
 
+            if rules_changed:
+                await self._reapply_source_rules(session, source)
+
             await session.commit()
             await session.refresh(source)
             return source
+
+    async def _reapply_source_rules(
+        self, session: AsyncSession, source: SourceChannel
+    ) -> None:
+        """Kural değişince işlenmemiş videoları yeniden değerlendir.
+
+        Kapsam: pipeline'ı tamamlanmamış (asset yok ya da asset 'failed')
+        discovered/planned videolar ve yalnız tepkime kuralıyla hariç
+        tutulmuş excluded videolar. İşlenmiş (#done/#confirmed) videolara
+        ve manuel hariçlere asla dokunulmaz; tepkime kuralı kapatılırsa
+        yalnız o kural yüzünden hariç tutulanlar geri gelir.
+        """
+        videos = (
+            (
+                await session.execute(
+                    select(SourceVideo).where(
+                        SourceVideo.source_channel_id == source.id,
+                        SourceVideo.status.in_(
+                            ("discovered", "planned", "excluded")
+                        ),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not videos:
+            return
+        assets = {
+            asset.source_video_id: asset
+            for asset in (
+                (
+                    await session.execute(
+                        select(MediaAsset).where(
+                            MediaAsset.source_video_id.in_(
+                                [v.id for v in videos]
+                            )
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        }
+        decisions = {
+            decision.source_video_id: decision
+            for decision in (
+                (
+                    await session.execute(
+                        select(PlanningDecision).where(
+                            PlanningDecision.source_video_id.in_(
+                                [v.id for v in videos]
+                            )
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        }
+        excluded_by_rule = 0
+        restored = 0
+        for video in videos:
+            asset = assets.get(video.id)
+            decision = decisions.get(video.id)
+            reason = decision.reason if decision is not None else None
+            rule_excluded = bool(
+                reason and reason.startswith(REACTION_RULE_PREFIX)
+            )
+            if video.status == "excluded":
+                # Yalnız tepkime kuralının ürünleri geri gelebilir; manuel
+                # hariçler kullanıcının kararına kalır.
+                if not rule_excluded:
+                    continue
+                exclusion = evaluate_source_rules(
+                    source.filter_rules,
+                    title=video.title,
+                    published_at=video.published_at,
+                )
+                if exclusion:
+                    continue
+                video.status = "planned"
+                if decision is not None:
+                    decision.decision = "planned"
+                    decision.reason = None
+                restored += 1
+                continue
+            # İşlenmemişlik: asset yok ya da kalıcı başarısız. İndirilmiş
+            # ama yarıda kalanlar dahil — kural pipeline guard'ında durur.
+            processed = asset is not None and asset.status == "processed"
+            if processed:
+                continue
+            exclusion = evaluate_source_rules(
+                source.filter_rules,
+                title=video.title,
+                published_at=video.published_at,
+            )
+            if not exclusion:
+                continue
+            video.status = "excluded"
+            if decision is None:
+                session.add(
+                    PlanningDecision(
+                        source_video_id=video.id,
+                        decision="skipped",
+                        reason=exclusion,
+                    )
+                )
+            else:
+                decision.decision = "skipped"
+                decision.reason = exclusion
+            excluded_by_rule += 1
+        if excluded_by_rule or restored:
+            record_event(
+                session,
+                source.channel_id,
+                "source.rules_reapplied",
+                {
+                    "source_id": source.id,
+                    "excluded": excluded_by_rule,
+                    "restored": restored,
+                },
+            )
+
+    async def set_video_status(
+        self, video_id: int, status: str
+    ) -> SourceVideo:
+        """Manuel sınıflandırma düzeltmesi: hariç tutulmuş bir tepki
+        videosunu işleme geri almak ya da işlenmemiş bir videoyu elle
+        hariç tutmak. İşlenmiş (#done/#confirmed) videolar değiştirilemez."""
+        if status not in ("planned", "excluded"):
+            raise SourceServiceError(
+                "status 'planned' veya 'excluded' olmalı."
+            )
+        async with self._sessionmaker() as session:
+            video = await session.get(SourceVideo, video_id)
+            if video is None:
+                raise SourceServiceError("Video bulunamadı.", status_code=404)
+            if video.status in ("processed", "confirmed"):
+                raise SourceServiceError(
+                    "İşlenmiş videonun durumu değiştirilemez.",
+                    status_code=422,
+                )
+            if video.status == status:
+                return video
+            source = await session.get(SourceChannel, video.source_channel_id)
+            decision = (
+                (
+                    await session.execute(
+                        select(PlanningDecision).where(
+                            PlanningDecision.source_video_id == video.id
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            video.status = status
+            if status == "planned":
+                if decision is None:
+                    session.add(
+                        PlanningDecision(
+                            source_video_id=video.id,
+                            decision="planned",
+                        )
+                    )
+                else:
+                    decision.decision = "planned"
+                    decision.reason = None
+            else:
+                if decision is None:
+                    session.add(
+                        PlanningDecision(
+                            source_video_id=video.id,
+                            decision="skipped",
+                            reason="manuel hariç tutma",
+                        )
+                    )
+                else:
+                    decision.decision = "skipped"
+                    decision.reason = "manuel hariç tutma"
+            if source is not None:
+                record_event(
+                    session,
+                    source.channel_id,
+                    "source.video_status_changed",
+                    {
+                        "source_video_id": video.id,
+                        "status": status,
+                    },
+                )
+            await session.commit()
+            await session.refresh(video)
+            return video
 
     async def delete_source(self, source_id: int) -> bool:
         async with self._sessionmaker() as session:

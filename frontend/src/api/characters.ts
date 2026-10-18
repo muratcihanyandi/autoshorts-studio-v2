@@ -45,7 +45,7 @@ export interface SourceOut {
   reaction_source: boolean
   trim_start_seconds: number
   trim_end_seconds: number
-  filter_rules: Record<string, unknown>
+  filter_rules: SourceFilterRules
   created_at: string
   updated_at: string
 }
@@ -64,6 +64,14 @@ export interface SourceCreateInput {
   reaction_source?: boolean
   trim_start_seconds?: number
   trim_end_seconds?: number
+  filter_rules?: SourceFilterRules
+}
+
+/** Kanal bazlı kaynak kuralları (JSONB). */
+export interface SourceFilterRules {
+  require_reaction_content?: boolean
+  exclude_title_patterns?: string[]
+  max_age_days?: number
 }
 
 export interface SourceUpdateInput {
@@ -71,6 +79,7 @@ export interface SourceUpdateInput {
   reaction_source?: boolean
   trim_start_seconds?: number
   trim_end_seconds?: number
+  filter_rules?: SourceFilterRules
 }
 
 export interface DiscoverResult {
@@ -216,4 +225,20 @@ export function addSourceVideo(
       return v
     },
   )
+}
+
+/** Manuel sınıflandırma düzeltmesi: 'planned' işleme geri alır,
+ * 'excluded' işlenmemiş videoyu hariç tutar. */
+export function setSourceVideoStatus(
+  videoId: number,
+  status: 'planned' | 'excluded',
+): Promise<SourceVideoOut> {
+  return sendJson<SourceVideoOut>(
+    `/api/sources/videos/${videoId}/status`,
+    'POST',
+    { status },
+  ).then((v) => {
+    if (v === null) throw new Error('Boş yanıt')
+    return v
+  })
 }

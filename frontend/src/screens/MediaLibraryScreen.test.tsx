@@ -90,6 +90,8 @@ describe('MediaLibraryScreen', () => {
     // Filtre etiketleri durum etiketleriyle ayni sozcukte: ikişer kez.
     expect(screen.getAllByText('İndiriliyor').length).toBe(2)
     expect(screen.getAllByText('Stokta').length).toBe(2)
+    // Islenmemis satirda 'Hariç tut' eylemi var.
+    expect(screen.getByRole('button', { name: 'Hariç tut' })).toBeInTheDocument()
     expect(screen.getByText('Klipler')).toBeInTheDocument()
     expect(screen.getByText('Dikey')).toBeInTheDocument()
     expect(screen.getByText('Hazır')).toBeInTheDocument()

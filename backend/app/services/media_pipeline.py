@@ -97,6 +97,10 @@ class MediaPipelineService:
             youtube_video_id = video.youtube_video_id
             if video.status == "processed":
                 return {"source_video_id": source_video_id, "skipped": True}
+            if video.status == "excluded":
+                # Kural (ör. yalnız tepki videoları) videoyu hariç tuttu:
+                # iş başlamadan sessizce kapanır, indirme yapılmaz.
+                return {"source_video_id": source_video_id, "skipped": True}
 
         asset_id = await self._ensure_asset(
             source_video_id, import_path is not None
@@ -106,12 +110,18 @@ class MediaPipelineService:
         # uzerinde tekrar deneme hatasi onlenir).
         if import_path is not None:
             await self._reset_to_download(asset_id)
+        excluded_midway = False
         while True:
             async with self._sessionmaker() as session:
                 asset = await session.get(MediaAsset, asset_id)
                 stage = asset.stage
                 done = asset.status == "processed"
-            if done or stage not in STAGES:
+                # Kural videoyu iş ortasında hariç tuttuysa (ör. tepkime
+                # kuralı açıldı): aşama ilerletilmeden durulur.
+                current = await session.get(SourceVideo, source_video_id)
+                if current is not None and current.status == "excluded":
+                    excluded_midway = True
+            if excluded_midway or done or stage not in STAGES:
                 break
             handler = getattr(self, f"_stage_{stage}")
             try:
@@ -132,9 +142,12 @@ class MediaPipelineService:
                 ) from exc
             import_path = None  # yalnizca ilk denemede kullanilir
 
+        if excluded_midway:
+            return {"source_video_id": source_video_id, "skipped": True}
+
         async with self._sessionmaker() as session:
             video = await session.get(SourceVideo, source_video_id)
-            if video is not None and video.status != "processed":
+            if video is not None and video.status == "planned":
                 video.status = "processed"
                 await session.commit()
         return {"source_video_id": source_video_id, "processed": True}

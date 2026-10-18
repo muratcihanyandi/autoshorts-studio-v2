@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import { fetchMedia, type LibrarySource } from '../api/media'
+import { setSourceVideoStatus } from '../api/characters'
 import { formatBytes, formatDuration, formatTimeShort } from '../format'
 import { usePolling } from '../hooks/usePolling'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
@@ -37,8 +38,20 @@ function sourceView(tag: string) {
   return TAG_VIEW[tag] ?? { tone: 'idle', label: tag }
 }
 
-function SourceRow({ source }: { source: LibrarySource }) {
+function SourceRow({
+  source,
+  onStatusChange,
+  statusBusy,
+}: {
+  source: LibrarySource
+  onStatusChange: (source: LibrarySource, status: 'planned' | 'excluded') => void
+  statusBusy: number | null
+}) {
   const view = sourceView(source.tag)
+  const canExclude = ['#queued', '#downloading', '#processing'].includes(
+    source.tag,
+  )
+  const busy = statusBusy === source.id
   return (
     <tr>
       <td>
@@ -70,6 +83,31 @@ function SourceRow({ source }: { source: LibrarySource }) {
         {source.file_bytes > 0 ? formatBytes(source.file_bytes) : '—'}
       </td>
       <td className="nums">{formatTimeShort(source.updated_at)}</td>
+      <td>
+        {source.tag === '#excluded' ? (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={busy}
+            title="Yanlışlıkla hariç tutulmuş bir tepki videosunu işleme geri alır."
+            onClick={() => onStatusChange(source, 'planned')}
+          >
+            {busy ? '…' : 'İşleme al'}
+          </button>
+        ) : canExclude ? (
+          <button
+            type="button"
+            className="btn btn--danger"
+            disabled={busy}
+            title="Bu videoyu kural dışı tutar: işlenmez, indirilmez."
+            onClick={() => onStatusChange(source, 'excluded')}
+          >
+            {busy ? '…' : 'Hariç tut'}
+          </button>
+        ) : (
+          '—'
+        )}
+      </td>
     </tr>
   )
 }
@@ -78,12 +116,26 @@ export function MediaLibraryScreen() {
   const [limit] = useState(60)
   const [extraPages, setExtraPages] = useState(0)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [statusBusy, setStatusBusy] = useState<number | null>(null)
 
   const fetchCb = useCallback(
     () => fetchMedia(limit + extraPages * limit, 0),
     [limit, extraPages],
   )
   const library = usePolling(fetchCb, 10000)
+
+  async function changeStatus(
+    source: LibrarySource,
+    status: 'planned' | 'excluded',
+  ) {
+    setStatusBusy(source.id)
+    try {
+      await setSourceVideoStatus(source.id, status)
+      await library.retry()
+    } finally {
+      setStatusBusy(null)
+    }
+  }
 
   const data = library.state.status === 'ok' ? library.state.data : null
   const sources = data
@@ -176,11 +228,19 @@ export function MediaLibraryScreen() {
                         <th>Süre</th>
                         <th>Boyut</th>
                         <th>Güncelleme</th>
+                        <th>Eylem</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sources.map((s) => (
-                        <SourceRow key={s.id} source={s} />
+                        <SourceRow
+                          key={s.id}
+                          source={s}
+                          onStatusChange={(src, status) =>
+                            void changeStatus(src, status)
+                          }
+                          statusBusy={statusBusy}
+                        />
                       ))}
                     </tbody>
                   </table>

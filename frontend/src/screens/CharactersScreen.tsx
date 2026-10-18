@@ -39,6 +39,7 @@ const EMPTY_SOURCE_FORM = {
   platform_key: '',
   title: '',
   reaction: false,
+  reaction_only: false,
   trim_start: '',
   trim_end: '',
 }
@@ -136,6 +137,23 @@ function SourceRow({
         ? 'pill--error'
         : 'pill--warn'
 
+  const reactionOnly = source.filter_rules?.require_reaction_content === true
+
+  const toggleReactionOnly = () =>
+    run(async () => {
+      await updateSource(source.id, {
+        filter_rules: {
+          ...source.filter_rules,
+          require_reaction_content: !reactionOnly,
+        },
+      })
+      setNote(
+        reactionOnly
+          ? 'Tepki kuralı kapatıldı.'
+          : 'Tepki kuralı açıldı — işlenmemiş videolar yeniden değerlendirildi.',
+      )
+    })
+
   return (
     <div className="source-row">
       <span className="source-badge">{PLATFORM_LABEL[source.platform]}</span>
@@ -145,7 +163,17 @@ function SourceRow({
         {PERMISSION_LABEL[source.permission_status]}
       </span>
       {source.reaction_source && <span className="source-badge">reaksiyon</span>}
+      {reactionOnly && <span className="source-badge">yalnız tepki</span>}
       <span className="channel-actions">
+        <button
+          type="button"
+          className="btn--ghost"
+          disabled={busy}
+          onClick={() => void toggleReactionOnly()}
+          title="Katı kural: yalnız tepki/reaksiyon başlıklı videolar işlenir; değişince mevcut videolar yeniden değerlendirilir."
+        >
+          {reactionOnly ? 'Tepki Kuralını Kapat' : 'Yalnız Tepki'}
+        </button>
         {source.permission_status === 'authorized' ? (
           <button
             type="button"
@@ -279,6 +307,9 @@ function SourceAddForm({
       input.trim_start_seconds = Number(form.trim_start) || 0
       input.trim_end_seconds = Number(form.trim_end) || 0
     }
+    if (form.reaction_only) {
+      input.filter_rules = { require_reaction_content: true }
+    }
     setBusy(true)
     try {
       await createSource(channelId, input)
@@ -351,6 +382,24 @@ function SourceAddForm({
           </label>
           <span className="field-help">
             Reaksiyon videoları: budanmış yatay + dikey short üretilir.
+          </span>
+        </div>
+        <div className="field">
+          <label className="check-row" htmlFor={`src-reaction-only-${characterId}`}>
+            <input
+              id={`src-reaction-only-${characterId}`}
+              type="checkbox"
+              checked={form.reaction_only}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, reaction_only: e.target.checked }))
+              }
+            />
+            <span>Yalnız tepki/reaksiyon videoları</span>
+          </label>
+          <span className="field-help">
+            Katı kural: yayıncının kendi montajları (ör. funny moments)
+            işlenmez. “Reacting to…” gibi tepki başlıkları — izlenen içerik
+            funny moments olsa bile — serbest kalır.
           </span>
         </div>
         {form.reaction && (

@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SOURCE_PERMISSION_VALUES = ("authorized", "rejected")
-RULE_KEYS = {"exclude_title_patterns", "max_age_days"}
+RULE_KEYS = {"exclude_title_patterns", "max_age_days", "require_reaction_content"}
 
 
 def _validate_rules(value: dict | None) -> dict | None:
@@ -25,6 +25,9 @@ def _validate_rules(value: dict | None) -> dict | None:
     max_age = value.get("max_age_days")
     if max_age is not None and (not isinstance(max_age, int) or max_age < 1):
         raise ValueError("max_age_days pozitif tam sayı olmalı")
+    require_reaction = value.get("require_reaction_content")
+    if require_reaction is not None and not isinstance(require_reaction, bool):
+        raise ValueError("require_reaction_content doğru/yanlış olmalı")
     return value
 
 
@@ -120,6 +123,12 @@ class ManualVideoCreate(BaseModel):
 
     url: str = Field(min_length=1, max_length=2048)
     title: str = Field(min_length=1, max_length=500)
+
+
+class SourceVideoStatusIn(BaseModel):
+    """Manuel sınıflandırma düzeltmesi: işleme geri al ya da hariç tut."""
+
+    status: Literal["planned", "excluded"]
 
 
 class PlanningResult(BaseModel):
