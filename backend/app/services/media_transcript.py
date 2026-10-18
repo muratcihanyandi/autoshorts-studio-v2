@@ -8,7 +8,9 @@ Malformed cues are skipped, never fatal.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from pathlib import Path
 
 _TIMESTAMP = re.compile(
@@ -136,19 +138,20 @@ class TranscriptError(Exception):
 
 
 class WhisperTranscriber:
-    """Local Whisper CLI fallback (PATH-probed, like yt-dlp).
+    """Local Whisper fallback (openai-whisper paketi, `python -m whisper`).
 
-    Runs `whisper <media> --model <m> --language <l> --output_format
-    srt --output_dir <tmp>` and parses the produced SRT with the
-    existing in-process parser. The binary is NOT part of the image by
-    default (torch is too heavy for the Pi): the settings screen
-    documents that the operator installs it or keeps the 'sidecar'
-    method. Test doubles inject a runner.
+    Runs Whisper on the backend's own interpreter so no PATH setup is
+    needed; the package is installed either into the environment
+    directly (Windows dev) or into the persistent media-tree target
+    with PYTHONPATH (Linux/Pi container — see whisper_install). Test
+    doubles inject a runner; the env carries the install plan's
+    PYTHONPATH when a target install is in use.
     """
 
-    def __init__(self, runner=None) -> None:
+    def __init__(self, runner=None, env: dict | None = None) -> None:
         # None -> gercek subprocess; testler sahte runner enjekte eder.
         self._runner = runner
+        self._env = env
 
     def build_command(
         self,
@@ -159,6 +162,8 @@ class WhisperTranscriber:
         language: str,
     ) -> list[str]:
         cmd = [
+            sys.executable,
+            "-m",
             "whisper",
             str(media_path),
             "--model", model,
@@ -169,6 +174,17 @@ class WhisperTranscriber:
         ]
         return cmd
 
+    def _available(self) -> bool:
+        """Whisper kurulu mu: yorumlayicida import edilebilir ya da
+        verilen PYTHONPATH hedef dizininde paket var."""
+        if _spec_available():
+            return True
+        pythonpath = (self._env or {}).get("PYTHONPATH", "")
+        for entry in pythonpath.split(os.pathsep):
+            if entry and (Path(entry) / "whisper").is_dir():
+                return True
+        return False
+
     async def _run_subprocess(self, cmd: list[str]) -> int:
         import asyncio
 
@@ -176,6 +192,7 @@ class WhisperTranscriber:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=self._env,
         )
         # Whisper kucuk modellerde bile yavastir; uzun video icin bol
         # zaman taninir (is kuyrugu zaten sirali).
@@ -194,21 +211,19 @@ class WhisperTranscriber:
         language: str = "tr",
     ) -> list[dict]:
         """Run Whisper and return parsed segments."""
-        import shutil
-
         media = Path(media_path)
         if not media.is_file():
             raise TranscriptError(f"Medya dosyasi yok: {media}")
         output_dir.mkdir(parents=True, exist_ok=True)
+        if not self._available():
+            raise TranscriptError(
+                "whisper kurulu degil; Ayarlar ekranindaki 'Whisper'i "
+                "Indir ve Kur' dugmesiyle kurabilirsiniz."
+            )
         cmd = self.build_command(
             media, output_dir, model=model, language=language
         )
         if self._runner is None:
-            if shutil.which("whisper") is None:
-                raise TranscriptError(
-                    "whisper bulunamadi; 'sidecar' yontemini kullanin "
-                    "veya sunucuya whisper kurun."
-                )
             runner = self._run_subprocess
         else:
             runner = self._runner
@@ -221,6 +236,15 @@ class WhisperTranscriber:
         if not segments:
             raise TranscriptError("whisper ciktisi bos/ayristirilamadi.")
         return segments
+
+
+def _spec_available() -> bool:
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("whisper") is not None
+    except Exception:  # noqa: BLE001
+        return False
 
 
 async def _read_text(path: Path) -> str:

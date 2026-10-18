@@ -43,9 +43,38 @@ const overviewPayload = {
   today_published: 0,
 }
 
+const whisperState = { installed: false }
+
+const whisperPayload = () => ({
+  installed: whisperState.installed,
+  platform: 'Windows',
+  machine: 'AMD64',
+  status: whisperState.installed
+    ? { state: 'succeeded', mode: 'direct' }
+    : null,
+})
+
 function stubFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url.includes('/api/whisper/install') && init?.method === 'POST') {
+      whisperState.installed = true
+      return new Response(
+        JSON.stringify({
+          state: 'running',
+          mode: 'direct',
+          platform: 'Windows',
+          machine: 'AMD64',
+        }),
+        { status: 202, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    if (url.includes('/api/whisper')) {
+      return new Response(JSON.stringify(whisperPayload()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
     if (url.includes('/api/settings') && init?.method === 'PUT') {
       // Yanıt asla gizli değerin kendisini taşımaz.
       return new Response(
@@ -70,6 +99,7 @@ describe('SettingsScreen', () => {
   beforeEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+    whisperState.installed = false
   })
   afterEach(() => cleanup())
 
@@ -144,5 +174,33 @@ describe('SettingsScreen', () => {
       expect(put).toBeDefined()
       expect(JSON.parse(String(put![1]!.body))).toEqual({ daily_quota_units: 5000 })
     })
+  })
+
+  it('shows the whisper install button and installs on click', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SettingsScreen />)
+
+    // Whisper kurulu değil: düğme görünür.
+    const button = await screen.findByRole('button', {
+      name: "Whisper'ı İndir ve Kur",
+    })
+    expect(button).toBeInTheDocument()
+
+    fireEvent.click(button)
+
+    // Kurulum isteği gönderilir; durum yenilenince kurulu görünür.
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/api/whisper/install') &&
+          c[1]?.method === 'POST',
+      )
+      expect(post).toBeDefined()
+    })
+    expect(await screen.findByText(/Whisper kurulu/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: "Whisper'ı İndir ve Kur" }),
+    ).not.toBeInTheDocument()
   })
 })

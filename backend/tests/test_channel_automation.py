@@ -821,7 +821,7 @@ class TestWhisperFallback:
         media = make_face_stream_video(tmp_path / "w.mp4")
 
         class FakeWhisper:
-            def __init__(self, runner=None):
+            def __init__(self, runner=None, env=None):
                 pass
 
             async def transcribe(self, media_path, output_dir, **kwargs):

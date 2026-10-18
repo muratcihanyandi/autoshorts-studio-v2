@@ -838,13 +838,15 @@ repeat runs are stable).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -v`
   (output redirected to a log file)
-  - Passed: **352**, Failed: 0, Skipped: 0 in 110 s (M14 added 21:
+  - Passed: **363**, Failed: 0, Skipped: 0 in 77 s (M14 added 32:
     test_channel_automation 20 — start/stop state machine, stock
     refill rules, no-reprocessing, multi-Shorts selection, tag
     vocabulary, whisper fallback, content modes, resource gate, API
-    roundtrips — plus the 0012 offline-SQL migration test; existing
-    tests updated for the channel-state gates and the selected-only
-    render feed).
+    roundtrips — test_whisper_install 11 (platform plans, target-dir
+    availability + env, install API flow with faked pip, 409/400/503
+    guards, transcriber command contract), plus the 0012 offline-SQL
+    migration test; existing tests updated for the channel-state gates
+    and the selected-only render feed).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
@@ -999,12 +1001,25 @@ historical, superseded by the totals above):
   `deploy/casaos/docker-compose.ghcr.yml` shows the exact backend
   block. After restart, verify the Overview worker banner reads
   "Worker çalışıyor" before pressing Başlat.
-- Known limitations (do not present as complete): Whisper CLI is not
-  inside the image (operator installs it or keeps 'sidecar');
-  external transcription services are not implemented; YouTube
-  age-restriction fields are not set at upload (decisions live on
-  metadata rows + UI); live YouTube/Kick flows remain mock-tested
-  only (ADR-008) — real-platform verification is a Pi-time step.
+- Whisper runtime install (2026-10-18, M14 addendum, user-requested):
+  the Settings screen shows a "Whisper'ı İndir ve Kur" button when
+  Whisper is missing; `POST /api/whisper/install` runs a
+  platform-aware background pip install (openai-whisper pinned) —
+  direct into the venv on Windows, `--target <MEDIA_ROOT>/.whisper` +
+  PYTHONPATH on the Linux/Pi container (uid 1000 cannot write system
+  site-packages; the target also survives container recreation on the
+  persistent media volume). Invocation switched to `python -m whisper`
+  (no PATH dependency); install state tracked honestly in app_meta
+  (running/succeeded/failed with pip tail) and polled by the UI;
+  guards: 400 already installed, 409 double start, 503 <2 GB free
+  disk. Verified by test_whisper_install (11 tests, faked pip).
+- Known limitations (do not present as complete): external
+  transcription services are not implemented; YouTube age-restriction
+  fields are not set at upload (decisions live on metadata rows +
+  UI); live YouTube/Kick flows remain mock-tested only (ADR-008) —
+  real-platform verification is a Pi-time step; the whisper install
+  button downloads from PyPI at runtime (pinned package) — first
+  real install on the Pi is a deployment-time verification.
 
 - What was implemented (2026-10-18, M13 "characters + multi-platform
   sources", built via three parallel subagents per

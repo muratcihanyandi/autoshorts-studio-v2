@@ -10,6 +10,7 @@ import {
 import { usePolling } from '../hooks/usePolling'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 import { ApiError } from '../api/client'
+import { WhisperInstallControl } from '../components/WhisperInstallControl'
 
 const PHASE_LABEL: Record<string, string> = {
   setup: 'Kurulum — veritabanı bekleniyor',
@@ -505,9 +506,11 @@ export function SettingsScreen() {
                     </option>
                   </select>
                   <span className="field-help">
-                    Whisper, sunucuda whisper CLI kuruluysa çalışır; kurulum
-                    gerektirir. Varsayılan hafif moddur.
+                    Whisper eksik altyazıda konuşma tanımayı devreye sokar;
+                    kurulumu aşağıdaki düğmeyle yapabilirsiniz. Varsayılan
+                    hafif mod yalnızca mevcut altyazıyı kullanır.
                   </span>
+                  <WhisperInstallControl />
                 </div>
                 {form.method === 'whisper' && (
                   <>

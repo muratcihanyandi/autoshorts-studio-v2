@@ -21,6 +21,7 @@ from app.api.routes.automation import router as automation_router
 from app.api.routes.publishing import router as publishing_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.system import router as system_router
+from app.api.routes.whisper import router as whisper_router
 from app.config import Settings, get_settings
 from app.db import create_engine_and_sessionmaker
 from app.logging_config import setup_logging
@@ -87,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(jobs_router, prefix="/api")
     app.include_router(publishing_router, prefix="/api")
     app.include_router(automation_router, prefix="/api")
+    app.include_router(whisper_router, prefix="/api")
     return app
 
 

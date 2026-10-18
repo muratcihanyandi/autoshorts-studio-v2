@@ -352,16 +352,20 @@ class MediaPipelineService:
             segments = parse_sidecar_text(text)
             raw_path = str(sidecar)
         elif self._settings.transcription_method == "whisper" and media_path:
-            # Altyazi yok: yerel Whisper CLI fallback (PATH-probe).
+            # Altyazi yok: yerel Whisper fallback (python -m whisper;
+            # kurulum Ayarlar'daki 'Indir ve Kur' ile yapilir).
             from app.services.media_storage import media_subdir
             from app.services.media_transcript import (
                 TranscriptError,
                 WhisperTranscriber,
             )
+            from app.services.whisper_install import subprocess_env
 
             tmp_dir = media_subdir(self._settings.media_root, "tmp")
             try:
-                segments = await WhisperTranscriber().transcribe(
+                segments = await WhisperTranscriber(
+                    env=subprocess_env(self._settings)
+                ).transcribe(
                     media_path,
                     tmp_dir,
                     model=self._settings.whisper_model,
