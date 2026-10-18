@@ -99,6 +99,10 @@ class YtDlpAdapter:
         cmd = [
             "yt-dlp",
             "--no-playlist",
+            # YouTube timedtext limiti (HTTP 429) tek bir altyazi dilini
+            # dusurebilir; video ve diger altyazilar insin. Video dosyasi
+            # olusmazsa fetch asagidaki cikti kontroluyle yine hata verir.
+            "--ignore-errors",
             "--merge-output-format", "mp4",
             "--write-auto-subs",
             "--sub-langs", "tr,en",

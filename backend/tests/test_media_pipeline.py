@@ -418,6 +418,9 @@ class TestYtDlpAdapter:
         assert cmd[cmd.index("--limit-rate") + 1] == "512K"
         assert cmd[-1] == "https://www.youtube.com/watch?v=abc123"
         assert "--write-auto-subs" in cmd  # transkript asamasi icin altyazi
+        # Altyazi 429'u (timedtext limiti) tolere et: video inmezse fetch
+        # cikti kontroluyle zaten hata verir.
+        assert "--ignore-errors" in cmd
 
     def test_command_without_rate_limit(self, tmp_path):
         from app.services.media_download import YtDlpAdapter

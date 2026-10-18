@@ -964,6 +964,41 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Production fix (2026-10-18, live download failures on the Pi): the
+  worker failed every media download with `MediaDownloadError: yt-dlp
+  basarisiz` after the M14 restart, for two stacked causes.
+  (1) Ownership: `/mnt/usb/Autoshorts_Studio` and its five labelled
+  subfolders were created `3000:3000` (predates the v2 deploy; the v1
+  stack most likely made them) while the backend container runs
+  `1000:1000` (Dockerfile `USER 1000:1000`), so every write into
+  `/data/media/downloads` hit `Errno 13 Permission denied` (26 failed
+  job cycles 01:46–06:00 UTC, video 20 etc.). Fixed on the Pi with
+  `sudo chown -R 1000:1000 /mnt/usb/Autoshorts_Studio` — the step the
+  Dockerfile comment already prescribed; verified with an in-container
+  write test. (2) YouTube rate limiting: auto-subtitle fetches for
+  `en` consistently return HTTP 429 from the Pi's IP while `tr`
+  downloads fine (timedtext limit), and yt-dlp exits 1, failing the
+  whole job even though the video and the `tr` sidecar land. Fix in
+  code: `YtDlpAdapter.build_command` now passes `--ignore-errors`
+  (backend/app/services/media_download.py) so a single dead subtitle
+  language no longer kills the job; if the video itself fails the
+  adapter's existing output-glob check still raises. Bridge until the
+  image is rebuilt: `/mnt/usb/Autoshorts_Studio/yt-dlp.conf`
+  (`--ignore-errors`) is bind-mounted read-only to
+  `/etc/yt-dlp.conf` in the live CasaOS compose (backup saved as
+  `docker-compose.yml.bak-20261018`); once the GHCR image carries this
+  commit the mount can stay or be removed — the flag is idempotent.
+  Live verification on the Pi: real yt-dlp runs write `tr.vtt`
+  (778 KiB) and return exit 0 with `en` still 429; job 1415 (video 20)
+  was retried and queued; recovered job 1416 (video 21) downloaded a
+  1.7+ GB video with its `tr.vtt` sidecar landing in `downloads/`.
+  Two follow-up observations (not fixed here): `recover_stale` only
+  runs at worker startup (worker.py:934) so a long-lived worker never
+  collects ghosts mid-run; httpx INFO logs print the YouTube Data API
+  key inside the request URL at `LOG_LEVEL=info` (consider redacting
+  or lowering httpx logs). Tests after the change: backend 363/363 in
+  77 s (foreground, file-redirected — a background run reproduced the
+  known full-suite hang quirk and was killed).
 - What was implemented (2026-10-18, M14 "channel automation /
   Start/Stop"): the automation root cause was deployment-side — the
   compose templates in actual use did not set `WORKER_ENABLED` or
