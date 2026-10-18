@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app import __version__
 from app.api.routes.channels import router as channels_router
+from app.api.routes.characters import router as characters_router
 from app.api.routes.health import router as health_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.llm import router as llm_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(overview_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(channels_router, prefix="/api")
+    app.include_router(characters_router, prefix="/api")
     app.include_router(sources_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(llm_router, prefix="/api")

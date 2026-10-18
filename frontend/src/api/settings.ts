@@ -26,6 +26,7 @@ export interface SettingsView {
   frontend_base_url: PlainSetting
   youtube_api_key: SecretSetting
   daily_quota_units: IntSetting
+  metadata_system_prompt: PlainSetting
 }
 
 /** PUT gövdesi: verilen alanlar gönderilir; secret'lar boşsa dokunulmaz. */
@@ -37,6 +38,7 @@ export type SettingsPatch = Partial<{
   frontend_base_url: string
   youtube_api_key: string
   daily_quota_units: number
+  metadata_system_prompt: string
 }>
 
 export function fetchSettings(): Promise<SettingsView> {

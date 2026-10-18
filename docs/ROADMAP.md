@@ -329,6 +329,34 @@ Acceptance criteria:
 - No known critical security issue remains unaddressed.
 - Actual test results are documented.
 
+## Milestone 13 — Characters and Multi-Platform Sources
+
+Status: COMPLETED (2026-10-18; evidence in `docs/PROGRESS.md` sections 3
+and 7. Plan: `docs/plans/2026-10-18-character-system.md`.)
+
+Tasks:
+- Implement streamer characters with photo, reference face, and
+  per-character system prompt.
+- Implement multi-platform sources (YouTube/Twitch/Kick) with rights
+  records, reaction flag, and head/tail trim.
+- Implement manual VOD import for non-YouTube platforms.
+- Implement reaction-source dual-orientation output: one trimmed
+  horizontal full cut (no subtitles) plus vertical shorts (subtitles).
+- Implement the metadata prompt chain (character → global → built-in
+  default) with viral hook and thumbnail text.
+- Implement webcam-region validation against the character's reference
+  face with rectangle-search fallback and review routing.
+- Compose thumbnails from approved metadata.
+- Add the Characters management screen and guide documentation.
+
+Acceptance criteria:
+- Character/source CRUD works through API and UI.
+- Reaction sources produce both orientations; normal sources render
+  vertical shorts only (hard guard).
+- The prompt chain resolves in order and lengths are validated.
+- Webcam uncertainty still routes to review, never a wrong crop.
+- Verified by tests: backend 330/330, frontend 14/14.
+
 ---
 
 ## Cross-Milestone Rules

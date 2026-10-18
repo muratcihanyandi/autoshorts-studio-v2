@@ -185,6 +185,64 @@ export function GuideScreen() {
           </ol>
         </section>
 
+        <section className="plate">
+          <h2 className="panel-title">3. Karakter ve Kaynak Ekleme</h2>
+          <p className="plate-note">
+            Yayıncı karakterleri ve izinli kaynak kanalları üretim hattını
+            besler: karakter fotoğrafı webcam doğrulamasında, karakter
+            promptu metaveri üretiminde kullanılır.
+          </p>
+          <ol className="guide-steps">
+            <li>
+              <b>Karakter ekleyin:</b> Karakterler ekranında adı girip kaydedin;
+              ardından <b>Düzenle</b> ile fotoğraf yükleyin ve isterseniz
+              karaktere özel sistem promptu yazın. Fotoğraftan çıkarılan
+              referans yüz, webcam bölgesinin doğru karakterde olduğunu
+              doğrular. Prompt boş bırakılırsa genel prompt (Ayarlar →
+              Metaveri Sistem Promptu) kullanılır.
+            </li>
+            <li>
+              <b>Kaynak ekleyin:</b> karakterin altındaki <b>Kaynak Ekle</b>{' '}
+              formunda platform seçin — YouTube için <b>UC… kanal kimliği</b>,
+              Twitch/Kick için <b>kanal adresi</b> girilir. Reaksiyon kaynağı
+              işaretlenirse baştan/sondan budama saniyeleri de belirtilir.
+            </li>
+            <li>
+              <b>İzni verin:</b> kaynak, sahibi izin vermeden işlenmez. Kaynak
+              satırındaki <b>İzni Ver</b> düğmesi izin kaydını oluşturur;{' '}
+              <b>İzni Geri Çek</b> ile geri alınır.
+            </li>
+            <li>
+              <b>Videoları alın:</b> YouTube kaynaklarında <b>Keşfet</b> yeni
+              yüklemeleri tarar; Twitch/Kick kaynaklarında <b>VOD Ekle</b>{' '}
+              ile yayın adresi elle girilir.
+            </li>
+            <li>
+              <b>Üretim hattı:</b> izinli kaynakların videoları dikey shorta
+              dönüşür, metaverisi üretilir ve onaydan sonra takvimde
+              planlanıp yayınlanır.
+            </li>
+            <li>
+              <b>Kaynak türüne göre davranış:</b>
+              <table className="guide-table">
+                <tbody>
+                  <tr>
+                    <th>Normal kaynak</th>
+                    <td>Yalnız dikey short üretilir; altyazılı.</td>
+                  </tr>
+                  <tr>
+                    <th>Reaksiyon kaynağı</th>
+                    <td>
+                      Budanmış yatay video (altyazısız) + dikey shortlar
+                      (altyazılı).
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </li>
+          </ol>
+        </section>
+
         <section className="ink-panel" style={{ maxWidth: 760 }}>
           <h2>Sık Karşılaşılan Hatalar</h2>
           <table className="info-table">
@@ -224,6 +282,20 @@ export function GuideScreen() {
                 <td>
                   Ayarlar’daki Arayüz Adresi yanlış. Stüdyoyu tarayıcıda
                   açtığınız gerçek adresi yazın.
+                </td>
+              </tr>
+              <tr>
+                <th>Kaynağım keşfedilmiyor</th>
+                <td>
+                  “Keşfet” yalnızca YouTube kaynaklarında çalışır. Twitch/Kick
+                  kaynaklarında “VOD Ekle” ile yayın adresini elle girin.
+                </td>
+              </tr>
+              <tr>
+                <th>Webcam yanlış bölgede</th>
+                <td>
+                  Karakterin referans yüzü eksikse eşleştirme yapılamaz;
+                  Karakterler ekranından karakterin fotoğrafını yükleyin.
                 </td>
               </tr>
             </tbody>

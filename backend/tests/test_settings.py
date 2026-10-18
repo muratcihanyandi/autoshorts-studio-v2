@@ -215,3 +215,47 @@ def test_discovery_uses_database_configured_api_key(
         assert response.json()["new_videos"] > 0
     finally:
         client.__exit__(None, None, None)
+
+
+# --- M13: metaveri sistem promptu (genel, düz alan) ---
+
+
+def test_metadata_system_prompt_set_read_clear(tmp_path):
+    client = _make_settings_app(tmp_path)
+    try:
+        initial = client.get("/api/settings").json()["metadata_system_prompt"]
+        assert initial == {"value": "", "source": "unset"}
+
+        updated = client.put(
+            "/api/settings",
+            json={"metadata_system_prompt": "Kısa ve vurucu başlıklar yaz."},
+        )
+        assert updated.status_code == 200
+        body = client.get("/api/settings").json()["metadata_system_prompt"]
+        assert body == {
+            "value": "Kısa ve vurucu başlıklar yaz.",
+            "source": "database",
+        }
+
+        # Boş değer override'ı temizler: yerleşik varsayana döner.
+        client.put("/api/settings", json={"metadata_system_prompt": ""})
+        cleared = client.get("/api/settings").json()["metadata_system_prompt"]
+        assert cleared == {"value": "", "source": "unset"}
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_metadata_system_prompt_length_limit(tmp_path):
+    client = _make_settings_app(tmp_path)
+    try:
+        # 8000 karakter kabul; 8001 reddedilmeli (400).
+        ok = client.put(
+            "/api/settings", json={"metadata_system_prompt": "x" * 8000}
+        )
+        assert ok.status_code == 200
+        rejected = client.put(
+            "/api/settings", json={"metadata_system_prompt": "x" * 8001}
+        )
+        assert rejected.status_code == 400
+    finally:
+        client.__exit__(None, None, None)

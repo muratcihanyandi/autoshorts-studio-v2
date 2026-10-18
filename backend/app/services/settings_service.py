@@ -45,6 +45,7 @@ EDITABLE_FIELDS = (
     "frontend_base_url",
     "youtube_api_key",
     "daily_quota_units",
+    "metadata_system_prompt",
 )
 
 URL_FIELDS = ("oauth_redirect_base", "frontend_base_url")
@@ -55,6 +56,9 @@ HINT_MIN_LENGTH = 8
 
 DAILY_QUOTA_MIN = 1
 DAILY_QUOTA_MAX = 1_000_000
+
+# Metaveri sistem promptu için makul üst sınır (M13).
+METADATA_PROMPT_MAX_LENGTH = 8000
 
 
 class SettingsServiceError(Exception):
@@ -87,6 +91,12 @@ def _validate(field: str, value: object) -> None:
             raise SettingsServiceError(
                 f"daily_quota_units {DAILY_QUOTA_MIN}..{DAILY_QUOTA_MAX} "
                 "aralığında olmalı."
+            )
+    elif field == "metadata_system_prompt":
+        if len(str(value)) > METADATA_PROMPT_MAX_LENGTH:
+            raise SettingsServiceError(
+                "metadata_system_prompt en fazla "
+                f"{METADATA_PROMPT_MAX_LENGTH} karakter olabilir."
             )
 
 
@@ -159,6 +169,7 @@ class SettingsService:
                 value=effective.daily_quota_units,
                 source=self._source_of("daily_quota_units", overrides),
             ),
+            metadata_system_prompt=plain("metadata_system_prompt"),
         )
 
     async def view(self) -> SettingsOut:

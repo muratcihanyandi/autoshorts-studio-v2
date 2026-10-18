@@ -5,6 +5,10 @@ Seeds a full chain (channel -> source -> video -> asset -> inspection
 clip_render job through the actual JobWorker. Covers the acceptance
 criteria: rendered layout, uncertainty -> review, manual calibration,
 idempotency, and the worker's candidate feed.
+
+M13: reaction sources also render one horizontal full cut per video
+(candidate NULL, code-guarded); character-bound sources validate the
+webcam region against the reference face.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from app.db import create_engine_and_sessionmaker
 from app.models import (
     Base,
     Channel,
+    Character,
     ClipCandidate,
     MediaAsset,
     MediaInspection,
@@ -54,8 +59,18 @@ def _sync_rows(tmp_path, query: str):
         engine.dispose()
 
 
-async def _seed_chain(sessionmaker, media_path: str) -> tuple[int, int]:
-    """Kanal -> kaynak -> video -> asset(+inspeksiyon) -> aday."""
+async def _seed_chain(
+    sessionmaker,
+    media_path: str,
+    *,
+    reaction: bool = False,
+    trim_start: float = 0.0,
+    trim_end: float = 0.0,
+    character_ref_path: str | None = None,
+) -> tuple[int, int]:
+    """Kanal -> kaynak -> video -> asset(+inspeksiyon) -> aday;
+    (channel_id, candidate_id). M13 secenekleri: reaksiyon kaynagi,
+    budama degerleri ve karakterin referans yuz yolu."""
     async with sessionmaker() as session:
         channel = Channel(name="Kanal")
         session.add(channel)
@@ -65,9 +80,20 @@ async def _seed_chain(sessionmaker, media_path: str) -> tuple[int, int]:
             youtube_channel_id="UCkaynak",
             title="Kaynak",
             permission_status="authorized",
+            reaction_source=reaction,
+            trim_start_seconds=trim_start,
+            trim_end_seconds=trim_end,
         )
         session.add(source)
         await session.flush()
+        if character_ref_path is not None:
+            character = Character(
+                name="Yayinci",
+                reference_face_path=character_ref_path,
+            )
+            session.add(character)
+            await session.flush()
+            source.character_id = character.id
         video = SourceVideo(
             source_channel_id=source.id,
             youtube_video_id="vid-1",
@@ -442,3 +468,348 @@ class TestCalibrationApi:
             assert deleted.status_code == 204
             gone = client.get(f"/api/sources/{source_id}/webcam-calibration")
             assert gone.status_code == 404
+
+
+def _write_reference_face(media_root, name: str, image) -> str:
+    """Referans yuz dosyasini medya agacina yaz; goreli yol doner."""
+    import cv2
+    from pathlib import Path
+
+    ref_dir = Path(media_root) / "characters"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    rel_path = f"characters/{name}"
+    assert cv2.imwrite(str(Path(media_root) / rel_path), image)
+    return rel_path
+
+
+def _pd_reference_image():
+    import cv2
+
+    from app.services.character_match import extract_reference
+
+    photo = cv2.imread(
+        str(__import__("pathlib").Path(__file__).parent / "assets" / "face_pd.jpg")
+    )
+    reference = extract_reference(photo)
+    assert reference is not None
+    return reference
+
+
+def _noise_reference_image():
+    import numpy as np
+
+    rng = np.random.default_rng(3)
+    return rng.integers(0, 256, size=(200, 200, 3), dtype=np.uint8)
+
+
+class TestFullCutPipeline:
+    """M13: reaksiyon kaynaginin yatay tam kesidi."""
+
+    def test_full_cut_renders_with_trims(self, tmp_path, face_video):
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                await _seed_chain(
+                    sessionmaker,
+                    str(face_video),
+                    reaction=True,
+                    trim_start=1.0,
+                    trim_end=2.0,
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = VerticalPipelineService(sessionmaker, settings)
+                result = await service.run_full_cut(video_id)
+                return result, video_id
+            finally:
+                await engine.dispose()
+
+        result, video_id = asyncio.run(scenario())
+        assert result == {"source_video_id": video_id, "rendered": True}
+        rows = _sync_rows(
+            tmp_path,
+            "SELECT orientation, clip_candidate_id, source_video_id,"
+            " status, width, height, file_path FROM rendered_clips",
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.orientation == "horizontal"
+        assert row.clip_candidate_id is None  # tam kesit: aday YOK
+        assert row.source_video_id == video_id
+        assert row.status == "rendered"
+        assert (row.width, row.height) == (1920, 1080)
+        import os
+
+        assert row.file_path and os.path.isfile(row.file_path)
+        events = {
+            r.event_type
+            for r in _sync_rows(tmp_path, "SELECT event_type FROM audit_events")
+        }
+        assert "render.done" in events
+
+    def test_full_cut_idempotent(self, tmp_path, face_video):
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                await _seed_chain(
+                    sessionmaker, str(face_video), reaction=True
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = VerticalPipelineService(sessionmaker, settings)
+                first = await service.run_full_cut(video_id)
+                second = await service.run_full_cut(video_id)
+                return first, second
+            finally:
+                await engine.dispose()
+
+        first, second = asyncio.run(scenario())
+        assert first.get("rendered") is True
+        assert second.get("skipped") is True
+        rows = _sync_rows(
+            tmp_path,
+            "SELECT id FROM rendered_clips WHERE orientation = 'horizontal'",
+        )
+        assert len(rows) == 1  # kaynak basina tek yatay satir
+
+    def test_full_cut_refused_for_non_reaction_source(self, tmp_path, face_video):
+        """Sert guvenlik: reaksiyon olmayan kaynak yatay satir uretmez."""
+        from app.services.vertical_pipeline import (
+            VerticalPipelineError,
+            VerticalPipelineService,
+        )
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                await _seed_chain(sessionmaker, str(face_video))
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = VerticalPipelineService(sessionmaker, settings)
+                try:
+                    await service.run_full_cut(video_id)
+                    return None
+                except VerticalPipelineError as exc:
+                    return str(exc)
+            finally:
+                await engine.dispose()
+
+        message = asyncio.run(scenario())
+        assert message is not None and "reaksiyon" in message
+        rows = _sync_rows(
+            tmp_path,
+            "SELECT COUNT(*) AS n FROM rendered_clips"
+            " WHERE orientation = 'horizontal'",
+        )
+        assert rows[0].n == 0
+
+    def test_candidate_render_never_creates_horizontal_row(
+        self, tmp_path, face_video
+    ):
+        """Kabul kriteri: reaksiyon OLMAYAN kaynagin normal aday akisi
+        hicbir kosulda yatay satir acmaz."""
+        from app.services.media_storage import ensure_media_tree
+        from app.worker import JobWorker, build_handlers
+
+        ensure_media_tree(tmp_path / "media")
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video)
+                )
+                handlers = build_handlers(sessionmaker, settings)
+                worker = JobWorker(sessionmaker, settings, handlers=handlers)
+                job = await worker._jobs.enqueue(
+                    "clip_render", {"clip_candidate_id": candidate_id}
+                )
+                await worker._jobs.claim_next(worker._worker_id)
+                await worker.run_job(job.id)
+                return job.id
+            finally:
+                await engine.dispose()
+
+        job_id = asyncio.run(scenario())
+        assert _sync_one_status(tmp_path, job_id) == "succeeded"
+        rows = _sync_rows(
+            tmp_path,
+            "SELECT orientation, COUNT(*) AS n FROM rendered_clips"
+            " GROUP BY orientation",
+        )
+        assert len(rows) == 1
+        assert rows[0].orientation == "vertical"
+
+    def test_render_feed_includes_full_cut_jobs(self, tmp_path):
+        from app.worker import JobWorker
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                # Reaksiyon kaynagi: aday + tam kesit isleri
+                await _seed_chain(
+                    sessionmaker, "/x.mp4", reaction=True
+                )
+                worker = JobWorker(sessionmaker, settings)
+                added = await worker.enqueue_render_jobs()
+                added_again = await worker.enqueue_render_jobs()
+                jobs = await worker._jobs.list_jobs()
+                return added, added_again, [
+                    (j.job_type, dict(j.payload)) for j in jobs
+                ]
+            finally:
+                await engine.dispose()
+
+        added, added_again, jobs = asyncio.run(scenario())
+        assert added == 2  # clip_render + clip_render_full_cut
+        assert added_again == 0
+        kinds = sorted(j[0] for j in jobs)
+        assert kinds == ["clip_render", "clip_render_full_cut"]
+        payloads = {j[0]: j[1] for j in jobs}
+        assert "clip_candidate_id" in payloads["clip_render"]
+        assert "source_video_id" in payloads["clip_render_full_cut"]
+
+    def test_render_feed_skips_full_cut_for_plain_sources(self, tmp_path):
+        from app.worker import JobWorker
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                await _seed_chain(sessionmaker, "/x.mp4")
+                worker = JobWorker(sessionmaker, settings)
+                added = await worker.enqueue_render_jobs()
+                jobs = await worker._jobs.list_jobs()
+                return added, [j.job_type for j in jobs]
+            finally:
+                await engine.dispose()
+
+        added, kinds = asyncio.run(scenario())
+        assert added == 1
+        assert kinds == ["clip_render"]  # yalnizca dikey aday isi
+
+    def test_worker_runs_full_cut_job_end_to_end(self, tmp_path, face_video):
+        from app.services.media_storage import ensure_media_tree
+        from app.worker import JobWorker, build_handlers
+
+        ensure_media_tree(tmp_path / "media")
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                await _seed_chain(
+                    sessionmaker, str(face_video), reaction=True
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                handlers = build_handlers(sessionmaker, settings)
+                worker = JobWorker(sessionmaker, settings, handlers=handlers)
+                job = await worker._jobs.enqueue(
+                    "clip_render_full_cut", {"source_video_id": video_id}
+                )
+                await worker._jobs.claim_next(worker._worker_id)
+                await worker.run_job(job.id)
+                return job.id, video_id
+            finally:
+                await engine.dispose()
+
+        job_id, video_id = asyncio.run(scenario())
+        assert _sync_one_status(tmp_path, job_id) == "succeeded"
+        rows = _sync_rows(
+            tmp_path,
+            "SELECT status, orientation, source_video_id"
+            " FROM rendered_clips",
+        )
+        assert len(rows) == 1
+        assert rows[0].status == "rendered"
+        assert rows[0].orientation == "horizontal"
+        assert rows[0].source_video_id == video_id
+
+
+class TestCharacterValidationPipeline:
+    """M13: karakter referans yuzuyle webcam dogrulamasi (uctan uca)."""
+
+    def test_matching_reference_renders(self, tmp_path, face_video):
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                # Karakter fotografi = karedeki yuz (PD fixture)
+                ref_path = _write_reference_face(
+                    settings.media_root, "1_ref.png", _pd_reference_image()
+                )
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video), character_ref_path=ref_path
+                )
+                service = VerticalPipelineService(sessionmaker, settings)
+                return await service.run(candidate_id)
+            finally:
+                await engine.dispose()
+
+        result = asyncio.run(scenario())
+        assert result.get("rendered") is True
+
+    def test_mismatched_reference_routes_to_review(self, tmp_path, face_video):
+        """Kabul kriteri: referans yuz eslesmezse mevcut review yolu."""
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                ref_path = _write_reference_face(
+                    settings.media_root, "2_ref.png", _noise_reference_image()
+                )
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video), character_ref_path=ref_path
+                )
+                service = VerticalPipelineService(sessionmaker, settings)
+                return await service.run(candidate_id)
+            finally:
+                await engine.dispose()
+
+        result = asyncio.run(scenario())
+        assert result.get("review") is True
+        assert "karakter" in (result.get("reason") or "")
+        rows = _sync_rows(
+            tmp_path, "SELECT status, last_error FROM rendered_clips"
+        )
+        assert rows[0].status == "review"
+        assert rows[0].last_error is not None
+
+    def test_no_reference_face_behavior_unchanged(self, tmp_path, face_video):
+        """Karakter yok: davranis bugunki haliyle ayni (render)."""
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video)
+                )
+                service = VerticalPipelineService(sessionmaker, settings)
+                return await service.run(candidate_id)
+            finally:
+                await engine.dispose()
+
+        result = asyncio.run(scenario())
+        assert result.get("rendered") is True

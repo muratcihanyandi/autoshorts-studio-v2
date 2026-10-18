@@ -10,10 +10,17 @@ Uploads are private-first and verified through videos.list; the
 resumable session URI is persisted so an interrupted upload can be
 reconciled. Failures mark the row 'failed' with a Turkish reason and
 the job can retry.
+
+M13: publishing is per orientation — vertical candidates publish via
+publish_clip, the horizontal full cut of a reaction source via
+publish_full_cut (once per source video, code-guarded). Approving
+metadata (either orientation) also composes the 1280x720 thumbnail
+and stores its path on the rendered row.
 """
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import sqlalchemy as sa
@@ -37,6 +44,7 @@ from app.services.publishing_schedule import (
     is_due,
     next_due_time,
 )
+from app.services.thumbnail import ThumbnailError, compose
 from app.services.youtube_upload import (
     UploadError,
     YouTubeUploadClient,
@@ -64,22 +72,59 @@ class PublishingService:
             context = await self._load_context(session, clip_candidate_id)
         if context is None:
             raise PublishingError("Klip adayi bulunamadi.")
+        return await self._publish(
+            context, clip_candidate_id=clip_candidate_id, http=http
+        )
 
+    async def publish_full_cut(
+        self, source_video_id: int, *, http: httpx.AsyncClient | None = None
+    ) -> dict:
+        """Publish the horizontal full cut of a reaction source video.
+
+        Yatay yayin yalnizca reaksiyon kaynaklarina aciktir; kaynak
+        basina tek PublishedVideo satiri kod guvenligiyle sinirlidir.
+        """
+        async with self._sessionmaker() as session:
+            context = await self._load_full_cut_context(
+                session, source_video_id
+            )
+        if context is None:
+            raise PublishingError("Kaynak video bulunamadi.")
+        return await self._publish(
+            context, source_video_id=source_video_id, http=http
+        )
+
+    async def _publish(
+        self,
+        context: dict,
+        *,
+        clip_candidate_id: int | None = None,
+        source_video_id: int | None = None,
+        http: httpx.AsyncClient | None = None,
+    ) -> dict:
         # --- guvenlik guvenleri ---
         if not context["source_authorized"]:
             raise PublishingError(
                 "Kaynak kanalin hak kaydi yetkili degil; yayin reddedildi."
             )
+        if context["is_horizontal"] and not context["reaction_source"]:
+            raise PublishingError(
+                "Yatay tam kesit yayini yalnizca reaksiyon kaynaklarinda "
+                "aciktir."
+            )
         if context["already_published"]:
             # Kabul kriteri: yinelenen yukleme engellenir (idempotent).
-            return {
-                "clip_candidate_id": clip_candidate_id,
-                "skipped": True,
-                "youtube_video_id": context["published_row"].youtube_video_id,
-            }
+            skipped = {"skipped": True, "youtube_video_id": context[
+                "published_row"
+            ].youtube_video_id, "visibility": "private"}
+            if clip_candidate_id is not None:
+                skipped["clip_candidate_id"] = clip_candidate_id
+            else:
+                skipped["source_video_id"] = source_video_id
+            return skipped
         if context["render"] is None or context["render"].status != "rendered":
             raise PublishingError(
-                "Klip henuz render edilmedi; once dikey video uretilmeli."
+                "Klip henuz render edilmedi; once video uretilmeli."
             )
         metadata = context["metadata"]
         if metadata is None:
@@ -128,29 +173,58 @@ class PublishingService:
             if owned:
                 await client.aclose()
 
-        await self._audit(
-            context["channel_id"],
-            "publish.done",
-            {
-                "clip_candidate_id": clip_candidate_id,
-                "youtube_video_id": video_id,
-                "visibility": "private",
-            },
-        )
-        return {
-            "clip_candidate_id": clip_candidate_id,
+        detail = {
+            "youtube_video_id": video_id,
+            "visibility": "private",
+            "orientation": context["orientation"],
+        }
+        if clip_candidate_id is not None:
+            detail["clip_candidate_id"] = clip_candidate_id
+        else:
+            detail["source_video_id"] = source_video_id
+        await self._audit(context["channel_id"], "publish.done", detail)
+        result = {
             "youtube_video_id": video_id,
             "visibility": "private",
         }
+        if clip_candidate_id is not None:
+            result["clip_candidate_id"] = clip_candidate_id
+        else:
+            result["source_video_id"] = source_video_id
+        return result
 
     async def approve_metadata(self, clip_candidate_id: int) -> ClipMetadata:
-        """Approval control: mark the latest metadata revision approved."""
+        """Approval control: mark the latest metadata revision approved.
+
+        M13: onay, dikey render satirina thumbnail da yazar.
+        """
+        return await self._approve(clip_candidate_id=clip_candidate_id)
+
+    async def approve_full_cut(self, source_video_id: int) -> ClipMetadata:
+        """Approval control for the horizontal full cut of a video."""
+        return await self._approve(source_video_id=source_video_id)
+
+    async def _approve(
+        self,
+        *,
+        clip_candidate_id: int | None = None,
+        source_video_id: int | None = None,
+    ) -> ClipMetadata:
         async with self._sessionmaker() as session:
+            if clip_candidate_id is not None:
+                revision_filter = (
+                    ClipMetadata.clip_candidate_id == clip_candidate_id
+                )
+            else:
+                revision_filter = (
+                    (ClipMetadata.source_video_id == source_video_id)
+                    & ClipMetadata.clip_candidate_id.is_(None)
+                )
             latest = (
                 (
                     await session.execute(
                         sa.select(ClipMetadata)
-                        .where(ClipMetadata.clip_candidate_id == clip_candidate_id)
+                        .where(revision_filter)
                         .order_by(ClipMetadata.revision.desc())
                         .limit(1)
                     )
@@ -161,9 +235,62 @@ class PublishingService:
             if latest is None:
                 raise PublishingError("Metaveri revizyonu bulunamadi.")
             latest.status = "approved"
+            if clip_candidate_id is not None:
+                render_filter = (
+                    RenderedClip.clip_candidate_id == clip_candidate_id
+                ) & (RenderedClip.orientation == "vertical")
+            else:
+                render_filter = (
+                    (RenderedClip.source_video_id == source_video_id)
+                    & (RenderedClip.orientation == "horizontal")
+                    & RenderedClip.clip_candidate_id.is_(None)
+                )
+            render = (
+                (
+                    await session.execute(
+                        sa.select(RenderedClip).where(render_filter)
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
             await session.commit()
             await session.refresh(latest)
-            return latest
+
+        await self._compose_thumbnail(render, latest)
+        return latest
+
+    async def _compose_thumbnail(
+        self, render: RenderedClip | None, metadata: ClipMetadata
+    ) -> None:
+        """Onaylanan metaveriyle thumbnail uret; yolu render satirina
+        yaz. Render/henüz dosya yoksa sessizce atlanir (onay asil is)."""
+        if render is None or render.status != "rendered":
+            return
+        if not render.file_path or not Path(render.file_path).is_file():
+            return
+        if not self._settings.media_root:
+            return
+        text = (metadata.thumbnail_text or "").strip() or (
+            metadata.title or ""
+        ).strip()
+        rel_path = f"thumbnails/thumb_{render.id}.jpg"
+        out_path = Path(self._settings.media_root) / rel_path
+        try:
+            await compose(
+                self._settings.ffmpeg_bin,
+                render.file_path,
+                text,
+                out_path,
+            )
+        except ThumbnailError as exc:
+            raise PublishingError(f"Thumbnail olusturulamadi: {exc}") from exc
+        async with self._sessionmaker() as session:
+            row = await session.get(RenderedClip, render.id)
+            if row is None:
+                return
+            row.thumbnail_path = rel_path
+            await session.commit()
 
     async def due_channels(self) -> list[int]:
         """Connected channels whose schedule slot has arrived."""
@@ -254,7 +381,8 @@ class PublishingService:
             (
                 await session.execute(
                     sa.select(RenderedClip).where(
-                        RenderedClip.clip_candidate_id == clip_candidate_id
+                        RenderedClip.clip_candidate_id == clip_candidate_id,
+                        RenderedClip.orientation == "vertical",
                     )
                 )
             )
@@ -277,7 +405,8 @@ class PublishingService:
             (
                 await session.execute(
                     sa.select(PublishedVideo).where(
-                        PublishedVideo.clip_candidate_id == clip_candidate_id
+                        PublishedVideo.clip_candidate_id == clip_candidate_id,
+                        PublishedVideo.orientation == "vertical",
                     )
                 )
             )
@@ -307,6 +436,109 @@ class PublishingService:
             "auto_approve": bool(
                 profile and profile.settings.get("auto_approve_metadata")
             ),
+            "is_horizontal": False,
+            "reaction_source": bool(source.reaction_source),
+            "orientation": "vertical",
+        }
+
+    async def _load_full_cut_context(
+        self, session: AsyncSession, source_video_id: int
+    ) -> dict | None:
+        """Yatay tam kesit baglami: video -> kaynak -> render/metadata."""
+        video = await session.get(SourceVideo, source_video_id)
+        if video is None:
+            return None
+        source = await session.get(SourceChannel, video.source_channel_id)
+        if source is None:
+            return None
+        render = (
+            (
+                await session.execute(
+                    sa.select(RenderedClip).where(
+                        RenderedClip.source_video_id == source_video_id,
+                        RenderedClip.orientation == "horizontal",
+                        RenderedClip.clip_candidate_id.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        metadata = (
+            (
+                await session.execute(
+                    sa.select(ClipMetadata)
+                    .where(
+                        ClipMetadata.source_video_id == source_video_id,
+                        ClipMetadata.clip_candidate_id.is_(None),
+                    )
+                    .order_by(ClipMetadata.revision.desc())
+                    .limit(1)
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        # TODO(integration): PublishedVideo'da source_video_id FK'si yok
+        # (Task 0'da sema donduruldu); tam kesit yinelenen yayini su an
+        # baslik eslesmesiyle onleniyor (metaveri zinciri kaynak basina
+        # tektir). Kalici cozum sema degisikligi ister.
+        published_row = None
+        if metadata is not None:
+            revision_titles = (
+                (
+                    await session.execute(
+                        sa.select(ClipMetadata.title).where(
+                            ClipMetadata.source_video_id == source_video_id,
+                            ClipMetadata.clip_candidate_id.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if revision_titles:
+                published_row = (
+                    (
+                        await session.execute(
+                            sa.select(PublishedVideo).where(
+                                PublishedVideo.channel_id
+                                == source.channel_id,
+                                PublishedVideo.orientation == "horizontal",
+                                PublishedVideo.clip_candidate_id.is_(None),
+                                PublishedVideo.title.in_(revision_titles),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+        profile = (
+            (
+                await session.execute(
+                    sa.select(PublishingProfile).where(
+                        PublishingProfile.channel_id == source.channel_id
+                    )
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        return {
+            "candidate": None,
+            "channel_id": source.channel_id,
+            "source_authorized": source.permission_status == "authorized",
+            "render": render,
+            "metadata": metadata,
+            "published_row": published_row,
+            "already_published": published_row is not None
+            and published_row.status in ("uploaded", "verified"),
+            "auto_approve": bool(
+                profile and profile.settings.get("auto_approve_metadata")
+            ),
+            "is_horizontal": True,
+            "reaction_source": bool(source.reaction_source),
+            "orientation": "horizontal",
         }
 
     async def _ensure_row(self, context: dict) -> PublishedVideo:
@@ -314,7 +546,12 @@ class PublishingService:
         if row is None:
             async with self._sessionmaker() as session:
                 row = PublishedVideo(
-                    clip_candidate_id=context["candidate"].id,
+                    clip_candidate_id=(
+                        context["candidate"].id
+                        if context["candidate"] is not None
+                        else None
+                    ),
+                    orientation=context["orientation"],
                     channel_id=context["channel_id"],
                     title=context["metadata"].title,
                 )

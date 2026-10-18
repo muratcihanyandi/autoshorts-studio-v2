@@ -339,8 +339,14 @@ class LlmProviderService:
         schema: type[T] | None = None,
         max_tokens: int = 1024,
         http: httpx.AsyncClient | None = None,
+        system_prompt: str | None = None,
     ) -> LlmResult:
-        """Run the provider chain; validate JSON output against `schema`."""
+        """Run the provider chain; validate JSON output against `schema`.
+
+        `system_prompt` (M13 metaveri zinciri) taşınabilir olduğunda
+        sağlayıcıya sistem talimatı olarak iletilir; None davranışı
+        değiştirmez.
+        """
         chain = await self._load_chain()
         if not chain:
             raise LlmServiceError(
@@ -357,7 +363,12 @@ class LlmProviderService:
                     started = time.monotonic()
                     try:
                         text = await self._call(
-                            client, provider, api_key, prompt, max_tokens
+                            client,
+                            provider,
+                            api_key,
+                            prompt,
+                            max_tokens,
+                            system_prompt,
                         )
                         latency = int((time.monotonic() - started) * 1000)
                     except httpx.TimeoutException:
@@ -428,18 +439,19 @@ class LlmProviderService:
         api_key: str,
         prompt: str,
         max_tokens: int,
+        system_prompt: str | None = None,
     ) -> str:
         """One provider attempt; returns the response text."""
         if provider.provider_type == "openai":
             return await self._call_openai(
-                client, provider, api_key, prompt, max_tokens
+                client, provider, api_key, prompt, max_tokens, system_prompt
             )
         if provider.provider_type == "anthropic":
             return await self._call_anthropic(
-                client, provider, api_key, prompt, max_tokens
+                client, provider, api_key, prompt, max_tokens, system_prompt
             )
         return await self._call_google(
-            client, provider, api_key, prompt, max_tokens
+            client, provider, api_key, prompt, max_tokens, system_prompt
         )
 
     async def _call_openai(
@@ -449,13 +461,18 @@ class LlmProviderService:
         api_key: str,
         prompt: str,
         max_tokens: int,
+        system_prompt: str | None = None,
     ) -> str:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         response = await client.post(
             f"{provider.api_base}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": provider.model_id,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "max_tokens": max_tokens,
             },
             timeout=provider.timeout_seconds,
@@ -474,18 +491,22 @@ class LlmProviderService:
         api_key: str,
         prompt: str,
         max_tokens: int,
+        system_prompt: str | None = None,
     ) -> str:
+        body: dict = {
+            "model": provider.model_id,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system_prompt:
+            body["system"] = system_prompt
         response = await client.post(
             f"{provider.api_base}/messages",
             headers={
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
             },
-            json={
-                "model": provider.model_id,
-                "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            json=body,
             timeout=provider.timeout_seconds,
         )
         if response.status_code != 200:
@@ -502,14 +523,18 @@ class LlmProviderService:
         api_key: str,
         prompt: str,
         max_tokens: int,
+        system_prompt: str | None = None,
     ) -> str:
+        body: dict = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        if system_prompt:
+            body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         response = await client.post(
             f"{provider.api_base}/models/{provider.model_id}:generateContent",
             params={"key": api_key},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": max_tokens},
-            },
+            json=body,
             timeout=provider.timeout_seconds,
         )
         if response.status_code != 200:

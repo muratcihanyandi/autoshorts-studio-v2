@@ -10,13 +10,15 @@ app's live database is `autoshorts_studio` on the shared PostgreSQL
 instance (verified 2026-10-17 via read-only pg_stat_activity — see the
 deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 
-**Current milestone:** Milestone 12 — Production Hardening
+**Current milestone:** Milestone 13 (Characters and Multi-Platform
+Sources) COMPLETE; Milestone 12 production hardening continues in
+parallel on the Pi.
 
-**Current task:** M12 kickoff — fault-injection tests, backup/restore
-validation, security scans, repeated full-suite runs, deployment
-verification on the Pi.
+**Current task:** M13 verification done (backend 330/330, frontend
+14/14); next: Pi deployment of M13 (image rebuild + restart, migration
+0011) and M12 field verification on real workloads.
 
-**Last updated:** 2026-10-17
+**Last updated:** 2026-10-18
 
 **Primary coding agent:** GLM-5.3 via ZCode
 
@@ -824,9 +826,32 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-17 (post-M12 "connection guide + LLM management"
+Verified 2026-10-18 (post-M13 "characters + multi-platform sources"
 session) on the dev machine (Windows 11, Python 3.11.9 venv, Node
-24.13.0). Commands run from the stated directories.
+24.13.0). Commands run from the stated directories. NOTE: on this
+machine pytest must be run with file redirection, not through pipes —
+piped runs hang (known dev-env quirk).
+
+- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -v -x`
+  (output redirected to a log file)
+  - Passed: **330**, Failed: 0, Skipped: 0 in 81s (M13 added 82:
+    characters CRUD/photo 16, sources platform/reaction/manual-VOD 8,
+    settings prompt 2, character matching 12, thumbnails 11, webcam
+    photo validation +4, horizontal render +6, full-cut pipeline +10,
+    metadata prompt chain +11, dual-orientation publishing +3, plus
+    suite growth from concurrent workstreams).
+  - Real ffmpeg renders and real OpenCV detection run against local
+    fixtures; sqlite test connections enforce foreign keys.
+  - 2 pre-existing warnings (aiosqlite thread cleanup notice,
+    starlette TestClient deprecation).
+- Frontend — `cd frontend && npx vitest run`: 14 passed, 0 failed
+  (App 4, SettingsScreen 3, AutomationScreen 3, CharactersScreen 4).
+- Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0 errors
+  (1 pre-existing React Compiler advisory in SettingsScreen).
+- Secret scan — `python tools/scan_secrets.py`: clean.
+
+Previous full-suite record (2026-10-17, connection-guide + LLM
+management session):
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
   - Passed: **248**, Failed: 0, Skipped: 0 (media-tooling tests run
@@ -927,6 +952,45 @@ historical, superseded by the totals above):
 4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
+
+- What was implemented (2026-10-18, M13 "characters + multi-platform
+  sources", built via three parallel subagents per
+  `docs/plans/2026-10-18-character-system.md`): streamer characters
+  (photo upload with Haar-extracted reference face, per-character
+  system prompt, notes) with full CRUD and masked API views;
+  multi-platform sources (youtube/twitch/kick platform key, character
+  binding, reaction flag, head/tail trims) with rights records intact
+  and manual VOD import (`POST /api/sources/{id}/videos` enqueues
+  `media_process` with the URL as `import_path`; discovery stays
+  YouTube-only and reports skipped platforms); reaction-source
+  dual-orientation output — one trimmed 1920x1080 horizontal full cut
+  (subtitles never burned, RenderedClip with NULL candidate +
+  source_video set, idempotent) plus the existing vertical shorts
+  (subtitle-burned), while non-reaction sources hard-guard to vertical
+  only; metadata prompt chain character → global
+  (`metadata_system_prompt` site setting) → built-in Turkish default,
+  with new `hook`/`thumbnail_text` fields and full-cut metadata
+  generation; thumbnails composed at approval from the sharpest of
+  three probe frames with the approved text (DejaVu; ASCII-safe
+  fallback), path stored on `rendered_clips.thumbnail_path`; webcam
+  regions validated against the character's reference face (HSV+ORB
+  similarity, calibration threshold default 0.30, template-search
+  fallback, review routing unchanged when no reference exists);
+  publishing per orientation with composite uniques; frontend
+  Characters screen (channel selector, character cards with photo
+  thumbs, source add/authorize/discover/VOD actions), Settings prompt
+  textarea, guide section 3. `python-multipart` added to backend
+  requirements (photo upload). Technical debt noted in code: full-cut
+  duplicate-publish prevention is code-guarded via metadata identity
+  (PublishedVideo lacks a source_video_id FK — schema was frozen at
+  Task 0; revisit if full cuts misbehave).
+- Tests: backend 330/330 (81s, real ffmpeg/OpenCV fixtures), frontend
+  14/14, tsc clean, oxlint 0 errors, secret scan clean — see section 7.
+  Dev-env reminder: run pytest with file redirection; piped runs hang.
+- Deployment: migration `0011` runs automatically on container start;
+  Pi needs an image rebuild + app restart (push to `main` triggers
+  GHCR build). No data migration for existing rows (all new columns
+  carry defaults).
 
 - What was implemented (2026-10-17, connection-guide + LLM-management
   session, triggered by live-Pi user feedback): (1) Robustness: a

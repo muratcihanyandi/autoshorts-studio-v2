@@ -17,13 +17,22 @@ const PHASE_LABEL: Record<string, string> = {
   running: 'Çalışıyor',
 }
 
-type PlainKey = 'google_client_id' | 'oauth_redirect_base' | 'frontend_base_url'
+type PlainKey =
+  | 'google_client_id'
+  | 'oauth_redirect_base'
+  | 'frontend_base_url'
+  | 'metadata_system_prompt'
 type SecretKey =
   | 'google_client_secret'
   | 'token_encryption_key'
   | 'youtube_api_key'
 
-const PLAIN_FIELDS: { key: PlainKey; label: string; help?: string }[] = [
+const PLAIN_FIELDS: {
+  key: PlainKey
+  label: string
+  help?: string
+  multiline?: boolean
+}[] = [
   {
     key: 'google_client_id',
     label: 'Google Client ID',
@@ -38,6 +47,12 @@ const PLAIN_FIELDS: { key: PlainKey; label: string; help?: string }[] = [
     key: 'frontend_base_url',
     label: 'Arayüz Adresi',
     help: 'Bu arayüzün dışarıdan erişilen adresi; OAuth dönüşü buraya yönelenir.',
+  },
+  {
+    key: 'metadata_system_prompt',
+    label: 'Metaveri Sistem Promptu (Genel)',
+    help: 'Yapay zeka başlık/hook/açıklama/etiket üretiminde kullanılır; karakter promptu varsa onu geçer.',
+    multiline: true,
   },
 ]
 
@@ -78,6 +93,7 @@ function initForm(view: SettingsView): FormState {
       google_client_id: view.google_client_id.value,
       oauth_redirect_base: view.oauth_redirect_base.value,
       frontend_base_url: view.frontend_base_url.value,
+      metadata_system_prompt: view.metadata_system_prompt.value,
     },
     secrets: {
       google_client_secret: '',
@@ -203,20 +219,33 @@ export function SettingsScreen() {
                 karakteri gösterilir.
               </p>
               <div className="settings-grid">
-                {PLAIN_FIELDS.map(({ key, label, help }) => (
-                  <div className="field" key={key}>
+                {PLAIN_FIELDS.map(({ key, label, help, multiline }) => (
+                  <div
+                    className={multiline ? 'field field--wide' : 'field'}
+                    key={key}
+                  >
                     <label htmlFor={`set-${key}`}>
                       {label}
                       <span className="source-badge">
                         {SOURCE_LABEL[view[key].source]}
                       </span>
                     </label>
-                    <input
-                      id={`set-${key}`}
-                      value={form.plain[key]}
-                      onChange={(e) => setPlain(key, e.target.value)}
-                      autoComplete="off"
-                    />
+                    {multiline ? (
+                      <textarea
+                        id={`set-${key}`}
+                        rows={4}
+                        value={form.plain[key]}
+                        onChange={(e) => setPlain(key, e.target.value)}
+                        autoComplete="off"
+                      />
+                    ) : (
+                      <input
+                        id={`set-${key}`}
+                        value={form.plain[key]}
+                        onChange={(e) => setPlain(key, e.target.value)}
+                        autoComplete="off"
+                      />
+                    )}
                     {help && <span className="field-help">{help}</span>}
                   </div>
                 ))}

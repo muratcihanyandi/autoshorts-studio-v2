@@ -56,17 +56,25 @@ class DiscoveryService:
         return list(result.scalars().all())
 
     async def discover_for_channel(self, channel_id: int) -> dict[str, Any]:
-        """Poll every authorized source of the channel; return counters."""
+        """Poll every authorized youtube source of the channel; non-youtube
+        sources are skipped with a per-source platform note (their VODs
+        are imported manually, M13)."""
         self._client.require_configured()
         new_videos = 0
         new_excluded = 0
         sources_checked = 0
         quota_blocked = False
+        skipped_platforms: list[str] = []
 
         async with self._sessionmaker() as session:
             sources = await self._authorized_sources(session, channel_id)
 
             for source in sources:
+                # YouTube keşfi yalnızca youtube kaynaklarını yoklar;
+                # twitch/kick VOD'ları manuel içe aktarılır.
+                if source.platform != "youtube":
+                    skipped_platforms.append(source.platform)
+                    continue
                 try:
                     uploads_playlist = await self._client.get_uploads_playlist_id(
                         source.youtube_channel_id
@@ -121,6 +129,7 @@ class DiscoveryService:
                     "new_videos": new_videos,
                     "new_excluded": new_excluded,
                     "quota_blocked": quota_blocked,
+                    "skipped_platforms": skipped_platforms,
                 },
             )
             await session.commit()
@@ -130,6 +139,7 @@ class DiscoveryService:
             "new_videos": new_videos,
             "new_excluded": new_excluded,
             "quota_blocked": quota_blocked,
+            "skipped_platforms": skipped_platforms,
         }
 
     async def list_videos(

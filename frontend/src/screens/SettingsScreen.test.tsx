@@ -10,6 +10,7 @@ const settingsPayload = {
   frontend_base_url: { value: 'http://ui-test:1478', source: 'environment' },
   youtube_api_key: { configured: true, source: 'database', hint: '9876' },
   daily_quota_units: { value: 10000, source: 'environment' },
+  metadata_system_prompt: { value: '', source: 'unset' },
 }
 
 const overviewPayload = {

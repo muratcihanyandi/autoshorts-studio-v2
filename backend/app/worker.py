@@ -82,6 +82,19 @@ def build_handlers(
         pipeline = VerticalPipelineService(sessionmaker, effective)
         return await pipeline.run(clip_candidate_id)
 
+    async def clip_render_full_cut(payload: dict[str, Any]) -> dict:
+        # M13: reaksiyon kaynagi videonun yatay tam kesidi.
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        source_video_id = payload.get("source_video_id")
+        if not isinstance(source_video_id, int):
+            raise ValueError("payload.source_video_id gerekli.")
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        pipeline = VerticalPipelineService(sessionmaker, effective)
+        return await pipeline.run_full_cut(source_video_id)
+
     async def subtitle_correct(payload: dict[str, Any]) -> dict:
         from app.services.llm_service import LlmProviderService
         from app.services.subtitle_correction import SubtitleCorrectionService
@@ -98,11 +111,24 @@ def build_handlers(
         from app.services.metadata_service import MetadataService
 
         clip_candidate_id = payload.get("clip_candidate_id")
-        if not isinstance(clip_candidate_id, int):
-            raise ValueError("payload.clip_candidate_id gerekli.")
+        source_video_id = payload.get("source_video_id")
+        if not isinstance(clip_candidate_id, int) and not isinstance(
+            source_video_id, int
+        ):
+            raise ValueError(
+                "payload.clip_candidate_id veya payload.source_video_id "
+                "gerekli."
+            )
+        # Efektif ayarlar: DB'de saklanan genel metaveri promptu da
+        # cozumlenir (M13 prompt zinciri).
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
         llm = LlmProviderService(sessionmaker, settings)
-        service = MetadataService(sessionmaker, llm)
-        return await service.generate(clip_candidate_id)
+        service = MetadataService(sessionmaker, llm, settings=effective)
+        if isinstance(clip_candidate_id, int):
+            return await service.generate(clip_candidate_id)
+        return await service.generate_full_cut(source_video_id)
 
     async def publish_clip(payload: dict[str, Any]) -> dict:
         from app.services.publishing_service import PublishingService
@@ -135,6 +161,7 @@ def build_handlers(
         "source_discover": source_discover,
         "media_process": media_process,
         "clip_render": clip_render,
+        "clip_render_full_cut": clip_render_full_cut,
         "subtitle_correct": subtitle_correct,
         "metadata_generate": metadata_generate,
         "publish_clip": publish_clip,
@@ -280,7 +307,9 @@ class JobWorker:
     async def enqueue_render_jobs(self) -> int:
         """Periodic render feed: one clip_render job per candidate that
         is not rendered yet (rendered/review/failed rows are excluded
-        by the NOT EXISTS subquery; dedupe guards repeated ticks)."""
+        by the NOT EXISTS subquery; dedupe guards repeated ticks).
+        M13: reaction sources additionally feed one horizontal
+        full-cut render job per source video without such a row."""
         interval = self._settings.planned_poll_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -307,9 +336,36 @@ class JobWorker:
                 .scalars()
                 .all()
             )
+            fullcut_video_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT sv.id FROM source_videos sv"
+                            " JOIN source_channels sc"
+                            " ON sv.source_channel_id = sc.id"
+                            " WHERE sc.reaction_source"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM rendered_clips rc"
+                            " WHERE rc.source_video_id = sv.id"
+                            " AND rc.orientation = 'horizontal')"
+                            " ORDER BY sv.id"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
         for candidate_id in candidate_ids:
             job = await self._jobs.enqueue(
                 "clip_render", {"clip_candidate_id": candidate_id}, priority=8
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        for video_id in fullcut_video_ids:
+            job = await self._jobs.enqueue(
+                "clip_render_full_cut",
+                {"source_video_id": video_id},
+                priority=8,
             )
             if job.status == "queued" and job.attempts == 0:
                 added += 1
@@ -319,7 +375,9 @@ class JobWorker:
         """Feed the M9 content stages: subtitle correction for assets
         with an uncorrected transcript, metadata for rendered clips
         without metadata. Interval-gated like the other feeds; job
-        dedupe guards repeated ticks."""
+        dedupe guards repeated ticks. M13: horizontal full cuts
+        (candidate NULL, source_video set) get their metadata job keyed
+        by source_video_id."""
         interval = self._settings.planned_poll_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -350,9 +408,28 @@ class JobWorker:
                         text(
                             "SELECT rc.clip_candidate_id FROM rendered_clips rc"
                             " WHERE rc.status = 'rendered'"
+                            " AND rc.clip_candidate_id IS NOT NULL"
                             " AND NOT EXISTS ("
                             " SELECT 1 FROM clip_metadata cm"
                             " WHERE cm.clip_candidate_id = rc.clip_candidate_id)"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            fullcut_video_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT rc.source_video_id FROM rendered_clips rc"
+                            " WHERE rc.status = 'rendered'"
+                            " AND rc.clip_candidate_id IS NULL"
+                            " AND rc.orientation = 'horizontal'"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.source_video_id = rc.source_video_id"
+                            " AND cm.clip_candidate_id IS NULL)"
                         )
                     )
                 )
@@ -368,6 +445,12 @@ class JobWorker:
         for candidate_id in candidate_ids:
             job = await self._jobs.enqueue(
                 "metadata_generate", {"clip_candidate_id": candidate_id}, priority=7
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        for video_id in fullcut_video_ids:
+            job = await self._jobs.enqueue(
+                "metadata_generate", {"source_video_id": video_id}, priority=7
             )
             if job.status == "queued" and job.attempts == 0:
                 added += 1

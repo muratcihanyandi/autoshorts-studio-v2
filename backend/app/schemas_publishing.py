@@ -1,4 +1,4 @@
-"""Publishing schemas (M10)."""
+"""Publishing schemas (M10, M13 orientation-aware)."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,14 +7,17 @@ from pydantic import BaseModel, ConfigDict
 
 
 class PublishResult(BaseModel):
-    clip_candidate_id: int
+    # Dikey yayinlarda aday dolu; yatay tam kesitlerde NULL + video.
+    clip_candidate_id: int | None = None
+    source_video_id: int | None = None
     youtube_video_id: str = ""
     visibility: str = "private"
     skipped: bool = False
 
 
 class ApproveResult(BaseModel):
-    clip_candidate_id: int
+    clip_candidate_id: int | None = None
+    source_video_id: int | None = None
     revision: int
 
 
@@ -22,7 +25,8 @@ class PublishedVideoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    clip_candidate_id: int
+    clip_candidate_id: int | None
+    orientation: str = "vertical"
     channel_id: int
     youtube_video_id: str
     visibility: str

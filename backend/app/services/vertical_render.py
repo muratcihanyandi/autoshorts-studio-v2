@@ -1,14 +1,18 @@
-"""9:16 vertical rendering (M8).
+"""9:16 vertical rendering (M8) and 16:9 horizontal full cuts (M13).
 
-Layout: the output is 1080x1920 — the top fraction is the webcam crop
-(padded face box, aspect-corrected to the section), the rest is a
-center crop of the source video. Subtitles burn into the bottom band
-of the video section with ASS-style positioning, so they can never
-overlap the webcam section.
+Vertical layout: the output is 1080x1920 — the top fraction is the
+webcam crop (padded face box, aspect-corrected to the section), the
+rest is a center crop of the source video. Subtitles burn into the
+bottom band of the video section with ASS-style positioning, so they
+can never overlap the webcam section.
+
+Horizontal full cuts (reaction sources) are 1920x1080 scale+pad
+renders with input seeking (-ss/-to) for fast trimming; subtitles are
+NEVER burned there and audio is preserved.
 
 Rendering is one ffmpeg pass; validation re-probes the output
 (resolution, duration tolerance, audio presence, A/V stream-duration
-sync). Layout math is pure and unit-tested; the render test runs real
+sync). Layout math is pure and unit-tested; the render tests run real
 ffmpeg.
 """
 from __future__ import annotations
@@ -21,6 +25,8 @@ from app.services.media_probe import MediaProbeError, run_ffprobe
 
 OUT_W = 1080
 OUT_H = 1920
+HORIZONTAL_W = 1920
+HORIZONTAL_H = 1080
 DEFAULT_TOP_FRACTION = 0.4
 DEFAULT_WEBCAM_PADDING = 0.35
 SUBTITLE_MARGIN_V = 80  # alt bantta kenardan px
@@ -217,11 +223,86 @@ class ValidationReport:
     problems: list[str]
 
 
+def build_horizontal_filter() -> str:
+    """1920x1080 scale+pad (aspect preserved, letterboxed); altyazi
+    FIRMASIZ — yatay tam kesitlerde asla yakilmaz."""
+    return (
+        f"scale={HORIZONTAL_W}:{HORIZONTAL_H}"
+        ":force_original_aspect_ratio=decrease,"
+        f"pad={HORIZONTAL_W}:{HORIZONTAL_H}:(ow-iw)/2:(oh-ih)/2"
+    )
+
+
+async def render_horizontal(
+    ffmpeg_bin: str,
+    source_path: str | Path,
+    out_path: str | Path,
+    *,
+    trim_start: float = 0.0,
+    trim_end: float = 0.0,
+    source_duration: float | None = None,
+    timeout: float = 1800.0,
+) -> Path:
+    """Render the trimmed 16:9 full cut; raises on ffmpeg failure.
+
+    Input seeking (-ss/-to, both in the source's own timeline) keeps
+    trimming fast; -to is the source duration minus the end trim and
+    is omitted when the duration is unknown (no end trim then).
+    """
+    if trim_start < 0 or trim_end < 0:
+        raise VerticalRenderError("Budama degerleri negatif olamaz.")
+    if source_duration is not None:
+        if source_duration <= 0:
+            raise VerticalRenderError("Kaynak video suresi gecersiz.")
+        if source_duration - trim_end <= trim_start:
+            raise VerticalRenderError("Gecersiz budama araligi.")
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_bin,
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-ss", f"{trim_start:.3f}",
+    ]
+    if source_duration is not None:
+        cmd += ["-to", f"{source_duration - trim_end:.3f}"]
+    cmd += [
+        "-i", str(source_path),
+        "-vf", build_horizontal_filter(),
+        "-map", "0:v:0",
+        "-map", "0:a?",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        str(out),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise VerticalRenderError("Render zaman asimina ugradi.") from None
+    if proc.returncode != 0:
+        tail = stderr.decode("utf-8", "replace").strip()[-500:]
+        raise VerticalRenderError(f"Render basarisiz: {tail}")
+    if not out.is_file() or out.stat().st_size == 0:
+        raise VerticalRenderError("Render cikti dosyasi olusmadi.")
+    return out
+
+
 async def validate_output(
     ffprobe_bin: str,
     out_path: str | Path,
     expected_duration: float,
     *,
+    expected_size: tuple[int, int] = (OUT_W, OUT_H),
     duration_tolerance: float = 0.75,
     sync_tolerance: float = 0.25,
 ) -> ValidationReport:
@@ -260,8 +341,11 @@ async def validate_output(
         except (TypeError, ValueError):
             av_delta = 0.0
 
-    if (width, height) != (OUT_W, OUT_H):
-        problems.append(f"cozunurluk {width}x{height}, beklenen {OUT_W}x{OUT_H}")
+    if (width, height) != expected_size:
+        problems.append(
+            f"cozunurluk {width}x{height}, beklenen "
+            f"{expected_size[0]}x{expected_size[1]}"
+        )
     if abs(duration - expected_duration) > duration_tolerance:
         problems.append(
             f"sure {duration:.2f}s, beklenen {expected_duration:.2f}s"

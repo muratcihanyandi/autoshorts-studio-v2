@@ -46,6 +46,7 @@ def test_discover_records_new_videos_once(
         "new_videos": 2,
         "new_excluded": 0,
         "quota_blocked": False,
+        "skipped_platforms": [],
     }
 
     videos = client_youtube.get(f"/api/channels/{channel_id}/videos").json()
@@ -85,6 +86,7 @@ def test_unauthorized_source_not_polled(
         "new_videos": 0,
         "new_excluded": 0,
         "quota_blocked": False,
+        "skipped_platforms": [],
     }
     assert YOUTUBE_MOCK_CALLS["channels"] == 0
 

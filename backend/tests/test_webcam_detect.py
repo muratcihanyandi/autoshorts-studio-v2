@@ -4,11 +4,20 @@ Real-detection tests run actual OpenCV on generated media: the face
 stream fixture (public-domain NASA portrait composited over a dark
 background with slight jitter) and the M7 synthetic color video (no
 faces). Pure clustering math is tested on synthetic boxes.
+
+M13: character-face validation tests use the same PD photo as BOTH
+the character reference and the face inside the test frame.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from app.services.vertical_pipeline import (
+    DEFAULT_CHARACTER_MATCH_THRESHOLD,
+    apply_character_validation,
+)
 from app.services.webcam_detect import (
     Cluster,
     Detection,
@@ -157,3 +166,103 @@ class TestMultiSeedDetection:
         assert result.frames_sampled == 16
         assert result.region is not None
         assert result.confidence >= 0.5
+
+
+@pytest.fixture(scope="module")
+def charval_face_video(tmp_path_factory):
+    return make_face_stream_video(
+        tmp_path_factory.mktemp("charval") / "face_stream.mp4"
+    )
+
+
+@pytest.fixture(scope="module")
+def pd_reference():
+    import cv2
+
+    from app.services.character_match import extract_reference
+
+    photo = cv2.imread(
+        str(Path(__file__).parent / "assets" / "face_pd.jpg")
+    )
+    reference = extract_reference(photo)
+    assert reference is not None  # fixture on kosulu: fotografda yuz var
+    return reference
+
+
+class TestCharacterValidation:
+    """M13: algilanan webcam bolgesi karakterin referans yuzuyle
+    dogrulanir. PD yuz fotografi hem karakter fotografi hem karedeki
+    yuz olarak kullanilir (ayni kisi -> gecer)."""
+
+    def _frame_at(self, video, seconds: float):
+        frames = sample_frames(video, seconds, seconds + 1.0)
+        assert frames, "kare okunamadi"
+        return frames[0][1]
+
+    def test_pd_face_region_validates(
+        self, charval_face_video, pd_reference
+    ):
+        # Kesfedilen tipik bolge + ayni kisinin referans yuzu -> gecer
+        frame = self._frame_at(charval_face_video, 1.0)
+        region, confidence, reason = apply_character_validation(
+            (280, 155, 85, 85),
+            0.8,
+            frame,
+            pd_reference,
+            DEFAULT_CHARACTER_MATCH_THRESHOLD,
+        )
+        assert region is not None
+        assert reason is None
+        assert confidence == 0.8  # gecen bolge tespit guvenini korur
+
+    def test_nonface_region_falls_to_review(self, pd_reference):
+        # Yuz icerMEyen kare: benzerlik ve arama da basarisiz -> review
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            plain = make_test_media(Path(tmp) / "plain.mp4")
+            frame = self._frame_at(plain, 2.0)
+        region, confidence, reason = apply_character_validation(
+            (280, 155, 85, 85),
+            0.8,
+            frame,
+            pd_reference,
+            DEFAULT_CHARACTER_MATCH_THRESHOLD,
+        )
+        assert region is None
+        assert confidence < DEFAULT_CHARACTER_MATCH_THRESHOLD
+        assert reason is not None and "karakter" in reason
+
+    def test_wrong_region_rescued_by_search(
+        self, charval_face_video, pd_reference
+    ):
+        # Yanlis bolge (arka plan) verildiginde sablon aramasi yuzun
+        # yerini bulur ve bolgeyi duzeltir.
+        frame = self._frame_at(charval_face_video, 1.0)
+        region, confidence, reason = apply_character_validation(
+            (900, 500, 100, 100),
+            0.8,
+            frame,
+            pd_reference,
+            DEFAULT_CHARACTER_MATCH_THRESHOLD,
+        )
+        assert region is not None
+        assert reason is None
+        # Kurtarilan bolge yuzun bilinen mahallesini kapsamali
+        x, y, w, h = region
+        assert x <= 280 and y <= 155
+        assert x + w >= 365 and y + h >= 240
+
+    def test_region_outside_frame_rejected(
+        self, charval_face_video, pd_reference
+    ):
+        frame = self._frame_at(charval_face_video, 1.0)
+        region, _, reason = apply_character_validation(
+            (5000, 5000, 80, 80),
+            0.8,
+            frame,
+            pd_reference,
+            DEFAULT_CHARACTER_MATCH_THRESHOLD,
+        )
+        assert region is None
+        assert reason is not None

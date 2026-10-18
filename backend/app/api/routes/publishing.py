@@ -61,6 +61,40 @@ async def approve_metadata(
     )
 
 
+@router.post(
+    "/videos/{source_video_id}/approve", response_model=ApproveResult
+)
+async def approve_full_cut(
+    request: Request, source_video_id: int
+) -> ApproveResult:
+    """Approve the horizontal full-cut metadata of a source video (M13)."""
+    service = _service(request)
+    try:
+        metadata = await service.approve_full_cut(source_video_id)
+    except PublishingError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ApproveResult(
+        source_video_id=source_video_id, revision=metadata.revision
+    )
+
+
+@router.post(
+    "/videos/{source_video_id}/publish", response_model=PublishResult
+)
+async def publish_full_cut(
+    request: Request, source_video_id: int
+) -> PublishResult:
+    """Publish the horizontal full cut of a reaction source video
+    (guards still apply: rights, render, approved metadata, once per
+    source video)."""
+    service = _service(request)
+    try:
+        result = await service.publish_full_cut(source_video_id)
+    except PublishingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PublishResult(**result)
+
+
 @router.get(
     "/channels/{channel_id}/published", response_model=PublishedVideosOut
 )

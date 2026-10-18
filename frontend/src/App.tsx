@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { OverviewScreen } from './screens/OverviewScreen'
 import { ChannelsScreen } from './screens/ChannelsScreen'
+import { CharactersScreen } from './screens/CharactersScreen'
 import { MediaLibraryScreen } from './screens/MediaLibraryScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { AutomationScreen } from './screens/AutomationScreen'
@@ -17,6 +18,7 @@ function App() {
         <Route element={<AppShell />}>
           <Route index element={<OverviewScreen />} />
           <Route path="kanallar" element={<ChannelsScreen />} />
+          <Route path="karakterler" element={<CharactersScreen />} />
           <Route path="medya" element={<MediaLibraryScreen />} />
           <Route path="takvim" element={<CalendarScreen />} />
           <Route path="otomasyon" element={<AutomationScreen />} />

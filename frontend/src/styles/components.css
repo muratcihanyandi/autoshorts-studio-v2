@@ -395,11 +395,41 @@
   border-radius: var(--radius-control);
 }
 
+/* metin alanları: girdi diliyle aynı, dikey boyutlandırılabilir */
+.field textarea {
+  background: var(--paper-white);
+  border: 1px solid var(--plate-line);
+  color: var(--plate-ink);
+  padding: 9px 12px;
+  font: inherit;
+  border-radius: var(--radius-control);
+  resize: vertical;
+  min-height: 74px;
+}
+
 .field input:focus-visible,
-.field select:focus-visible {
+.field select:focus-visible,
+.field textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
+}
+
+/* onay kutusu: girdi dolgusu olmadan, işaret rengiyle */
+.field input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--accent-deep);
+}
+
+.field .check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--plate-ink);
+  cursor: pointer;
 }
 
 /* --- butonlar --- */
@@ -504,6 +534,11 @@
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
   margin: var(--space-4) 0;
+}
+
+/* tam satır kaplayan form alanı (uzun metin alanları) */
+.settings-grid .field--wide {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 720px) {
@@ -655,4 +690,119 @@
 .guide-table td {
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
   font-size: 12.5px;
+}
+
+/* --- karakter ekranı --- */
+.character-form {
+  max-width: 760px;
+}
+
+.character-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-bottom: 1px solid #eef2f6;
+}
+
+.character-card:last-child {
+  border-bottom: none;
+}
+
+.character-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.character-head .channel-actions {
+  margin-left: auto;
+}
+
+.character-photo {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-control);
+  object-fit: cover;
+  border: 1px solid var(--plate-line);
+  flex-shrink: 0;
+}
+
+.character-photo--empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.character-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.character-title strong {
+  font-size: 14px;
+  color: var(--plate-ink);
+}
+
+.character-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.character-badges .source-badge,
+.source-row .source-badge {
+  margin-left: 0;
+}
+
+.character-sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--plate-ink);
+  padding: 8px 12px;
+  background: var(--page-bg);
+  border-radius: var(--radius-control);
+}
+
+.source-row small {
+  color: var(--plate-muted);
+}
+
+.source-row .save-ok {
+  margin-left: auto;
+}
+
+.vod-form {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  width: 100%;
+  padding-top: var(--space-2);
+}
+
+.vod-form .field {
+  flex: 1 1 180px;
+}
+
+.source-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 640px;
 }

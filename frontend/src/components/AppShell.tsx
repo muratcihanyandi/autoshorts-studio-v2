@@ -4,6 +4,7 @@ import logoUrl from '../assets/brand/logo-dark-bg.svg'
 const NAV_ITEMS = [
   { to: '/', label: 'Genel Bakış', end: true },
   { to: '/kanallar', label: 'Kanallar' },
+  { to: '/karakterler', label: 'Karakterler' },
   { to: '/medya', label: 'Medya Kütüphanesi' },
   { to: '/takvim', label: 'Takvim' },
   { to: '/otomasyon', label: 'Otomasyon' },

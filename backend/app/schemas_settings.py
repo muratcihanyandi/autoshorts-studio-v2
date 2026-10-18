@@ -45,6 +45,7 @@ class SettingsOut(BaseModel):
     frontend_base_url: PlainSettingOut
     youtube_api_key: SecretSettingOut
     daily_quota_units: IntSettingOut
+    metadata_system_prompt: PlainSettingOut
 
 
 class SettingsUpdate(BaseModel):
@@ -59,3 +60,4 @@ class SettingsUpdate(BaseModel):
     frontend_base_url: str | None = None
     youtube_api_key: str | None = None
     daily_quota_units: int | None = None
+    metadata_system_prompt: str | None = None

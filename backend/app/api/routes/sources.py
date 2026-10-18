@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.api.routes.settings import effective_settings
 from app.schemas_sources import (
     DiscoverResult,
+    ManualVideoCreate,
     PlanningResult,
     SourceCreate,
     SourceOut,
@@ -18,6 +19,7 @@ from app.schemas_sources import (
 )
 from app.services.channel_service import ChannelService
 from app.services.discovery_service import DiscoveryService
+from app.services.job_service import JobService
 from app.services.planning_service import PlanningService
 from app.services.source_service import SourceService, SourceServiceError
 from app.services.webcam_calibration import (
@@ -39,10 +41,12 @@ def _services(request: Request) -> tuple[SourceService, ChannelService]:
     return SourceService(sessionmaker), ChannelService(sessionmaker)
 
 
-def _out_or_404(source) -> SourceOut:
-    if source is None:
-        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
-    return SourceOut.model_validate(source)
+def _with_character_name(source, names: dict[int, str]) -> SourceOut:
+    out = SourceOut.model_validate(source)
+    out.character_name = (
+        names.get(source.character_id) if source.character_id else None
+    )
+    return out
 
 
 @router.get("/channels/{channel_id}/sources", response_model=SourcesOut)
@@ -51,11 +55,14 @@ async def list_sources(request: Request, channel_id: int) -> SourcesOut:
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     sources = await sources_service.list_sources(channel_id)
+    names = await sources_service.character_names(
+        [s.character_id for s in sources]
+    )
     authorized = sum(
         1 for s in sources if s.permission_status == "authorized"
     )
     return SourcesOut(
-        sources=[SourceOut.model_validate(s) for s in sources],
+        sources=[_with_character_name(s, names) for s in sources],
         total=len(sources),
         authorized=authorized,
     )
@@ -78,7 +85,8 @@ async def add_source(
         raise HTTPException(
             status_code=exc.status_code, detail=str(exc)
         ) from exc
-    return SourceOut.model_validate(source)
+    names = await sources_service.character_names([source.character_id])
+    return _with_character_name(source, names)
 
 
 @router.patch("/sources/{source_id}", response_model=SourceOut)
@@ -86,7 +94,16 @@ async def update_source(
     request: Request, source_id: int, data: SourceUpdate
 ) -> SourceOut:
     sources_service, _ = _services(request)
-    return _out_or_404(await sources_service.update_source(source_id, data))
+    try:
+        source = await sources_service.update_source(source_id, data)
+    except SourceServiceError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+    if source is None:
+        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+    names = await sources_service.character_names([source.character_id])
+    return _with_character_name(source, names)
 
 
 @router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -94,6 +111,33 @@ async def delete_source(request: Request, source_id: int) -> None:
     sources_service, _ = _services(request)
     if not await sources_service.delete_source(source_id):
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+
+
+@router.post(
+    "/sources/{source_id}/videos",
+    response_model=SourceVideoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_manual_video(
+    request: Request, source_id: int, data: ManualVideoCreate
+) -> SourceVideoOut:
+    """Manuel VOD içe aktarımı (twitch/kick): kayıt 'planned' olarak
+    doğar ve media_process işini kuyruklar (URL içe aktarım yolu)."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı; kaynak yönetimi kapalı.",
+        )
+    sources_service = SourceService(sessionmaker)
+    jobs = JobService(sessionmaker, request.app.state.settings)
+    try:
+        video = await sources_service.add_manual_video(source_id, data, jobs)
+    except SourceServiceError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+    return SourceVideoOut.model_validate(video)
 
 
 @router.post("/channels/{channel_id}/discover", response_model=DiscoverResult)

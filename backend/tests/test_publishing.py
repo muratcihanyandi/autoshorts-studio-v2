@@ -66,9 +66,13 @@ async def _seed(
     auto_approve=False,
     render_status="rendered",
     credential=True,
+    reaction=False,
+    full_cut=False,
 ) -> tuple[int, int]:
     """Baglam: kanal(bagli) -> kaynak -> video -> asset -> aday ->
-    render + metaveri(+profil); (channel_id, candidate_id)."""
+    render + metaveri(+profil); (channel_id, candidate_id).
+    M13: reaction=True kaynak reaksiyon kaynagi yapar; full_cut=True
+    ayrica yatay tam kesit render + metaveri satirlarini ekler."""
     async with sessionmaker() as session:
         channel = Channel(name="Kanal", status="connected")
         session.add(channel)
@@ -78,6 +82,7 @@ async def _seed(
             youtube_channel_id="UCkaynak",
             title="Kaynak",
             permission_status=source_status,
+            reaction_source=reaction,
         )
         session.add(source)
         await session.flush()
@@ -121,6 +126,7 @@ async def _seed(
             session.add(
                 RenderedClip(
                     clip_candidate_id=candidate.id,
+                    orientation="vertical",
                     status=render_status,
                     file_path=str(render_file or "/edited/1.mp4"),
                 )
@@ -133,6 +139,36 @@ async def _seed(
                     title="Yayinlanacak Baslik",
                     description="Bu kesitin aciklamasi yeterince uzun.",
                     tags=["kesit"],
+                    status=metadata_status,
+                )
+            )
+        if full_cut:
+            # Yatay tam kesit: aday NULL, video dolu.
+            full_cut_file = (
+                tmp_path / "edited" / f"video_{video.id}_horizontal.mp4"
+                if tmp_path is not None
+                else None
+            )
+            if full_cut_file is not None:
+                full_cut_file.parent.mkdir(parents=True, exist_ok=True)
+                full_cut_file.write_bytes(b"FAKE_MP4_CONTENT")
+            session.add(
+                RenderedClip(
+                    clip_candidate_id=None,
+                    source_video_id=video.id,
+                    orientation="horizontal",
+                    status="rendered",
+                    file_path=str(full_cut_file or "/edited/h.mp4"),
+                )
+            )
+            session.add(
+                ClipMetadata(
+                    clip_candidate_id=None,
+                    source_video_id=video.id,
+                    revision=1,
+                    title="Tam Kesit Basligi",
+                    description="Reaksiyon videosunun tam kesit aciklamasi.",
+                    tags=["reaksiyon"],
                     status=metadata_status,
                 )
             )
@@ -588,3 +624,159 @@ class TestPublishingApi:
             assert body["total"] == 1
             assert body["videos"][0]["status"] == "verified"
             assert body["videos"][0]["visibility"] == "private"
+
+
+class TestOrientationPublishing:
+    """M13: yayin yone gore — dikey aday + yatay tam kesit iki ayri
+    PublishedVideo satiri; yinelenen yayin reddedilir."""
+
+    def test_both_orientations_publish_as_distinct_rows(self, tmp_path):
+        from app.services.publishing_service import PublishingService
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                _, candidate_id = await _seed(
+                    sessionmaker,
+                    settings.token_encryption_key,
+                    tmp_path,
+                    reaction=True,
+                    full_cut=True,
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = PublishingService(sessionmaker, settings)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(youtube_handler())
+                ) as http:
+                    vertical = await service.publish_clip(
+                        candidate_id, http=http
+                    )
+                    horizontal = await service.publish_full_cut(
+                        video_id, http=http
+                    )
+                    # Kabul kriteri: ikisinin de yinelenen yayini reddi.
+                    vertical_again = await service.publish_clip(
+                        candidate_id, http=http
+                    )
+                    horizontal_again = await service.publish_full_cut(
+                        video_id, http=http
+                    )
+                return (
+                    vertical,
+                    horizontal,
+                    vertical_again,
+                    horizontal_again,
+                )
+            finally:
+                await engine.dispose()
+
+        vertical, horizontal, v_again, h_again = _run(scenario())
+        assert vertical["youtube_video_id"] == "yt-vid-123"
+        assert vertical["clip_candidate_id"] is not None
+        assert horizontal["youtube_video_id"] == "yt-vid-123"
+        assert horizontal["source_video_id"] is not None
+        assert v_again.get("skipped") is True
+        assert h_again.get("skipped") is True
+
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m10.db")
+        with engine.connect() as conn:
+            rows = conn.execute(
+                sa.text(
+                    "SELECT clip_candidate_id, orientation, status"
+                    " FROM published_videos ORDER BY id"
+                )
+            ).all()
+        engine.dispose()
+        assert len(rows) == 2  # iki ayri satir
+        assert rows[0][1] == "vertical" and rows[0][0] is not None
+        assert rows[1][1] == "horizontal" and rows[1][0] is None
+        assert all(row[2] == "verified" for row in rows)
+
+    def test_full_cut_publish_refused_for_non_reaction(self, tmp_path):
+        from app.services.publishing_service import (
+            PublishingError,
+            PublishingService,
+        )
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                # Reaksiyon OLMAYAN kaynaga zorla tam kesit satiri ekle:
+                # guvenlik yine de yayini reddetmeli.
+                await _seed(
+                    sessionmaker,
+                    settings.token_encryption_key,
+                    tmp_path,
+                    full_cut=True,
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = PublishingService(sessionmaker, settings)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(youtube_handler())
+                ) as http:
+                    try:
+                        await service.publish_full_cut(video_id, http=http)
+                        error = None
+                    except PublishingError as exc:
+                        error = str(exc)
+                return error
+            finally:
+                await engine.dispose()
+
+        error = _run(scenario())
+        assert error is not None and "reaksiyon" in error
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m10.db")
+        with engine.connect() as conn:
+            count = conn.execute(
+                sa.text("SELECT COUNT(*) FROM published_videos")
+            ).scalar()
+        engine.dispose()
+        assert count == 0  # guvenlik yayini tamamen engelledi
+
+    def test_full_cut_publish_requires_render_and_metadata(self, tmp_path):
+        from app.services.publishing_service import (
+            PublishingError,
+            PublishingService,
+        )
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                # Reaksiyon kaynagi ama tam kesit render/metaveri YOK.
+                _, candidate_id = await _seed(
+                    sessionmaker,
+                    settings.token_encryption_key,
+                    tmp_path,
+                    reaction=True,
+                )
+                async with sessionmaker() as session:
+                    video_id = (
+                        await session.execute(
+                            sa.select(SourceVideo.id).limit(1)
+                        )
+                    ).scalar_one()
+                service = PublishingService(sessionmaker, settings)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(youtube_handler())
+                ) as http:
+                    try:
+                        await service.publish_full_cut(video_id, http=http)
+                        error = None
+                    except PublishingError as exc:
+                        error = str(exc)
+                return error
+            finally:
+                await engine.dispose()
+
+        error = _run(scenario())
+        assert error is not None and "render" in error
