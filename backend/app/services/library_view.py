@@ -53,13 +53,23 @@ class LibraryViewService:
         self._settings = settings
 
     async def media_library(
-        self, limit: int = 60, offset: int = 0
+        self,
+        limit: int = 60,
+        offset: int = 0,
+        include_excluded: bool = False,
     ) -> dict[str, Any]:
         async with self._sessionmaker() as session:
+            # Kuralin reddettigi (Hariç) videolar varsayilan listede
+            # kalabalik yapmaz; yalnizca 'Haric' filtresi isteyince gelir.
+            visible: list[Any] = (
+                [] if include_excluded else [SourceVideo.status != "excluded"]
+            )
             total = (
                 (
                     await session.execute(
-                        sa.select(sa.func.count()).select_from(SourceVideo)
+                        sa.select(sa.func.count())
+                        .select_from(SourceVideo)
+                        .where(*visible)
                     )
                 ).scalar()
                 or 0
@@ -79,6 +89,7 @@ class LibraryViewService:
                         .outerjoin(
                             MediaAsset, MediaAsset.source_video_id == SourceVideo.id
                         )
+                        .where(*visible)
                         .order_by(SourceVideo.id.desc())
                         .limit(limit)
                         .offset(offset)
@@ -98,7 +109,7 @@ class LibraryViewService:
             ]
 
             clips, clips_total = await self._clips(session)
-            summary = await self._summary(session)
+            summary = await self._summary(session, include_excluded)
 
         return {
             "sources": sources,
@@ -274,7 +285,9 @@ class LibraryViewService:
         return clips, int(total)
 
     @staticmethod
-    async def _summary(session: AsyncSession) -> dict[str, int]:
+    async def _summary(
+        session: AsyncSession, include_excluded: bool = False
+    ) -> dict[str, int]:
         async def _count(statement: Any) -> int:
             return int((await session.execute(statement)).scalar() or 0)
 
@@ -305,7 +318,15 @@ class LibraryViewService:
             )
         )
         sources = await _count(
-            sa.select(sa.func.count()).select_from(SourceVideo)
+            sa.select(sa.func.count())
+            .select_from(SourceVideo)
+            .where(
+                *(
+                    []
+                    if include_excluded
+                    else [SourceVideo.status != "excluded"]
+                )
+            )
         )
         return {
             "sources_total": sources,

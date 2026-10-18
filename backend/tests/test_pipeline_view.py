@@ -330,6 +330,43 @@ class TestLibraryView:
         assert clip["orientation"] == "vertical"
         assert result["summary"]["shorts_ready"] == 1
 
+    def test_excluded_hidden_by_default(self, tmp_path):
+        """Kabul kriteri: kuralin hariç tuttugu videolar varsayilan
+        listede gorunmez; 'Haric' filtresi isteyince listelenir."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _view_env(tmp_path)
+            try:
+                _seed(db)
+                eng = sa.create_engine(f"sqlite:///{db}")
+                with eng.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET status='excluded' "
+                            "WHERE id=3"
+                        )
+                    )
+                eng.dispose()
+                service = LibraryViewService(sessionmaker, settings)
+                default = await service.media_library()
+                with_excluded = await service.media_library(
+                    include_excluded=True
+                )
+                return default, with_excluded
+            finally:
+                await engine.dispose()
+
+        default, with_excluded = asyncio.run(scenario())
+        default_ids = [s["id"] for s in default["sources"]]
+        assert 3 not in default_ids
+        assert len(default_ids) == 2
+        assert default["sources_total"] == 2
+        assert default["summary"]["sources_total"] == 2
+        tags = {s["id"]: s["tag"] for s in with_excluded["sources"]}
+        assert tags[3] == "#excluded"
+        assert with_excluded["sources_total"] == 3
+        assert with_excluded["summary"]["sources_total"] == 3
+
 
 class TestAuditView:
     def test_pagination_and_categories(self, tmp_path):

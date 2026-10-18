@@ -17,7 +17,7 @@ const TAG_VIEW: Record<string, { tone: string; label: string }> = {
   '#excluded': { tone: 'idle', label: 'Hariç' },
 }
 
-/** Kullanıcının etiket filtresi: null = tümü. */
+/** Kullanıcının etiket filtresi: null = tümü (hariçler arka uçta gizli). */
 const FILTERS: { tag: string | null; label: string }[] = [
   { tag: null, label: 'Tümü' },
   { tag: '#queued', label: 'Sırada' },
@@ -25,6 +25,7 @@ const FILTERS: { tag: string | null; label: string }[] = [
   { tag: '#processing', label: 'İşleniyor' },
   { tag: '#done', label: 'Stokta' },
   { tag: '#error', label: 'Hata' },
+  { tag: '#excluded', label: 'Hariç' },
 ]
 
 const CLIP_STATUS_VIEW: Record<string, { tone: string; label: string }> = {
@@ -119,8 +120,8 @@ export function MediaLibraryScreen() {
   const [statusBusy, setStatusBusy] = useState<number | null>(null)
 
   const fetchCb = useCallback(
-    () => fetchMedia(limit + extraPages * limit, 0),
-    [limit, extraPages],
+    () => fetchMedia(limit + extraPages * limit, 0, tagFilter === '#excluded'),
+    [limit, extraPages, tagFilter],
   )
   const library = usePolling(fetchCb, 10000)
 

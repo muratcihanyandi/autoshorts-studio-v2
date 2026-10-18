@@ -23,5 +23,8 @@ async def media_library(
     request: Request,
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    include_excluded: bool = Query(False),
 ) -> dict:
-    return await _service(request).media_library(limit=limit, offset=offset)
+    return await _service(request).media_library(
+        limit=limit, offset=offset, include_excluded=include_excluded
+    )

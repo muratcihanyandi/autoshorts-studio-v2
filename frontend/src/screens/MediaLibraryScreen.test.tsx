@@ -118,6 +118,55 @@ describe('MediaLibraryScreen', () => {
     expect(screen.getAllByText('Islenmis video').length).toBe(1)
   })
 
+  it('shows excluded records only under the Hariç filter', async () => {
+    const excludedPayload = {
+      ...libraryPayload,
+      sources: [
+        {
+          ...libraryPayload.sources[0],
+          id: 3,
+          title: 'Hariç tutulmuş video',
+          tag: '#excluded',
+          asset_stage: null,
+          asset_stage_label: null,
+          asset_status: null,
+        },
+      ],
+      sources_total: 1,
+      summary: { ...libraryPayload.summary, sources_total: 1 },
+    }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      new Response(
+        JSON.stringify(
+          String(input).includes('include_excluded=true')
+            ? excludedPayload
+            : libraryPayload,
+        ),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    render(<MediaLibraryScreen />)
+
+    // Varsayılan liste hariç kayıtları taşımaz.
+    await screen.findByText('Indirilen video')
+    expect(
+      screen.queryByText('Hariç tutulmuş video'),
+    ).not.toBeInTheDocument()
+
+    // 'Hariç' filtresi istekleri include_excluded=true ile yeniler.
+    fireEvent.click(screen.getByRole('button', { name: 'Hariç' }))
+    expect(
+      await screen.findByText('Hariç tutulmuş video'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'İşleme al' })).toBeInTheDocument()
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes('include_excluded=true'),
+      ),
+    ).toBe(true)
+  })
+
   it('shows the empty library state when no sources exist', async () => {
     const empty = {
       ...libraryPayload,

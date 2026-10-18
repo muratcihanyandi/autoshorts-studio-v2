@@ -961,6 +961,37 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Library cleanup session (2026-10-19, live + repo): after the user
+  enabled "Yalnız Tepki" on both live sources (rules_reapplied
+  2026-10-18 22:23 UTC), ALL 50 backlog videos were excluded by the
+  rule — the media library filled with "Hariç" rows and the user asked
+  for a cleanup. Live actions on the Pi (verified with before/after
+  counts): deleted the 50 `source_videos` rows with status=excluded
+  (FK cascades removed their planning_decisions/media_assets cleanly;
+  0 orphans left) and removed the orphaned download files
+  (downloads/1.mp4 3.26 GB + 1.tr.vtt + 20.f251.webm 87 MB — disk went
+  85% → 74%). NOTE for live debugging: the container's /data/media
+  maps to host `/mnt/usb/Autoshorts_Studio/` directly — there is NO
+  `media/` subfolder on the host side. Repo change so the clutter does
+  not rebuild: the Media Library now hides excluded videos by default
+  — `library_view.media_library(include_excluded=False)` filters
+  `status != 'excluded'` from the listing, `sources_total`, and the
+  summary's `sources_total`; `/api/media` gained
+  `?include_excluded=true`; the frontend gained a "Hariç" filter chip
+  that fetches with that param (excluded rows keep their "İşleme al"
+  re-include button under the chip). Discovery re-adding future
+  funny-moments videos as excluded is expected — they stay out of the
+  default view now. Tests: backend 21/21 in the touched files
+  (test_pipeline_view +new test_excluded_hidden_by_default), frontend
+  22/22 (+new Hariç-filter test), tsc/build clean.
+  Diagnostics also collected this session (no code change): the
+  39-minute "download" for video 1 was yt-dlp fetching bestvideo f401
+  (AV1 4K, 3.19 GB) then ffmpeg `-movflags +faststart` rewriting the
+  whole 3.25 GB merge a second time on a USB disk at 45% iowait — the
+  job ended as succeeded/skipped because the reaction rule excluded
+  the video mid-merge (pipeline guard worked as designed). Candidate
+  future improvement (needs user go-ahead): cap yt-dlp format at
+  `bv*[height<=1080]+ba` to avoid 4K downloads on the Pi.
 - Scheduled-public session (2026-10-18, user directive): approved
   content no longer waits for the engine to upload. `approve_metadata`
   and `approve_full_cut` now enqueue `publish_clip` / `publish_full_cut`

@@ -53,6 +53,10 @@ export interface MediaLibrary {
 export function fetchMedia(
   limit: number = 60,
   offset: number = 0,
+  includeExcluded: boolean = false,
 ): Promise<MediaLibrary> {
-  return getJson<MediaLibrary>(`/api/media?limit=${limit}&offset=${offset}`)
+  const excluded = includeExcluded ? '&include_excluded=true' : ''
+  return getJson<MediaLibrary>(
+    `/api/media?limit=${limit}&offset=${offset}${excluded}`,
+  )
 }
