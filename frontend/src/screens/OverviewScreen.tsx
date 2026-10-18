@@ -12,6 +12,7 @@ import {
 import { usePolling } from '../hooks/usePolling'
 import { Gauge } from '../components/Studio'
 import { ChannelSettingsModal } from '../components/ChannelSettingsModal'
+import { LivePipelinePanel } from '../components/LivePipeline'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 
 const PHASE_PILL: Record<
@@ -251,6 +252,8 @@ export function OverviewScreen() {
               </small>
             </div>
           </div>
+
+          <LivePipelinePanel />
 
           <div className="two-col">
             <div className="stack">

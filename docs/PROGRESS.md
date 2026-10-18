@@ -827,34 +827,31 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-18 (post-M14 "channel automation / Start/Stop"
-session) on the dev machine (Windows 11, Python 3.11.9 venv, Node
-24.13.0). Commands run from the stated directories. NOTE: on this
-machine pytest must be run with file redirection, not through pipes —
-piped runs hang (known dev-env quirk); one flaky full-suite hang in
-the test_jobs region reproduced once and did not recur (matches the
-pre-existing environment quirk recorded at M11; single-file and
-repeat runs are stable).
+Verified 2026-10-18 (post-visibility-session: live pipeline panel,
+media library, logs) on the dev machine (Windows 11, Python 3.11.9
+venv, Node 24.13.0). Commands run from the stated directories. NOTE:
+on this machine pytest must be run with file redirection, not through
+pipes — piped runs hang (known dev-env quirk); the same applies to
+vitest full runs (one flaky hang in the test_jobs region reproduced
+once earlier and did not recur).
 
-- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -v`
+- Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
   (output redirected to a log file)
-  - Passed: **363**, Failed: 0, Skipped: 0 in 77 s (M14 added 32:
-    test_channel_automation 20 — start/stop state machine, stock
-    refill rules, no-reprocessing, multi-Shorts selection, tag
-    vocabulary, whisper fallback, content modes, resource gate, API
-    roundtrips — test_whisper_install 11 (platform plans, target-dir
-    availability + env, install API flow with faked pip, 409/400/503
-    guards, transcriber command contract), plus the 0012 offline-SQL
-    migration test; existing tests updated for the channel-state gates
-    and the selected-only render feed).
+  - Passed: **369**, Failed: 0, Skipped: 0 in 75 s (this session added
+    6: test_pipeline_view — overview card fields with .part download
+    bytes and rolling-average ETA, error summaries, library tag
+    derivation (#done/#downloading/#queued/#error), audit pagination
+    + category/channel filters, and the three-endpoint API roundtrip).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
     starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 14 passed, 0 failed
-  (App 4, SettingsScreen 3, AutomationScreen 3, CharactersScreen 4).
+- Frontend — `cd frontend && npx vitest run`: 21 passed, 0 failed
+  (App 4, SettingsScreen 3, AutomationScreen 3, CharactersScreen 4,
+  LivePipeline 2, MediaLibraryScreen 3, LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0 errors
-  (3 pre-existing React Compiler advisories).
+  (6 React Compiler advisories: 3 pre-existing + the intentional
+  setState-in-effect in useDownloadRates).
 - Frontend production build — `npm run build`: succeeded.
 - Secret scan — `python tools/scan_secrets.py`: clean.
 
@@ -964,6 +961,41 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Visibility session (2026-10-18, live overview + library + logs): the
+  user could not see per-video progress anywhere, and the Media Library
+  and Logs screens were still placeholder EmptyStates. Delivered in
+  three layers. (1) Backend read-models: `pipeline_view.py` (active
+  jobs with stage index, elapsed seconds, .part download bytes read
+  from MEDIA_ROOT, ETA derived from the rolling average of the last 10
+  succeeded jobs per type, expected download size from the last 5
+  processed assets — never fabricated), `library_view.py` (sources with
+  StatusService-tag vocabulary, rendered clips, stock summary;
+  paginated), `audit_view.py` (audit_events cursor pagination +
+  category/channel filters with escaped LIKE). New routes
+  `/api/pipeline`, `/api/media`, `/api/logs` registered in main.py;
+  job→video/channel resolution happens in Python from payload JSON so
+  the queries run identically on PostgreSQL and sqlite. (2) Frontend:
+  `LivePipelinePanel` on the Overview (5 s poll; per-job stage track of
+  5 segments, percent, download bytes + rate measured from consecutive
+  polls, "≈ N kaldı" ETA, queued positions, recent results with error
+  summaries); MediaLibraryScreen rebuilt with a summary stat grid,
+  status filter pills, sources table (title/channel/tag/duration/size/
+  updated) and clips table; LogsScreen rebuilt as a live stream (5 s
+  poll, category pills, channel select, Turkish event-label dictionary
+  covering all 36 recorded event types, cursor "load older"). All in
+  the committed Kategori Standardı component language (ink-panel,
+  stat-card, pill, stage-track as segmented meter, filter pills with
+  ocean active state). One real bug found by the new tests: the panel
+  computed `active` with a fresh `[]` on every render while loading,
+  retriggering the rate-measuring effect in a render loop that hung
+  the vitest worker (180 s timeout, exit 134) — fixed with a stable
+  module-level `NO_JOBS` reference. Tests: backend 369/369 in 75 s
+  (6 new in test_pipeline_view.py: overview cards/download bytes/ETA,
+  tag derivation, pagination+filters, API roundtrip), frontend 21/21
+  in 2.5 s (LivePipeline 2, MediaLibrary 3, Logs 1), tsc/oxlint/build
+  clean (oxlint: 6 advisories — 3 pre-existing React Compiler notes
+  plus the intentional setState-in-effect in useDownloadRates, which
+  derives rates from polled data).
 - Production fix (2026-10-18, live download failures on the Pi): the
   worker failed every media download with `MediaDownloadError: yt-dlp
   basarisiz` after the M14 restart, for two stacked causes.
