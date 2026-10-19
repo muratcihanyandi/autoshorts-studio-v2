@@ -87,6 +87,9 @@ async def detect_silence(
         ffmpeg_bin,
         "-hide_banner",
         "-i", str(path),
+        # Yalniz ses cozumlenir: video akisinin cozumlmesi Pi'de
+        # gereksiz yavasti (4K AV1 dosyalarda 10 dk asimi buradan geldi).
+        "-vn",
         "-af", f"silencedetect=noise={noise_db}dB:d={min_seconds}",
         "-f", "null",
         "-",
@@ -171,6 +174,9 @@ async def audio_rms_windows(
         ffmpeg_bin,
         "-hide_banner",
         "-i", str(path),
+        # RMS pencereleri yalniz sesle hesaplanir; video cozumlemesi
+        # kapatilir (bkz. detect_silence -vn notu).
+        "-vn",
         "-ac", "1",
         "-ar", str(sample_rate),
         "-f", "s16le",
