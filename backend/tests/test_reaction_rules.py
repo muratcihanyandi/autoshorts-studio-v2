@@ -9,6 +9,8 @@ video izlediği içerik ne olursa olsun (ör. funny moments) serbesttir.
 from __future__ import annotations
 
 import asyncio
+import json
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
@@ -18,7 +20,11 @@ from app.db import create_engine_and_sessionmaker
 from app.models import Base
 from app.schemas_sources import SourceUpdate
 from app.services.media_pipeline import MediaPipelineService
-from app.services.source_rules import evaluate_source_rules, is_reaction_title
+from app.services.source_rules import (
+    age_exclusion,
+    evaluate_source_rules,
+    is_reaction_title,
+)
 from app.services.source_service import SourceService
 
 
@@ -105,6 +111,15 @@ class TestReactionTitleRule:
         )
         assert reason is None
 
+    def test_age_exclusion_helper(self):
+        old = datetime.now(UTC) - timedelta(days=10)
+        reason = age_exclusion({"max_age_days": 7}, published_at=old)
+        assert reason is not None and reason.startswith("yaş kuralı")
+        assert age_exclusion({"max_age_days": 15}, published_at=old) is None
+        # Tarih bilinmiyorsa yargi verilmez.
+        assert age_exclusion({"max_age_days": 7}, published_at=None) is None
+        assert age_exclusion({}, published_at=old) is None
+
 
 class TestReapplyOnRuleChange:
     def test_enabling_rule_excludes_unprocessed_and_keeps_processed(self, tmp_path):
@@ -169,6 +184,131 @@ class TestReapplyOnRuleChange:
         assert rows[1] == "excluded"  # manuel haric: korunur
         assert rows[2] == "planned"  # kural harici: geri gelir
         assert rows[3] == "processed"  # islenmis: dokunulmaz
+
+    def test_age_window_widening_restores_age_exclusions(self, tmp_path):
+        """Güncellik penceresi genişletilince yalnız yaş kuralının
+        hariç tuttuğu videolar geri değerlendirilir."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _rules_env(tmp_path)
+            try:
+                _seed(db)
+                old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+                fresh = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+                eng = sa.create_engine(f"sqlite:///{db}")
+                with eng.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET published_at=:d "
+                            "WHERE id=1"
+                        ),
+                        {"d": old},
+                    )
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET published_at=:d "
+                            "WHERE id=2"
+                        ),
+                        {"d": fresh},
+                    )
+                eng.dispose()
+                service = SourceService(sessionmaker)
+                await service.update_source(
+                    1, SourceUpdate(filter_rules={"max_age_days": 7})
+                )
+                narrow = _statuses(db)
+                await service.update_source(
+                    1, SourceUpdate(filter_rules={"max_age_days": 15})
+                )
+                return narrow, _statuses(db)
+            finally:
+                await engine.dispose()
+
+        narrow, wide = asyncio.run(scenario())
+        assert narrow[1] == "excluded"  # 10 gunluk video 7 gunluk pencerede disarida
+        assert narrow[2] == "planned"
+        assert wide[1] == "planned"  # pencere 15 gene: geri gelir
+        assert wide[2] == "planned"
+
+
+def _statuses(db_path):
+    eng = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with eng.connect() as conn:
+            return dict(
+                conn.execute(
+                    sa.text("SELECT id, status FROM source_videos")
+                ).all()
+            )
+    finally:
+        eng.dispose()
+
+
+class TestRefillAgeGuard:
+    def test_refill_skips_aged_planned_videos(self, tmp_path):
+        """Kuyrukta beklerken eskiyen planned videolar indirilmez;
+        sıradaki uygun (güncel) video seçilir."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _rules_env(tmp_path)
+            try:
+                _seed(db)
+                old = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+                fresh = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+                eng = sa.create_engine(f"sqlite:///{db}")
+                with eng.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "INSERT INTO publishing_profiles "
+                            "(channel_id, daily_clip_target, "
+                            " daily_horizontal_limit, timezone, "
+                            " automation_state, horizontal_stock_target, "
+                            " title_mode, description_mode, tags_mode, "
+                            " content_warning_mode, ai_disclosure_mode, "
+                            " settings) "
+                            "VALUES (1, 3, 3, 'Europe/Istanbul', "
+                            "'running', 3, 'auto', 'auto', 'auto', "
+                            "'auto', 'auto', '{}')"
+                        )
+                    )
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET published_at=:d "
+                            "WHERE id=1"
+                        ),
+                        {"d": old},
+                    )
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET published_at=:d "
+                            "WHERE id=2"
+                        ),
+                        {"d": fresh},
+                    )
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_channels SET filter_rules=:r"
+                        ),
+                        {"r": json.dumps({"max_age_days": 7})},
+                    )
+                eng.dispose()
+                from app.services.automation_service import (
+                    refill_channel_stock,
+                )
+
+                result = await refill_channel_stock(
+                    sessionmaker, settings, 1
+                )
+                return result, _statuses(db)
+            finally:
+                await engine.dispose()
+
+        result, statuses = asyncio.run(scenario())
+        assert result["enqueued"] is True
+        # Kucuk id'li video 10 gunluk: atlanir, 1 gunluk video secilir.
+        assert result["source_video_id"] == 2
+        # Yasli video HARIC yazilmaz: pencere genislerse geri gelir.
+        assert statuses[1] == "planned"
 
 
 class TestVideoStatusApi:

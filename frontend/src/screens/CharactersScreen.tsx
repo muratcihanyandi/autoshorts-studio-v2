@@ -154,6 +154,24 @@ function SourceRow({
       )
     })
 
+  const recencyDays = source.filter_rules?.max_age_days ?? 0
+
+  const changeRecency = (days: number) =>
+    run(async () => {
+      await updateSource(source.id, {
+        filter_rules: {
+          ...source.filter_rules,
+          // 0 = sınırsız: anahtar gövdeden düşer, kural kapanır.
+          max_age_days: days > 0 ? days : undefined,
+        },
+      })
+      setNote(
+        days > 0
+          ? `Güncellik penceresi son ${days} gün olarak ayarlandı.`
+          : 'Güncellik penceresi kaldırıldı.',
+      )
+    })
+
   return (
     <div className="source-row">
       <span className="source-badge">{PLATFORM_LABEL[source.platform]}</span>
@@ -164,6 +182,9 @@ function SourceRow({
       </span>
       {source.reaction_source && <span className="source-badge">reaksiyon</span>}
       {reactionOnly && <span className="source-badge">yalnız tepki</span>}
+      {recencyDays > 0 && (
+        <span className="source-badge">son {recencyDays} gün</span>
+      )}
       <span className="channel-actions">
         <button
           type="button"
@@ -174,6 +195,18 @@ function SourceRow({
         >
           {reactionOnly ? 'Tepki Kuralını Kapat' : 'Yalnız Tepki'}
         </button>
+        <select
+          aria-label={`${source.title} güncellik penceresi`}
+          value={recencyDays}
+          disabled={busy}
+          onChange={(e) => void changeRecency(Number(e.target.value))}
+          title="Bu kaynaktan yalnızca son N gün içinde yayınlanan videolar işlenir; pencere genişletilince eski hariçler geri değerlendirilir."
+        >
+          <option value={0}>Güncellik: sınırsız</option>
+          <option value={7}>Son 7 gün</option>
+          <option value={15}>Son 15 gün</option>
+          <option value={30}>Son 30 gün</option>
+        </select>
         {source.permission_status === 'authorized' ? (
           <button
             type="button"

@@ -827,36 +827,32 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-18 (post-scheduled-public session) on the dev machine
-(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
-stated directories. NOTE: on this machine pytest must be run with file
-redirection, not through pipes — piped runs hang (known dev-env quirk);
-this session ran the full suite in two foreground chunks (332 + 51).
+Verified 2026-10-19 (reaction-channels + recency + cipher session) on the
+dev machine (Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run
+from the stated directories. NOTE: on this machine pytest must be run
+with file redirection, not through pipes — piped runs hang (known
+dev-env quirk); the full suite ran as partitioned foreground chunks.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
-  (output redirected to a log file)
-  - Passed: **383**, Failed: 0, Skipped: 0 (332 in 61 s + 51 in 21 s;
-    this session added 7 in test_scheduled_public.py: per-orientation
-    daily limits incl. fallback-to-horizontal and both-limits-full
-    skip, media retention cleanup incl. confirmed-source deletion,
-    never/-1 and private-row protection, approve endpoints enqueuing
-    private uploads).
+  (output redirected to log files)
+  - Passed: **388**, Failed: 0, Skipped: 0 (388 collected; affected
+    files re-run after each fix; this session added 4: age-rule window
+    widening restore, refill age guard, 1080p format assertion, worker
+    cipher-key resolution from site settings).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 2 pre-existing warnings (aiosqlite thread cleanup notice,
     starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 21 passed, 0 failed
-  (App 4, SettingsScreen 4, AutomationScreen 3, CharactersScreen 4,
-  LivePipeline 2, MediaLibraryScreen 3, LogsScreen 1).
-- Frontend types — `npx tsc -b`: clean. Lint — `npx oxlint`: 0 errors
-  (6 React Compiler advisories: 3 pre-existing + the intentional
-  setState-in-effect in useDownloadRates).
-- Frontend production build — `npm run build`: succeeded.
+- Frontend — `cd frontend && npx vitest run`: 23 passed, 0 failed
+  (App 4, SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
+  LivePipeline 2, MediaLibraryScreen 4, LogsScreen 1).
+- Frontend types — `npx tsc -b`: clean. Production build —
+  `npm run build`: succeeded.
 - Secret scan — `python tools/scan_secrets.py`: clean.
 
-Previous full-suite record (2026-10-18, post-reaction-rule session):
-backend 376/376 in 78 s, frontend 21/21 — superseded by the totals
-above.
+Previous full-suite record (2026-10-18, post-scheduled-public +
+library-cleanup sessions): backend 383/384 (two chunks), frontend
+21→22 — superseded by the totals above.
 
 Previous full-suite record (2026-10-17, connection-guide + LLM
 management session):
@@ -961,6 +957,45 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Reaction-channels + recency session (2026-10-19, user directive:
+  "1080p üstü indirmesin; motor indirmiyor; güncellik önemli — RRaenee
+  tepki videoları paylaşan kanallar tespit etsin, son 7/15 gün
+  videoları indirilsin"): (1) Diagnosis — the engine was healthy; the
+  monitored RRaenee channels carry ZERO reaction videos (all 50 recent
+  uploads are gameplay content, correctly excluded by the rule), hence
+  nothing to download. (2) Live actions (no restart needed, all via the
+  running image's API): yt-dlp flat search on the Pi found channels
+  reposting RRaenee reactions — Craftest (UCRXsu9ORjM6F-LjBRDXF2lw),
+  cFyt (UC3E_eF5GHqA05nPPm1riHYg), Elranedits0
+  (UC_eAwc9rF1hPYJjnmQgEJLQ) — all three were added to channel 4 as
+  authorized youtube sources bound to character RRaenee with
+  require_reaction_content + max_age_days=7 presets; the two existing
+  Rraenee sources got max_age_days=7 via PATCH (rule evaluation for
+  max_age_days has been live since M4). Discovery found 18 fresh
+  (≤7-day, reaction-titled) videos; planning marked them planned; the
+  stock refill began downloading immediately — video 101 processed
+  end-to-end (5 clip candidates) and 102 followed. (3) Repo changes:
+  yt-dlp format capped at `bv*[height<=1080]+ba/b[height<=1080]` (the
+  4K-AV1 f401 + faststart double-write was the 39-minute "stuck
+  download"); age-rule hardening — AGE_RULE_PREFIX extracted with an
+  `age_exclusion()` helper, reapply now restores BOTH reaction- and
+  age-rule exclusions when the window widens/rule turns off, and
+  `refill_channel_stock` skips planned videos that aged while queued
+  (kept planned, not excluded, so widening restores them); Characters
+  screen source rows gained a "Güncellik" select (sınırsız/7/15/30
+  gün → filter_rules.max_age_days). (4) Worker cipher bug found on
+  live (subtitle_correct jobs failing with "Token şifreleme anahtarı
+  yapılandırılmamış"): the worker's hype_evaluate/subtitle_correct/
+  metadata_generate handlers built LlmProviderService with raw env
+  settings while TOKEN_ENCRYPTION_KEY lives in site settings (DB) —
+  all three now resolve effective_settings() first (channels.py
+  _metadata_service too); regression test seeds a DB-only key and runs
+  a worker subtitle_correct job to success. Tests: backend 388/388
+  (4 new), frontend 23/23 (+1 recency select test), tsc/build/secret
+  scan clean. Deploy note: the 1080p cap, recency hardening, cipher
+  fix, and library hiding (bdaf5fd) all need the next image pull +
+  restart; live processing continues meanwhile on the old image
+  (reaction rule + 7-day window already active there).
 - Library cleanup session (2026-10-19, live + repo): after the user
   enabled "Yalnız Tepki" on both live sources (rules_reapplied
   2026-10-18 22:23 UTC), ALL 50 backlog videos were excluded by the

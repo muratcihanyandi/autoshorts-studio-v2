@@ -317,6 +317,71 @@ class TestSubtitleCorrection:
         assert status == "failed"
         assert error is not None
 
+    def test_worker_resolves_db_stored_cipher_key(self, tmp_path, monkeypatch):
+        """TOKEN_ENCRYPTION_KEY yalnizca Ayarlar ekranindan (DB) girildiyse
+        worker'in LLM cagrisi cipher'i efektif ayarlardan cozmeli; ham env
+        ayarina bakmak zinciri 'anahtar yok' hatasiyla dusurur."""
+        from app.schemas_settings import SettingsUpdate
+        from app.services.settings_service import SettingsService
+        from app.worker import JobWorker, build_handlers
+
+        key = Fernet.generate_key().decode()
+
+        async def handler(request):
+            return httpx.Response(200, json=_openai_body(CORRECTED_RESPONSE))
+
+        async def scenario():
+            # Ortamda anahtar yok; yalnizca site ayari olarak DB'ye girilir.
+            db_path = tmp_path / "m9db-key.db"
+            sync_engine = sa.create_engine(f"sqlite:///{db_path}")
+            Base.metadata.create_all(sync_engine)
+            sync_engine.dispose()
+            settings = Settings(database_url=f"sqlite+aiosqlite:///{db_path}")
+            engine, sessionmaker = create_engine_and_sessionmaker(
+                settings.database_url
+            )
+            try:
+                service = SettingsService(sessionmaker, settings)
+                await service.update(
+                    SettingsUpdate(token_encryption_key=key)
+                )
+                effective = await service.effective_settings()
+                assert effective.token_encryption_key == key
+                await _add_provider(sessionmaker, effective)
+                _, asset_id = await _seed(sessionmaker)
+                monkeypatch.setattr(
+                    "app.services.llm_service._default_http_client",
+                    lambda: httpx.AsyncClient(
+                        transport=httpx.MockTransport(handler)
+                    ),
+                )
+                handlers = build_handlers(sessionmaker, settings)
+                worker = JobWorker(sessionmaker, settings, handlers=handlers)
+                job = await worker._jobs.enqueue(
+                    "subtitle_correct",
+                    {"media_asset_id": asset_id},
+                    max_attempts=1,
+                )
+                await worker._jobs.claim_next(worker._worker_id)
+                await worker.run_job(job.id)
+                return job.id
+            finally:
+                await engine.dispose()
+
+        job_id = _run(scenario())
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m9db-key.db")
+        with engine.connect() as conn:
+            status = conn.execute(
+                sa.text("SELECT status FROM jobs WHERE id = :j"), {"j": job_id}
+            ).scalar()
+            corrected = conn.execute(
+                sa.text("SELECT COUNT(*) FROM corrected_transcripts")
+            ).scalar()
+        engine.dispose()
+        # Anahtar DB'de olsa da worker LLM zinciri calismali.
+        assert status == "succeeded"
+        assert corrected == 1
+
     def test_worker_feed_enqueues_uncorrected_assets(self, tmp_path):
         from app.worker import JobWorker
 

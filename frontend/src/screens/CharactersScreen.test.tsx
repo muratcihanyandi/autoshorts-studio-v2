@@ -235,4 +235,26 @@ describe('CharactersScreen', () => {
       })
     })
   })
+
+  it('sets the recency window via the source row select', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CharactersScreen />)
+
+    const select = await screen.findByLabelText(
+      'Pelin Ana Kanalı güncellik penceresi',
+    )
+    fireEvent.change(select, { target: { value: '15' } })
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/api/sources/') && c[1]?.method === 'PATCH',
+      )
+      expect(patch).toBeDefined()
+      expect(JSON.parse(String(patch![1]!.body))).toEqual({
+        filter_rules: { max_age_days: 15 },
+      })
+    })
+  })
 })

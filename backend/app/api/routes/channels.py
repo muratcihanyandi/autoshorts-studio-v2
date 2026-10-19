@@ -179,12 +179,17 @@ async def _metadata_service(request: Request) -> "MetadataService":
             status_code=503,
             detail="Veritabanı yapılandırılmadı; metaveri şablonu kapalı.",
         )
+    from app.api.routes.settings import effective_settings
     from app.services.llm_service import LlmProviderService
     from app.services.metadata_service import MetadataService
 
-    settings = getattr(request.app.state, "settings", None)
+    # Efektif ayar: TOKEN_ENCRYPTION_KEY Ayarlar ekranından girildiyse
+    # DB'de durur; cipher ham env ayarıyla boş kalır.
     return MetadataService(
-        sessionmaker, LlmProviderService(sessionmaker, settings)
+        sessionmaker,
+        LlmProviderService(
+            sessionmaker, await effective_settings(request)
+        ),
     )
 
 

@@ -29,6 +29,7 @@ from app.services.channel_service import record_event
 from app.services.job_service import JobService
 from app.services.source_rules import (
     REACTION_RULE_PREFIX,
+    AGE_RULE_PREFIX,
     evaluate_source_rules,
 )
 
@@ -180,10 +181,11 @@ class SourceService:
         """Kural değişince işlenmemiş videoları yeniden değerlendir.
 
         Kapsam: pipeline'ı tamamlanmamış (asset yok ya da asset 'failed')
-        discovered/planned videolar ve yalnız tepkime kuralıyla hariç
-        tutulmuş excluded videolar. İşlenmiş (#done/#confirmed) videolara
-        ve manuel hariçlere asla dokunulmaz; tepkime kuralı kapatılırsa
-        yalnız o kural yüzünden hariç tutulanlar geri gelir.
+        discovered/planned videolar ve kural ürünü hariçler (tepkime veya
+        yaş kuralı). İşlenmiş (#done/#confirmed) videolara ve manuel
+        hariçlere asla dokunulmaz; tepkime kuralı kapatılırsa ya da yaş
+        penceresi genişletilirse yalnız o kurallar yüzünden hariç tutulanlar
+        geri gelir.
         """
         videos = (
             (
@@ -240,11 +242,15 @@ class SourceService:
             decision = decisions.get(video.id)
             reason = decision.reason if decision is not None else None
             rule_excluded = bool(
-                reason and reason.startswith(REACTION_RULE_PREFIX)
+                reason
+                and (
+                    reason.startswith(REACTION_RULE_PREFIX)
+                    or reason.startswith(AGE_RULE_PREFIX)
+                )
             )
             if video.status == "excluded":
-                # Yalnız tepkime kuralının ürünleri geri gelebilir; manuel
-                # hariçler kullanıcının kararına kalır.
+                # Yalnız kural ürünleri geri gelebilir; manuel hariçler
+                # kullanıcının kararına kalır.
                 if not rule_excluded:
                     continue
                 exclusion = evaluate_source_rules(

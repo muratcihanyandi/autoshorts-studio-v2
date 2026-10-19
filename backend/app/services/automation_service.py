@@ -36,6 +36,7 @@ from app.models import (
 from app.services.channel_service import record_event
 from app.services.publishing_service import PublishingService
 from app.services.publishing_schedule import ScheduleError
+from app.services.source_rules import age_exclusion
 
 
 class AutomationError(Exception):
@@ -614,9 +615,14 @@ async def refill_channel_stock(
         }
 
     followed = await status.followed_character_ids(channel_id)
+    next_video_id: int | None = None
     async with sessionmaker() as session:
         query = (
-            sa.select(SourceVideo.id)
+            sa.select(
+                SourceVideo.id,
+                SourceVideo.published_at,
+                SourceChannel.filter_rules,
+            )
             .join(SourceChannel, SourceVideo.source_channel_id == SourceChannel.id)
             .where(
                 SourceChannel.channel_id == channel_id,
@@ -627,7 +633,14 @@ async def refill_channel_stock(
         )
         if followed:
             query = query.where(SourceChannel.character_id.in_(followed))
-        next_video_id = (await session.execute(query.limit(1))).scalar_one_or_none()
+        # Yaş penceresi zamanla kayar: keşifte uygun olan bir video kuyrukta
+        # beklerken eskiyebilir. Yaş denetimini geçemeyen adaylar atlanır
+        # (hariç yazılmaz — pencere genişletilirse reapply geri getirir).
+        for row in (await session.execute(query.limit(25))).all():
+            if age_exclusion(row.filter_rules, published_at=row.published_at):
+                continue
+            next_video_id = row.id
+            break
 
     if next_video_id is None:
         return {

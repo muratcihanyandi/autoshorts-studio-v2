@@ -195,7 +195,9 @@ def build_handlers(
         effective = await SettingsService(
             sessionmaker, settings
         ).effective_settings()
-        llm = LlmProviderService(sessionmaker, settings)
+        # Anahtar DB'de saklanmissa (Ayarlar ekranindan girildiyse) cipher
+        # efektif ayarlardan cozulmelidir; ham env ayarinda bos kalir.
+        llm = LlmProviderService(sessionmaker, effective)
         service = HypeService(sessionmaker, llm, effective)
         return await service.evaluate_source(source_video_id)
 
@@ -261,7 +263,12 @@ def build_handlers(
             raise ValueError("payload.media_asset_id gerekli.")
         if not await _guard(payload, "subtitle_correct"):
             return {"media_asset_id": media_asset_id, "skipped": "channel_stopped"}
-        llm = LlmProviderService(sessionmaker, settings)
+        # Efektif ayar: TOKEN_ENCRYPTION_KEY Ayarlar ekranindan girildiyse
+        # DB'de durur; cipher ham env ayariyla bos kalir.
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        llm = LlmProviderService(sessionmaker, effective)
         service = SubtitleCorrectionService(sessionmaker, llm)
         return await service.correct_transcript(media_asset_id)
 
@@ -285,7 +292,7 @@ def build_handlers(
         effective = await SettingsService(
             sessionmaker, settings
         ).effective_settings()
-        llm = LlmProviderService(sessionmaker, settings)
+        llm = LlmProviderService(sessionmaker, effective)
         service = MetadataService(sessionmaker, llm, settings=effective)
         if isinstance(clip_candidate_id, int):
             return await service.generate(clip_candidate_id)

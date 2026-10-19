@@ -106,7 +106,9 @@ class YtDlpAdapter:
             "--merge-output-format", "mp4",
             "--write-auto-subs",
             "--sub-langs", "tr,en",
-            "-f", "bv*+ba/b",
+            # 1080p tavanı: Pi'de 4K AV1 indirme + faststart ikinci geçiş
+            # dakikalarca sürer ve dikey render zaten 1080x1920'ye küçültür.
+            "-f", "bv*[height<=1080]+ba/b[height<=1080]",
             "-o", output_path,
         ]
         if self._settings.download_rate_limit_kbps > 0:
