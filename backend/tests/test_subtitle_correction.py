@@ -228,6 +228,49 @@ class TestSubtitleCorrection:
         assert "skipped" not in first
         assert second.get("skipped") is True
 
+    def test_chunk_level_retry_survives_transient_provider_failure(
+        self, tmp_path
+    ):
+        """Düşünen/yavaş sağlayıcı bir parçada geçici zincir hatası verirse
+        varlık baştan başlamaz; aynı parça kendi içinde tekrar denner."""
+
+        calls = {"n": 0}
+
+        async def handler(request):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # Geçici durum: null içerik -> zincir tükenir.
+                return httpx.Response(
+                    200,
+                    json={"choices": [{"message": {"content": None}}]},
+                )
+            return httpx.Response(
+                200, json=_openai_body(CORRECTED_RESPONSE)
+            )
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                await _add_provider(sessionmaker, settings)
+                _, asset_id = await _seed(sessionmaker)
+                service = SubtitleCorrectionService(
+                    sessionmaker, LlmProviderService(sessionmaker, settings)
+                )
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(handler)
+                ) as http:
+                    result = await service.correct_transcript(
+                        asset_id, http=http
+                    )
+                return result
+            finally:
+                await engine.dispose()
+
+        result = _run(scenario())
+        assert calls["n"] >= 2  # ilk deneme düştü, tekrar geldi
+        assert result["segments"] == 3
+        assert result["corrected"] == 3
+
     def test_wrong_count_rejected_no_row(self, tmp_path):
         async def scenario():
             sessionmaker, settings, engine, db = _env(tmp_path)

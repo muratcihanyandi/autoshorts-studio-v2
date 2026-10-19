@@ -109,12 +109,23 @@ class SubtitleCorrectionService:
         for offset in range(0, len(segments), CHUNK_SIZE):
             chunk = segments[offset : offset + CHUNK_SIZE]
             prompt = PROMPT_HEADER + self._format_chunk(chunk, offset)
-            try:
-                result = await self._llm.complete(
-                    prompt, schema=CorrectionResponse, http=http
-                )
-            except LlmServiceError as exc:
-                raise SubtitleCorrectionError(str(exc)) from exc
+            # Parca bazli yeniden deneme: dusunen/yavas saglayicilarda tek
+            # parcanin gecersiz donmesi tum varligi basa sarmandan once
+            # kendi basina tekrar denensin (is yeniden denemesiyle
+            # basarili parcalar tekrar cagrilmaz).
+            result = None
+            last_error: LlmServiceError | None = None
+            for attempt in range(3):
+                try:
+                    result = await self._llm.complete(
+                        prompt, schema=CorrectionResponse, http=http
+                    )
+                    break
+                except LlmServiceError as exc:
+                    last_error = exc
+            if result is None:
+                assert last_error is not None
+                raise SubtitleCorrectionError(str(last_error)) from last_error
             lines = self._validated(result.structured, len(chunk), offset)
             provider_name = result.provider_name
             for position, line in enumerate(lines):
