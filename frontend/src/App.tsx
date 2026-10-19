@@ -1,5 +1,9 @@
+import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+
+import { fetchAuthStatus, logoutStudio } from './api/auth'
 import { AppShell } from './components/AppShell'
+import { AuthScreen } from './components/AuthScreen'
 import { OverviewScreen } from './screens/OverviewScreen'
 import { ChannelsScreen } from './screens/ChannelsScreen'
 import { CharactersScreen } from './screens/CharactersScreen'
@@ -11,11 +15,78 @@ import { LogsScreen } from './screens/LogsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { GuideScreen } from './screens/GuideScreen'
 
+type AuthState =
+  | { status: 'loading' }
+  | { status: 'setup' }
+  | { status: 'login' }
+  | { status: 'ready'; username: string }
+
 function App() {
+  const [auth, setAuth] = useState<AuthState>({ status: 'loading' })
+
+  const loadAuth = useCallback(async () => {
+    try {
+      const status = await fetchAuthStatus()
+      if (!status.configured) {
+        setAuth({ status: 'setup' })
+      } else if (!status.authenticated) {
+        setAuth({ status: 'login' })
+      } else {
+        setAuth({ status: 'ready', username: status.username ?? 'yönetici' })
+      }
+    } catch {
+      // Sunucu henüz yanıt vermiyorsa giriş formu gösterilir; deneme
+      // sırasında gerçek hata mesajı görünür.
+      setAuth({ status: 'login' })
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAuth()
+  }, [loadAuth])
+
+  useEffect(() => {
+    const onUnauthorized = () => setAuth({ status: 'login' })
+    window.addEventListener('studio:unauthorized', onUnauthorized)
+    return () =>
+      window.removeEventListener('studio:unauthorized', onUnauthorized)
+  }, [])
+
+  if (auth.status === 'loading') {
+    return (
+      <div className="auth-splash" role="status" aria-live="polite">
+        Stüdyo açılıyor…
+      </div>
+    )
+  }
+
+  if (auth.status === 'setup' || auth.status === 'login') {
+    return (
+      <AuthScreen
+        mode={auth.status}
+        onAuthenticated={(username) => {
+          setAuth({ status: 'ready', username })
+        }}
+      />
+    )
+  }
+
+  async function handleLogout() {
+    try {
+      await logoutStudio()
+    } finally {
+      setAuth({ status: 'login' })
+    }
+  }
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<AppShell />}>
+        <Route
+          element={
+            <AppShell username={auth.username} onLogout={handleLogout} />
+          }
+        >
           <Route index element={<OverviewScreen />} />
           <Route path="kanallar" element={<ChannelsScreen />} />
           <Route path="karakterler" element={<CharactersScreen />} />

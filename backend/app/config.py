@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
     shorts_per_video: int = 3
 
+    # Studio girişi: ilk ziyaret parolayı app_meta'da oluşturur; sonraki
+    # ziyaretler imzalı HttpOnly çerezle açılır. HTTPS arkasında
+    # AUTH_COOKIE_SECURE=true yapılmalı (LAN HTTP'de çerez gitmez).
+    auth_session_ttl_seconds: int = 7 * 24 * 3600
+    auth_cookie_secure: bool = False
+
     @property
     def oauth_configured(self) -> bool:
         return bool(

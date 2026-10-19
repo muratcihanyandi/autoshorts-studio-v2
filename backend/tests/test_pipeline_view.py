@@ -295,7 +295,11 @@ class TestPipelineView:
             assert pipeline["sources"][0]["title"] == "Kaynak Kanal"
             assert pipeline["sources"][0]["videos"] == 3
 
-            media = client.get("/api/media").json()
+            # Bu kontrol etiket sözlüğünü doğrular; keşif havuzundaki
+            # satır da görünsün diye aktif-only filtresi kapatılır.
+            media = client.get(
+                "/api/media", params={"active_only": False}
+            ).json()
             assert media["sources_total"] == 3
             assert media["summary"]["processed"] == 1
             tags = {s["id"]: s["tag"] for s in media["sources"]}

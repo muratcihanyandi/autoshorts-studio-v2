@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app import __version__
+from app.api.routes.auth import router as auth_router
 from app.api.routes.channels import router as channels_router
 from app.api.routes.characters import router as characters_router
 from app.api.routes.health import router as health_router
@@ -44,6 +45,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.sessionmaker = sessionmaker
         app.state.settings = settings
         app.state.started_at = time.time()
+        # İlk kurulum parolası app_meta'da tutulur; önbelleğe alınır ki
+        # her API isteği ekstra DB sorgusu yapmasın. Şema yoksa (saf
+        # sağlık testleri) giriş yapılandırılmamış sayılır.
+        app.state.auth_config = None
+        if sessionmaker is not None:
+            from app.services.auth_service import AuthService
+
+            try:
+                app.state.auth_config = await AuthService(
+                    sessionmaker, settings
+                ).get_config()
+            except Exception:  # noqa: BLE001 - şema yoksa giriş kapalı değil
+                app.state.auth_config = None
         # Medya klasör ağacı: volume bağlıysa etiketli klasörleri kur.
         if settings.media_root:
             from app.services.media_storage import ensure_media_tree
@@ -81,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(health_router, prefix="/api")
+    app.include_router(auth_router, prefix="/api")
     app.include_router(overview_router, prefix="/api")
     app.include_router(system_router, prefix="/api")
     app.include_router(channels_router, prefix="/api")
@@ -95,6 +110,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(publishing_router, prefix="/api")
     app.include_router(automation_router, prefix="/api")
     app.include_router(whisper_router, prefix="/api")
+    from app.services.auth_service import install_auth_middleware
+
+    install_auth_middleware(app, settings)
     return app
 
 

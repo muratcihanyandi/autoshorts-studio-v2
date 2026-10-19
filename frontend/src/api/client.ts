@@ -7,9 +7,16 @@ export class ApiError extends Error {
   }
 }
 
+/** 401 alınca kabuğu login ekranına döndür (auth uçları hariç). */
+function notifyUnauthorized(path: string): void {
+  if (path.startsWith('/api/auth/')) return
+  window.dispatchEvent(new Event('studio:unauthorized'))
+}
+
 export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path)
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized(path)
     throw new ApiError(response.status, `HTTP ${response.status}`)
   }
   return (await response.json()) as T
@@ -27,6 +34,7 @@ export async function sendJson<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized(path)
     let detail = `HTTP ${response.status}`
     try {
       const payload = (await response.json()) as { detail?: string }

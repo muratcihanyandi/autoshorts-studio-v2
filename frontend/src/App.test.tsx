@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -50,16 +50,24 @@ const systemPayload = {
   temperature_c: null,
 }
 
+const authPayload = {
+  configured: true,
+  authenticated: true,
+  username: 'admin',
+}
+
 function mockApiOk() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      const body = url.includes('/api/system')
-        ? systemPayload
-        : url.includes('/api/channels')
-          ? channelsPayload
-          : overviewPayload
+      const body = url.includes('/api/auth/status')
+        ? authPayload
+        : url.includes('/api/system')
+          ? systemPayload
+          : url.includes('/api/channels')
+            ? channelsPayload
+            : overviewPayload
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -78,7 +86,9 @@ describe('App', () => {
     mockApiOk()
     render(<App />)
 
-    expect(screen.getByRole('navigation', { name: 'Stüdyo gezinme' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('navigation', { name: 'Stüdyo gezinme' }),
+    ).toBeInTheDocument()
     expect(await screen.findByText('Bugün yayınlanan yatay')).toBeInTheDocument()
     expect(screen.getByText('Kanal bekleniyor')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1, name: 'Genel Bakış' })).toBeInTheDocument()
@@ -88,7 +98,7 @@ describe('App', () => {
     expect(screen.getByText('38%')).toBeInTheDocument()
   })
 
-  it('shows an error state with retry when the API is unreachable', async () => {
+  it('falls back to the login screen when the API is unreachable', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
@@ -97,10 +107,79 @@ describe('App', () => {
     )
     render(<App />)
 
-    expect(await screen.findByText('Durum alınamadı')).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Yeniden dene' }),
+      await screen.findByRole('heading', { name: 'Stüdyoya giriş' }),
     ).toBeInTheDocument()
+    expect(screen.getByLabelText('Kullanıcı adı')).toBeInTheDocument()
+  })
+
+  it('shows the first-run setup when no password is configured', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              configured: false,
+              authenticated: false,
+              username: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+      ),
+    )
+    render(<App />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'İlk kurulum' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Şifre (tekrar)')).toBeInTheDocument()
+  })
+
+  it('logs in and then shows the studio shell', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/auth/status')) {
+        return new Response(
+          JSON.stringify({
+            configured: true,
+            authenticated: false,
+            username: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      if (url.includes('/api/auth/login')) {
+        return new Response(JSON.stringify(authPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      const body = url.includes('/api/system')
+        ? systemPayload
+        : url.includes('/api/channels')
+          ? channelsPayload
+          : overviewPayload
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Kullanıcı adı'), {
+      target: { value: 'admin' },
+    })
+    fireEvent.change(screen.getByLabelText('Şifre'), {
+      target: { value: 'gizli-sifre' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Giriş yap' }))
+
+    expect(
+      await screen.findByRole('navigation', { name: 'Stüdyo gezinme' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Çıkış' })).toBeInTheDocument()
   })
 
   it('navigates to an empty-state screen via the rail', async () => {

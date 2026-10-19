@@ -1,34 +1,26 @@
 import { useCallback, useState } from 'react'
 
-import { fetchMedia, type LibrarySource } from '../api/media'
-import { setSourceVideoStatus } from '../api/characters'
-import { formatBytes, formatDuration, formatTimeShort } from '../format'
+import {
+  fetchMedia,
+  type LibraryClip,
+  type LibrarySource,
+} from '../api/media'
+import { formatClock, formatDuration } from '../format'
 import { usePolling } from '../hooks/usePolling'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
+import { ClipDetailModal } from '../components/ClipDetailModal'
+import { StageTrack } from '../components/StageTrack'
 
-/** Kaynak video etiketi -> (hap tonu, Türkçe etiket). */
 const TAG_VIEW: Record<string, { tone: string; label: string }> = {
   '#queued': { tone: 'idle', label: 'Sırada' },
   '#downloading': { tone: 'run', label: 'İndiriliyor' },
   '#processing': { tone: 'run', label: 'İşleniyor' },
   '#done': { tone: 'ok', label: 'Stokta' },
-  '#confirmed': { tone: 'ok', label: 'Onaylı' },
+  '#confirmed': { tone: 'ok', label: 'Tamamlandı' },
   '#error': { tone: 'error', label: 'Hata' },
-  '#excluded': { tone: 'idle', label: 'Hariç' },
 }
 
-/** Kullanıcının etiket filtresi: null = sisteme girmiş tümü (indirilen/işlenen). */
-const FILTERS: { tag: string | null; label: string }[] = [
-  { tag: null, label: 'Tümü (İndirilenler)' },
-  { tag: '#downloading', label: 'İndiriliyor' },
-  { tag: '#processing', label: 'İşleniyor' },
-  { tag: '#done', label: 'Stokta' },
-  { tag: '#error', label: 'Hata' },
-  { tag: '#excluded', label: 'Hariç' },
-  { tag: '#queued', label: 'Keşif Havuzu' },
-]
-
-const CLIP_STATUS_VIEW: Record<string, { tone: string; label: string }> = {
+const RENDER_VIEW: Record<string, { tone: string; label: string }> = {
   rendered: { tone: 'ok', label: 'Hazır' },
   rendering: { tone: 'run', label: 'Render' },
   review: { tone: 'warn', label: 'İnceleme' },
@@ -39,173 +31,212 @@ function sourceView(tag: string) {
   return TAG_VIEW[tag] ?? { tone: 'idle', label: tag }
 }
 
-function SourceRow({
+function renderView(status: string | null) {
+  if (!status) return { tone: 'idle', label: 'Sırada' }
+  return RENDER_VIEW[status] ?? { tone: 'idle', label: status }
+}
+
+function publishView(clip: LibraryClip) {
+  if (clip.visibility === 'public') return { tone: 'ok', label: 'Yayında' }
+  if (clip.published_status === 'verified') {
+    return { tone: 'run', label: 'Gizli · saat bekliyor' }
+  }
+  if (clip.published_status === 'uploaded') {
+    return { tone: 'run', label: 'Gizli yüklendi' }
+  }
+  if (clip.published_status === 'failed') {
+    return { tone: 'error', label: 'Yükleme hatası' }
+  }
+  if (clip.metadata_status === 'approved') {
+    return { tone: 'warn', label: 'Yüklemeye hazır' }
+  }
+  return { tone: 'idle', label: 'Hazırlanıyor' }
+}
+
+function youtubeThumb(videoId: string | null): string | null {
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null
+}
+
+function SelectedMoments({ source }: { source: LibrarySource }) {
+  if (source.selected_candidates.length === 0) {
+    return (
+      <p className="product-note">
+        Motor henüz klip anı seçmedi; adaylar değerlendiriliyor.
+      </p>
+    )
+  }
+  return (
+    <div className="moment-list" aria-label="Seçilen klip anları">
+      {source.selected_candidates.map((candidate) => {
+        const view = renderView(candidate.render_status)
+        return (
+          <span key={candidate.id} className="moment-chip">
+            <span className="nums">
+              {formatClock(candidate.start_seconds)}–{formatClock(candidate.end_seconds)}
+            </span>
+            <span className={`pill pill--${view.tone}`}>{view.label}</span>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function SourceCard({
   source,
-  onStatusChange,
-  statusBusy,
+  featured = false,
 }: {
   source: LibrarySource
-  onStatusChange: (source: LibrarySource, status: 'planned' | 'excluded') => void
-  statusBusy: number | null
+  featured?: boolean
 }) {
   const view = sourceView(source.tag)
-  const canExclude = ['#queued', '#downloading', '#processing'].includes(
-    source.tag,
-  )
-  const busy = statusBusy === source.id
-  const ytUrl = source.youtube_video_id
-    ? `https://www.youtube.com/watch?v=${source.youtube_video_id}`
-    : null
-  const thumbUrl = source.youtube_video_id
-    ? `https://i.ytimg.com/vi/${source.youtube_video_id}/mqdefault.jpg`
-    : null
-
+  const thumb = youtubeThumb(source.youtube_video_id)
+  const href = source.youtube_url ?? undefined
   return (
-    <tr>
-      <td>
-        <div className="lib-video-cell">
-          {thumbUrl && ytUrl && (
-            <a
-              href={ytUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="lib-thumb-wrap"
-              title="YouTube'da izle"
-            >
-              <img
-                src={thumbUrl}
-                alt=""
-                loading="lazy"
-                className="lib-thumb"
-              />
-              <span className="lib-play-icon" aria-hidden="true">
-                ▶
-              </span>
-            </a>
-          )}
-          <div className="lib-title">
-            <b>{source.title}</b>
-            <div className="lib-meta-row">
-              {ytUrl && (
-                <a
-                  href={ytUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="lib-yt-link nums"
-                  title="YouTube videosunu yeni sekmede aç"
-                >
-                  YouTube ↗
-                </a>
-              )}
-              <small className="nums">{source.youtube_video_id}</small>
-            </div>
-          </div>
-        </div>
-      </td>
-      <td>
-        {source.channel_name ? (
-          <span className="lib-channel">
-            {source.ribbon_color && (
-              <i style={{ background: source.ribbon_color }} aria-hidden="true" />
-            )}
-            {source.channel_name}
+    <article className={`source-card${featured ? ' source-card--featured' : ''}`}>
+      <a
+        className="source-thumb"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Kaynak videoyu YouTube'da aç"
+      >
+        {thumb ? (
+          <img
+            src={thumb}
+            alt=""
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none'
+            }}
+          />
+        ) : (
+          <span className="source-thumb-fallback" aria-hidden="true">
+            ▶
           </span>
-        ) : (
-          '—'
         )}
-      </td>
-      <td>
+        {thumb && (
+          <span className="source-play" aria-hidden="true">
+            ▶
+          </span>
+        )}
+      </a>
+      <div className="source-body">
+        <div className="source-heading">
+          <a
+            className="source-title"
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {source.title}
+          </a>
+          <span className={`pill pill--${view.tone}`}>{view.label}</span>
+        </div>
+        <a
+          className="source-channel"
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Kanalı YouTube'da aç"
+        >
+          {source.source_channel_title ?? 'Kaynak kanal'}
+          <span aria-hidden="true"> ↗</span>
+        </a>
+        <StageTrack steps={source.stages} />
+        <SelectedMoments source={source} />
+        <div className="source-foot">
+          <span>{source.selected_count} klip anı seçildi</span>
+          {source.full_cut_ready && <span>Yatay tam kesit hazır</span>}
+          {source.is_current && <span className="current-mark">Şu an motorda</span>}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function ClipCard({
+  clip,
+  onOpen,
+}: {
+  clip: LibraryClip
+  onOpen: (clip: LibraryClip) => void
+}) {
+  const view = publishView(clip)
+  return (
+    <button
+      type="button"
+      className="clip-card"
+      onClick={() => onOpen(clip)}
+      aria-label={`${clip.title} detayını aç`}
+    >
+      <span className="clip-card-thumb">
+        {clip.thumbnail_url ? (
+          <img
+            src={clip.thumbnail_url}
+            alt=""
+            loading="lazy"
+            onError={(event) => {
+              const fallback =
+                clip.source_platform === 'youtube'
+                  ? youtubeThumb(clip.source_youtube_video_id)
+                  : null
+              const image = event.currentTarget
+              if (fallback && image.src !== fallback) {
+                image.src = fallback
+              } else {
+                image.style.display = 'none'
+              }
+            }}
+          />
+        ) : (
+          <span className="clip-card-placeholder" aria-hidden="true">
+            ▶
+          </span>
+        )}
+        <span className="clip-card-play" aria-hidden="true">
+          ▶
+        </span>
+        <span className="clip-card-duration nums">
+          {formatDuration(clip.duration_seconds)}
+        </span>
+      </span>
+      <span className="clip-card-body">
+        <b>{clip.title}</b>
+        <small>
+          {clip.channel_name ?? 'Kanal'} ·{' '}
+          {clip.orientation === 'vertical' ? 'Dikey' : 'Yatay'}
+        </small>
         <span className={`pill pill--${view.tone}`}>{view.label}</span>
-        {source.asset_stage_label && source.tag === '#processing' && (
-          <small className="lib-stage">{source.asset_stage_label}</small>
-        )}
-      </td>
-      <td className="nums">{formatDuration(source.duration_seconds)}</td>
-      <td className="nums">
-        {source.file_bytes > 0 ? formatBytes(source.file_bytes) : '—'}
-      </td>
-      <td className="nums">{formatTimeShort(source.updated_at)}</td>
-      <td>
-        {source.tag === '#excluded' ? (
-          <button
-            type="button"
-            className="btn btn--ghost"
-            disabled={busy}
-            title="Yanlışlıkla hariç tutulmuş bir tepki videosunu işleme geri alır."
-            onClick={() => onStatusChange(source, 'planned')}
-          >
-            {busy ? '…' : 'İşleme al'}
-          </button>
-        ) : canExclude ? (
-          <button
-            type="button"
-            className="btn btn--danger"
-            disabled={busy}
-            title="Bu videoyu kural dışı tutar: işlenmez, indirilmez."
-            onClick={() => onStatusChange(source, 'excluded')}
-          >
-            {busy ? '…' : 'Hariç tut'}
-          </button>
-        ) : (
-          '—'
-        )}
-      </td>
-    </tr>
+      </span>
+    </button>
   )
 }
 
 export function MediaLibraryScreen() {
-  const [limit] = useState(60)
-  const [extraPages, setExtraPages] = useState(0)
-  const [tagFilter, setTagFilter] = useState<string | null>(null)
-  const [statusBusy, setStatusBusy] = useState<number | null>(null)
-
-  // Varsayılan liste yalnızca sisteme girmiş videoları taşır (indirilen,
-  // işlenen, onaylı ya da o an işlenen). Keşif havuzu ve hata durumları
-  // kendi filtrelerinde tam listeden okunur: henüz asset'i oluşmamış
-  // hatalı/sıradaki satırlar da görünsün.
-  const fullPool =
-    tagFilter === '#queued' || tagFilter === '#excluded' || tagFilter === '#error'
-  const activeOnly = !fullPool
+  const [openClipId, setOpenClipId] = useState<number | null>(null)
 
   const fetchCb = useCallback(
-    () =>
-      fetchMedia(
-        limit + extraPages * limit,
-        0,
-        tagFilter === '#excluded',
-        activeOnly,
-      ),
-    [limit, extraPages, tagFilter, activeOnly],
+    () => fetchMedia(60, 0, false, false, true, true),
+    [],
   )
   const library = usePolling(fetchCb, 10000)
 
-  async function changeStatus(
-    source: LibrarySource,
-    status: 'planned' | 'excluded',
-  ) {
-    setStatusBusy(source.id)
-    try {
-      await setSourceVideoStatus(source.id, status)
-      await library.retry()
-    } finally {
-      setStatusBusy(null)
-    }
-  }
-
   const data = library.state.status === 'ok' ? library.state.data : null
-  const sources = data
-    ? data.sources.filter((s) => tagFilter === null || s.tag === tagFilter)
-    : []
-  const hasMore = data ? data.sources.length < data.sources_total : false
+  const current =
+    data?.sources.find((source) => source.id === data.current_source_id) ?? null
+  const previous = data?.sources.filter((source) => source.id !== current?.id) ?? []
+  const readyCount = data ? data.summary.shorts_ready + data.summary.full_cuts_ready : 0
 
   return (
     <>
       <div className="screen-head">
-        <h1>Medya Kütüphanesi</h1>
-        <span className="screen-sub">
-          İndirilen kaynaklar, üretilen klipler ve özel stok
-        </span>
+        <div>
+          <h1>Medya Kütüphanesi</h1>
+          <span className="screen-sub">
+            Motorun seçtiği videolar ve yayına hazır klipler
+          </span>
+        </div>
       </div>
 
       {library.state.status === 'loading' && (
@@ -225,180 +256,90 @@ export function MediaLibraryScreen() {
             <StaleNote onRetry={library.retry} />
           )}
 
-          {data.sources_total === 0 ? (
-            data.summary.queued_pool > 0 ? (
-              <EmptyState title="Henüz işleme giren video yok">
-                Keşif havuzunda {data.summary.queued_pool} video otomasyonu
-                bekliyor. İlk indirme kendiliğinden başlar; bir video
-                sisteme girdiğinde burada görünür.
-              </EmptyState>
-            ) : (
-              <EmptyState title="Kütüphane boş">
-                Yetkili kaynak kanallardan indirilen videolar, üretilen
-                klipler ve yayın için bekleyen özel stok burada listelenecek.
-                Otomasyon çalışırken ilk indirme işlemi kendi kendine
-                başlar — yapman gereken bir şey yok.
-              </EmptyState>
-            )
-          ) : (
-            <>
-              <div className="stat-grid" aria-label="Kütüphane özeti">
-                <div className="stat-card">
-                  <span>İşleme giren</span>
-                  <b className="nums">{data.summary.entered}</b>
-                  <small>
-                    keşif havuzunda {data.summary.queued_pool} video sırada
-                  </small>
-                </div>
-                <div className="stat-card">
-                  <span>İşlenmiş</span>
-                  <b className="nums">{data.summary.processed}</b>
-                  <small>analizi tamamlanan</small>
-                </div>
-                <div className="stat-card">
-                  <span>Shorts stoğu</span>
-                  <b className="nums">{data.summary.shorts_ready}</b>
-                  <small>dikey klip hazır</small>
-                </div>
-                <div className="stat-card">
-                  <span>Tam kesit</span>
-                  <b className="nums">{data.summary.full_cuts_ready}</b>
-                  <small>reaksiyon kaynağı</small>
-                </div>
+          <div className="stat-grid product-stat-grid" aria-label="Kütüphane özeti">
+            <div className="stat-card">
+              <span>Motorda</span>
+              <b className="nums">{current ? 1 : 0}</b>
+              <small>{current ? 'video işleniyor' : 'motor beklemede'}</small>
+            </div>
+            <div className="stat-card">
+              <span>Motorun seçtiği</span>
+              <b className="nums">{data.sources_total}</b>
+              <small>video</small>
+            </div>
+            <div className="stat-card">
+              <span>Hazır klip</span>
+              <b className="nums">{readyCount}</b>
+              <small>dikey Shorts ve tam kesit</small>
+            </div>
+          </div>
+
+          {current && (
+            <section className="current-panel" aria-label="Şu an motorda">
+              <div className="current-panel-head">
+                <h2>Şu an motorda</h2>
+                <span className="live-dot">canlı</span>
               </div>
-
-              <section className="ink-panel" aria-label="Kaynak videolar">
-                <h2>Kaynak videolar</h2>
-                <div className="filter-row" role="group" aria-label="Durum filtresi">
-                  {FILTERS.map((f) => (
-                    <button
-                      key={f.label}
-                      className={`filter-pill${tagFilter === f.tag ? ' active' : ''}`}
-                      onClick={() => setTagFilter(f.tag)}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-                {sources.length === 0 ? (
-                  <p className="plate-note">
-                    Bu durumda video yok. Filtreyi değiştirip yeniden bak.
-                  </p>
-                ) : (
-                  <table className="info-table">
-                    <thead>
-                      <tr>
-                        <th>Video</th>
-                        <th>Kanal</th>
-                        <th>Durum</th>
-                        <th>Süre</th>
-                        <th>Boyut</th>
-                        <th>Güncelleme</th>
-                        <th>Eylem</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sources.map((s) => (
-                        <SourceRow
-                          key={s.id}
-                          source={s}
-                          onStatusChange={(src, status) =>
-                            void changeStatus(src, status)
-                          }
-                          statusBusy={statusBusy}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {hasMore && (
-                  <button
-                    className="btn btn--ghost more-button"
-                    onClick={() => setExtraPages((n) => n + 1)}
-                  >
-                    Daha fazla yükle ({data.sources.length}/{data.sources_total})
-                  </button>
-                )}
-              </section>
-
-              <div className="panel-gap" />
-
-              <section className="ink-panel" aria-label="Klipler">
-                <h2>Klipler</h2>
-                {data.clips.length === 0 ? (
-                  <p className="plate-note">
-                    Henüz klip yok — işlenen kaynak videolardan seçilen
-                    adaylar render edildikçe dikey Shorts ve yatay tam
-                    kesitler burada listelenir.
-                  </p>
-                ) : (
-                  <table className="info-table">
-                    <thead>
-                      <tr>
-                        <th>Video</th>
-                        <th>Kanal</th>
-                        <th>Yön</th>
-                        <th>Durum</th>
-                        <th>Süre</th>
-                        <th>Boyut</th>
-                        <th>Tarih</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.clips.map((clip) => {
-                        const view =
-                          CLIP_STATUS_VIEW[clip.status] ?? {
-                            tone: 'idle',
-                            label: clip.status,
-                          }
-                        return (
-                          <tr key={clip.id}>
-                            <td>
-                              <div className="lib-title">
-                                <b>{clip.title ?? 'Tam kesit'}</b>
-                                {clip.candidate_reason && (
-                                  <small>{clip.candidate_reason}</small>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              {clip.channel_name ? (
-                                <span className="lib-channel">
-                                  {clip.ribbon_color && (
-                                    <i
-                                      style={{ background: clip.ribbon_color }}
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                  {clip.channel_name}
-                                </span>
-                              ) : (
-                                '—'
-                              )}
-                            </td>
-                            <td>{clip.orientation === 'vertical' ? 'Dikey' : 'Yatay'}</td>
-                            <td>
-                              <span className={`pill pill--${view.tone}`}>
-                                {view.label}
-                              </span>
-                            </td>
-                            <td className="nums">
-                              {formatDuration(clip.duration_seconds)}
-                            </td>
-                            <td className="nums">
-                              {clip.file_bytes > 0 ? formatBytes(clip.file_bytes) : '—'}
-                            </td>
-                            <td className="nums">{formatTimeShort(clip.created_at)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </section>
-            </>
+              <SourceCard source={current} featured />
+            </section>
           )}
+
+          <section className="ink-panel" aria-label="Motorun seçtiği videolar">
+            <h2>Motorun seçtiği videolar</h2>
+            {data.sources_total === 0 && data.clips.length === 0 ? (
+              <EmptyState title="Motor henüz klip seçmedi">
+                Keşif havuzundaki videolar arka planda değerlendirilir. Motor
+                bir videoyu seçtiğinde burada işlem aşamalarıyla görünür;
+                seçilmeyen videolar kütüphaneye taşınmaz.
+              </EmptyState>
+            ) : previous.length > 0 ? (
+              <div className="source-grid">
+                {previous.map((source) => (
+                  <SourceCard key={source.id} source={source} />
+                ))}
+              </div>
+            ) : (
+              <p className="product-note">
+                {current
+                  ? 'Şu an işlenen video yukarıda. Tamamlanan seçimler burada listelenecek.'
+                  : 'Henüz tamamlanmış bir seçim yok.'}
+              </p>
+            )}
+          </section>
+
+          <div className="panel-gap" />
+
+          <section className="ink-panel" aria-label="Hazır videolar">
+            <div className="panel-head-row">
+              <h2>Hazır videolar</h2>
+              <span className="panel-count">{data.clips.length} klip</span>
+            </div>
+            {data.clips.length === 0 ? (
+              <p className="product-note">
+                Hazır klip yok. Motor bir sonraki seçimi tamamladığında
+                videolar burada oynatılabilir kartlar olarak görünür.
+              </p>
+            ) : (
+              <div className="clip-grid">
+                {data.clips.map((clip) => (
+                  <ClipCard
+                    key={clip.id}
+                    clip={clip}
+                    onOpen={(selected) => setOpenClipId(selected.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </>
+      )}
+
+      {openClipId !== null && (
+        <ClipDetailModal
+          key={openClipId}
+          clipId={openClipId}
+          onClose={() => setOpenClipId(null)}
+        />
       )}
     </>
   )

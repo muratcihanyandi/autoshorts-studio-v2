@@ -14,11 +14,13 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** UI simplification, visual thumbnails and cleanups (2026-10-19):
-Overview redundant top pipeline button removed (preserving bottom detail triggers and
-interactive rows). Media Library, Automation, and Pipeline Details now display
-YouTube video thumbnails and direct watch links. Backend schemas and pipeline services
-enriched with youtube_video_id. Frontend 22/22 tests passing, Vite build clean.
+**Current task:** Product surface (2026-10-19): first-run studio login with an
+HttpOnly session cookie; the media library now shows only engine-selected
+videos (current video + completed selections) with a stage track, YouTube
+thumbnails and source-channel links. Ready clips are compact cards that open a
+detail dialog with a Range-streamed player, YouTube publishing plan, title,
+description, tags, filters and cover image. Backend 403/403, frontend 22/22,
+type check/build and secret scan clean.
 
 **Last updated:** 2026-10-19
 
@@ -829,28 +831,29 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-19 (reaction-channels + recency + cipher session) on the
-dev machine (Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run
-from the stated directories. NOTE: on this machine pytest must be run
-with file redirection, not through pipes — piped runs hang (known
-dev-env quirk); the full suite ran as partitioned foreground chunks.
+Verified 2026-10-19 (product surface session: auth + selected-only media
+library + clip detail/player) on the dev machine (Windows 11, Python
+3.11.9 venv, Node 24.13.0). Commands run from the stated directories.
+NOTE: on this machine pytest must be run with file redirection, not
+through pipes — piped runs hang (known dev-env quirk); the full suite
+ran foreground with redirection.
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
-  (output redirected to log files)
-  - Passed: **388**, Failed: 0, Skipped: 0 (388 collected; affected
-    files re-run after each fix; this session added 4: age-rule window
-    widening restore, refill age guard, 1080p format assertion, worker
-    cipher-key resolution from site settings).
+  (output redirected to a log file)
+  - Passed: **403**, Failed: 0, Skipped: 0 (403 collected; 5 new auth
+    tests, 4 new product media tests; the media regression test
+    explicitly requests `active_only=false` for its tag-vocabulary
+    assertions).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
-  - 2 pre-existing warnings (aiosqlite thread cleanup notice,
-    starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 23 passed, 0 failed
-  (App 4, SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
-  LivePipeline 2, MediaLibraryScreen 4, LogsScreen 1).
+  - 1 warning (starlette TestClient deprecation).
+- Frontend — `cd frontend && npx vitest run`: 22 passed, 0 failed
+  (App 6, SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
+  MediaLibraryScreen 3, LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Production build —
   `npm run build`: succeeded.
-- Secret scan — `python tools/scan_secrets.py`: clean.
+- Secret scan — `python tools/scan_secrets.py`: clean (synthetic test
+  credentials carry justified `# secret-scan-ok` markers).
 
 Previous full-suite record (2026-10-18, post-scheduled-public +
 library-cleanup sessions): backend 383/384 (two chunks), frontend
@@ -959,6 +962,39 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Product surface session (2026-10-19, user request: "login ekranı olsun,
+  sadece seçilen videolar görünsün, hazır videolar izlenebilsin"):
+  (1) Login — `app_meta.studio_auth` stores the first-run operator username,
+  PBKDF2-SHA256 password hash and a random session secret. `AuthService` +
+  `install_auth_middleware` close every non-public `/api` route once a
+  password exists; health and auth endpoints stay open, the console docs are
+  closed. `POST /api/auth/setup` is first-run only; login/logout/status are
+  cookie-based (HttpOnly, SameSite=Lax, 7-day TTL, `AUTH_COOKIE_SECURE` for
+  HTTPS). The React app gates the whole studio behind `AuthScreen`
+  (first-run setup or login) and returns to it on any 401
+  (`studio:unauthorized` event in `api/client.ts`).
+  (2) Product media view — GET `/api/media` gained `engine_selected_only`
+  and `ready_only`. Engine mode shows only sources with a `selected`
+  candidate plus the currently running source; league/backlog rows stay
+  hidden. Each source carries `stages` (download → inspect → transcript →
+  analysis → candidates → selection), `selected_candidates` (times, score,
+  hype confidence, render status), `source_channel_title`, `youtube_url`,
+  reaction/trim/filter metadata and `is_current`.
+  (3) Ready clips — GET `/api/media/clips/{id}` returns the player URL,
+  cover URL, latest metadata revision, candidate/hype detail, source,
+  publishing plan (upload status, visibility, next slot, timezone, daily
+  limit) and applied filters. GET `/api/media/clips/{id}/stream` serves the
+  rendered file with Starlette Range support; `/thumbnail` serves the
+  composed cover. Render jobs now write a text-free preview thumbnail
+  (`thumbnails/preview_{render_id}.jpg`) so clips are visible before
+  metadata approval; approval still writes the final text cover.
+  (4) UI — MediaLibraryScreen is a product view: current-engine panel,
+  selected-video cards with YouTube channel links, compact ready-clip grid,
+  and ClipDetailModal (HTML5 player, metadata/title/description/tags,
+  cover, selection reason, filters, YouTube plan). Admin screens are grouped
+  under "Yönetim" in the rail; logout lives in the rail footer.
+  Verified: backend 403/403, frontend 22/22, `tsc -b` clean,
+  `npm run build` clean, secret scan clean. DB migration not required.
 - UI de-clutter session (2026-10-19, "arayüzden ne olup bittiğini
   anlayamıyorum"): four operator-facing complaints addressed. (1) The
   Overview "Canlı boru hattı" panel (job cards, queue, "Son sonuçlar")

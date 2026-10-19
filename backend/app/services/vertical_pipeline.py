@@ -254,6 +254,12 @@ class VerticalPipelineService:
                 "h": resolved.region[3],
             }
             row.webcam_confidence = resolved.confidence
+            if not row.thumbnail_path:
+                preview = await self._write_preview_thumbnail(
+                    render_row.id, out_path
+                )
+                if preview:
+                    row.thumbnail_path = preview
             record_event(
                 session,
                 channel_id,
@@ -394,6 +400,12 @@ class VerticalPipelineService:
                 "av_sync_delta": report.av_sync_delta,
                 "has_audio": report.has_audio,
             }
+            if not row.thumbnail_path:
+                preview = await self._write_preview_thumbnail(
+                    render_row.id, out_path
+                )
+                if preview:
+                    row.thumbnail_path = preview
             record_event(
                 session,
                 channel_id,
@@ -464,6 +476,29 @@ class VerticalPipelineService:
         )
         image = cv2.imread(str(path))
         return image if image is not None else None
+
+    async def _write_preview_thumbnail(
+        self, render_id: int, video_path: Path
+    ) -> str | None:
+        """Kütüphane kartı için metinsiz önizleme kapağı (best-effort).
+
+        Onay adımı gerçek metinli kapağı ayrı bir yola yazar; bu önizleme
+        yalnızca hazır klip listesinde oynatıcı yerine görsel göstermek
+        içindir ve üretilemezse akışı durdurmaz.
+        """
+        if not self._settings.media_root:
+            return None
+        from app.services.thumbnail import compose
+
+        relative = f"thumbnails/preview_{render_id}.jpg"
+        output = Path(self._settings.media_root) / relative
+        try:
+            await compose(
+                self._settings.ffmpeg_bin, video_path, "", output
+            )
+        except Exception:  # noqa: BLE001 - önizleme isteğe bağlı
+            return None
+        return relative
 
     def _edited_dir(self):
         from pathlib import Path
