@@ -1,0 +1,419 @@
+# AutoShorts Studio — Development Roadmap
+
+## Project Objective
+
+Build a professional, reliable, autonomous YouTube Creator Studio for Raspberry Pi 5 (8GB RAM) and CasaOS.
+
+The system will manage multiple YouTube channels, monitor authorized source media, process horizontal videos, generate vertical clips, correct Turkish subtitles, prepare metadata, maintain private video stock, and publish content according to configurable schedules.
+
+The project must prioritize reliability, resource limits, content rights, and maintainability.
+
+## Status Legend
+
+- `NOT_STARTED`: No implementation has been verified.
+- `IN_PROGRESS`: Implementation is underway.
+- `BLOCKED`: Progress requires an external dependency or decision.
+- `TESTING`: Implementation exists and is being verified.
+- `COMPLETED`: Acceptance criteria have been verified.
+- `DEFERRED`: Intentionally postponed with a documented reason.
+
+Do not mark a milestone complete merely because its code has been generated.
+
+---
+
+## Milestone 0 — Environment and Architecture
+
+Status: COMPLETED (2026-10-16; evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Inspect the ZCode workspace and Git state.
+- Verify available skills and MCP servers.
+- Inspect available GitHub authentication.
+- Confirm PostgreSQL reachability and identify the intended database.
+- Verify target ARM64 and CasaOS constraints.
+- Document the architecture and initial assumptions.
+- Establish the initial project directory structure.
+- Create a security checklist.
+
+Deliverables:
+- `AGENTS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/SECURITY.md`
+- `docs/ROADMAP.md`
+- `docs/PROGRESS.md`
+
+Acceptance criteria:
+- Existing files and Git history are preserved.
+- Required environment details are documented.
+- Secrets are not copied into project files.
+- Architectural decisions are recorded.
+
+## Milestone 1 — Repository and Foundation
+
+Status: COMPLETED (local work verified 2026-10-16; private GitHub remote pending user authentication — see `docs/PROGRESS.md` blocker B1)
+
+Tasks:
+- Create or connect a private GitHub repository.
+- Configure `.gitignore` and `.env.example`.
+- Establish frontend and backend project structures.
+- Set up Docker Compose for ARM64.
+- Configure FastAPI.
+- Configure React, TypeScript, Vite, and the UI foundation.
+- Configure PostgreSQL connectivity and Alembic migrations.
+- Implement health endpoints and structured logging.
+- Create initial automated tests.
+
+Acceptance criteria:
+- The project builds.
+- The frontend loads.
+- The backend health endpoint responds.
+- PostgreSQL connectivity is verified.
+- Migrations can be applied safely.
+- No secrets are committed.
+- CasaOS deployment instructions exist.
+
+## Milestone 2 — Studio Interface
+
+Status: COMPLETED (2026-10-17; superseded by the canon redesign of 2026-10-17 — evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Read the Impeccable and Frontend Design skill instructions.
+- Establish design tokens and reusable components.
+- Implement responsive navigation.
+- Implement Overview, Channels, Media Library, Calendar, Automation, LLM Providers, Logs, and Settings screens.
+- Add loading, empty, error, and retry states.
+- Connect dashboard widgets to real API data.
+- Add system resource indicators.
+- Verify accessibility and keyboard navigation.
+
+Acceptance criteria:
+- The UI has a consistent studio-oriented visual identity.
+- Navigation works.
+- Data comes from the backend.
+- Loading and failure states are handled.
+- The interface remains responsive during background jobs.
+
+## Milestone 3 — Database and Channel Management
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Implement channel, OAuth credential, source channel, and publishing profile models.
+- Implement migrations and repository/service layers.
+- Implement multiple connected YouTube channels.
+- Implement secure OAuth flows.
+- Implement token refresh and reconnection.
+- Implement channel-specific settings.
+- Implement audit events.
+
+Acceptance criteria:
+- Multiple channels can be represented independently.
+- OAuth state validation works.
+- Secrets are not exposed in API responses.
+- A disconnected channel does not disable other channels.
+- Database changes survive restarts.
+
+## Milestone 4 — Source Monitoring and Planning
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Integrate official YouTube metadata APIs.
+- Implement source-channel registration.
+- Implement configurable polling.
+- Add quota tracking and caching.
+- Add source filtering and exclusion rules.
+- Implement rights records.
+- Implement a durable planning service.
+- Prevent duplicate source records and duplicate jobs.
+
+Acceptance criteria:
+- New source videos can be detected through authorized API access.
+- Quota limits are respected.
+- Source permissions are recorded.
+- Duplicate discovery does not create duplicate jobs.
+- Planning decisions are auditable.
+
+## Milestone 5 — LLM Provider Manager
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Implement main provider configuration.
+- Implement fallback provider 1.
+- Implement fallback provider 2.
+- Implement configurable model IDs and API endpoints.
+- Add masked API key management.
+- Add timeout, retry, and rate-limit handling.
+- Validate structured responses.
+- Record request latency and error categories.
+- Add simulated provider-failure tests.
+
+Acceptance criteria:
+- Main-provider failure triggers fallback.
+- Invalid responses are rejected safely.
+- Repeated failures do not cause infinite retries.
+- Secrets are never logged.
+- The provider manager can be tested independently.
+
+## Milestone 6 — Durable Job Queue and Resource Management
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3)
+
+Tasks:
+- Implement persistent job states.
+- Implement worker heartbeat.
+- Implement retry and cancellation.
+- Implement restart recovery.
+- Implement configurable concurrency.
+- Implement download bandwidth limits.
+- Add disk-space checks.
+- Add CPU and memory monitoring.
+- Implement safe temporary-file cleanup.
+
+Acceptance criteria:
+- Jobs survive application restarts.
+- Duplicate execution is prevented where possible.
+- Cancellation leaves consistent state.
+- Download speed limiting is measured.
+- Low disk space prevents unsafe new jobs.
+- Heavy work does not block API requests.
+
+## Milestone 7 — Horizontal Video Processing
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests running real ffmpeg media
+through the local-import adapter; the yt-dlp YouTube path is
+code-complete and command-tested, with runtime verification deferred to
+Pi deployment per ADR-012.)
+
+Tasks:
+- Implement authorized media-source adapters.
+- Implement sequential downloads.
+- Validate media integrity.
+- Inspect metadata with ffprobe.
+- Implement transcript generation.
+- Implement intro/outro candidate detection.
+- Implement scene and reaction analysis.
+- Implement clip-candidate generation.
+- Add content similarity checks.
+- Store processing results in PostgreSQL.
+
+Acceptance criteria:
+- Authorized test media can pass through the entire pipeline.
+- Failures are recorded and recoverable.
+- Candidate timestamps are valid.
+- Original files are preserved while needed.
+- The worker remains within configured resource limits.
+
+## Milestone 8 — Vertical Studio and Webcam Detection
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests with real OpenCV detection on
+a public-domain face fixture and real ffmpeg renders; Haar cascade
+limitations and the neural-detector upgrade path documented in
+ADR-013.)
+
+Tasks:
+- Implement 9:16 rendering templates.
+- Implement multi-frame webcam detection.
+- Implement webcam tracking and confidence scoring.
+- Implement streamer-specific calibration.
+- Implement manual region selection.
+- Implement top-webcam/bottom-video composition.
+- Implement subtitle positioning.
+- Implement generated-video validation.
+- Add representative test videos.
+
+Acceptance criteria:
+- Test clips render with the expected layout.
+- Webcam uncertainty triggers review.
+- Audio and video remain synchronized.
+- Cropping and subtitle overlap are validated.
+- Performance and detection limitations are documented.
+
+## Milestone 9 — Turkish Subtitle Correction and Metadata
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+All acceptance criteria verified by tests with mocked LLM transports —
+the M5 chain contract; real-provider quality is a site configuration
+matter.)
+
+Tasks:
+- Implement timestamped transcript storage.
+- Implement Turkish spelling and punctuation correction.
+- Preserve names and timestamps.
+- Flag uncertain corrections.
+- Implement channel-specific metadata templates.
+- Generate titles, descriptions, and tags.
+- Validate metadata length and content accuracy.
+- Store metadata revisions.
+
+Acceptance criteria:
+- Original transcripts remain recoverable.
+- Corrections do not silently alter timestamps.
+- Invalid metadata is rejected.
+- Template changes do not affect unrelated channels.
+
+## Milestone 10 — YouTube Upload and Publishing
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+Upload protocol, guards, schedules, and reconciliation verified against
+a faithful mock of the official API; live-API verification runs on the
+Pi once OAuth credentials are connected (B4).)
+
+Tasks:
+- Implement official API uploads.
+- Implement resumable upload where supported.
+- Implement private upload handling.
+- Store YouTube video IDs.
+- Implement per-channel publishing schedules.
+- Implement timezone-aware planning.
+- Implement visibility checks.
+- Implement retry and reconciliation after failures.
+- Implement publication approval controls.
+
+Acceptance criteria:
+- Authorized test videos upload successfully.
+- Duplicate uploads are prevented.
+- Private visibility is verified.
+- Scheduling behavior is tested against the actual API.
+- Rights checks run before publication.
+- Failed uploads can be recovered.
+
+## Milestone 11 — End-to-End Automation
+
+Status: COMPLETED (2026-10-17; evidence in `docs/PROGRESS.md` section 3.
+The full chain runs on authorized test content through the real worker
+queue with real ffmpeg media and mocked LLM/YouTube transports.)
+
+Tasks:
+- Connect source monitoring to the planning engine.
+- Connect the planning engine to the media queue.
+- Connect media completion to the review and publishing pipeline.
+- Implement configurable daily targets.
+- Implement stock-level monitoring.
+- Implement schedule-aware prioritization.
+- Add notifications and operational summaries.
+
+Acceptance criteria:
+- The full pipeline runs on authorized test content.
+- Jobs progress through valid states.
+- Insufficient stock does not cause unsafe publication.
+- Channel failures remain isolated.
+- The system can pause and resume safely.
+
+## Milestone 12 — Production Hardening
+
+Status: NOT_STARTED
+
+Tasks:
+- Run long-duration workloads on Raspberry Pi 5.
+- Measure CPU, RAM, disk, and thermal behavior.
+- Test network interruptions.
+- Test database disconnections.
+- Test LLM outages.
+- Test disk exhaustion.
+- Test worker restarts.
+- Test OAuth expiration.
+- Test upload interruption.
+- Validate backup and restore.
+- Perform security and secret scans.
+- Document deployment, upgrades, and recovery.
+
+Acceptance criteria:
+- Critical failure scenarios have verified recovery behavior.
+- Resource limits are documented.
+- Backups can be restored.
+- No known critical security issue remains unaddressed.
+- Actual test results are documented.
+
+## Milestone 13 — Characters and Multi-Platform Sources
+
+Status: COMPLETED (2026-10-18; evidence in `docs/PROGRESS.md` sections 3
+and 7. Plan: `docs/plans/2026-10-18-character-system.md`.)
+
+Tasks:
+- Implement streamer characters with photo, reference face, and
+  per-character system prompt.
+- Implement multi-platform sources (YouTube/Twitch/Kick) with rights
+  records, reaction flag, and head/tail trim.
+- Implement manual VOD import for non-YouTube platforms.
+- Implement reaction-source dual-orientation output: one trimmed
+  horizontal full cut (no subtitles) plus vertical shorts (subtitles).
+- Implement the metadata prompt chain (character → global → built-in
+  default) with viral hook and thumbnail text.
+- Implement webcam-region validation against the character's reference
+  face with rectangle-search fallback and review routing.
+- Compose thumbnails from approved metadata.
+- Add the Characters management screen and guide documentation.
+
+Acceptance criteria:
+- Character/source CRUD works through API and UI.
+- Reaction sources produce both orientations; normal sources render
+  vertical shorts only (hard guard).
+- The prompt chain resolves in order and lengths are validated.
+- Webcam uncertainty still routes to review, never a wrong crop.
+- Verified by tests: backend 330/330, frontend 14/14.
+
+## Milestone 14 — Channel Automation (Start/Stop)
+
+Status: COMPLETED (2026-10-18; evidence in `docs/PROGRESS.md` sections
+3 and 7.)
+
+Tasks:
+- Find and fix why the deployed automation never ran (missing
+  WORKER_ENABLED/MEDIA_ROOT in the compose templates in actual use).
+- Implement the per-channel automation state machine
+  (stopped/running/paused/error) with Start/Stop/Pause APIs and
+  Overview controls; stop cancels queued jobs, state survives
+  restarts.
+- Implement the stock-target horizontal refill (default 3, exactly one
+  source in-flight globally) and the central status-tag vocabulary
+  (#queued/#downloading/#processing/#done/#confirmed/#shorts/#error)
+  with the #confirmed terminal transition.
+- Implement LLM hype evaluation (transcript-context windows,
+  validated + sentence-snapped boundaries, confidence scores,
+  score-fallback on provider outage) and select-only rendering.
+- Implement the auto/on/off content modes with independent +18 and
+  AI-use disclosure decisions.
+- Implement the whisper transcription fallback (PATH-probed CLI) and
+  the live-effective resource settings (CPU/RAM targets, ffmpeg
+  threads, heavy-job limits, retry backoff).
+- Prove worker liveness in the UI (app_meta heartbeat banner).
+
+Acceptance criteria:
+- Start makes the worker actually take work; stop blocks new jobs
+  without corrupting half-done output (verified by tests).
+- The stock target stops new downloads at 3 and resumes on depletion;
+  a source is never processed twice; one video yields multiple
+  Shorts (verified by tests).
+- Overview shows real stock/published numbers, per-channel engine
+  rows, and worker health (hardcoded zeros removed).
+- Verified by tests: backend 352/352, frontend 14/14.
+
+---
+
+## Cross-Milestone Rules
+
+- Work on one primary milestone at a time.
+- Small independent tasks may be completed in parallel when safe.
+- Do not begin full autonomous publishing before rights, quality, and recovery checks work.
+- Update `docs/PROGRESS.md` after each meaningful task.
+- Update this roadmap when scope or dependencies change.
+- Record significant architectural decisions in `docs/DECISIONS.md`.
+- Every completed milestone must have verifiable evidence.
+- Never claim that the entire application is production-ready without end-to-end verification.
+
+## Immediate Next Action
+
+Milestones 0 and 1 are complete (all local acceptance criteria verified;
+evidence in `docs/PROGRESS.md` sections 3 and 7). Begin Milestone 2 by
+loading the `impeccable` and `frontend-design` skills.
+
+Two external items remain open and can be resolved by the user at any
+time: GitHub authentication for the private remote repository (B1), and
+the deployment gates G1/G2 (token revocation and password rotation
+confirmation, `docs/SECURITY.md`). Deployment itself follows
+`docs/DEPLOYMENT.md`.

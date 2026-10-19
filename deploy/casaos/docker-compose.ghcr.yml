@@ -1,0 +1,68 @@
+# AutoShorts Studio v2 — CasaOS, GHCR imajlari (Pi'de derleme YOK)
+#
+# Bu dosya, GitHub Actions'in GHCR'a yayinladigi imajlari ceker:
+#   ghcr.io/muratcihanyandi/autoshorts-studio-v2/backend:latest
+#   ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
+# ON KOSUL: repoya push edilmis ve build-images workflow'u ilk calismasini
+# tamamlamis olmak (GitHub -> Actions -> build-images).
+#
+# KULLANIM: DB_SIFRE_BURAYA yazan 1 yeri veritabani sifresiyle degistirin,
+# sonra tamamini CasaOS'a yapistirin.
+#
+# Paketler private kalirsa Pi'de bir kez GHCR girisi gerekir:
+#   echo <read:packages PAT> | docker login ghcr.io -u muratcihanyandi --password-stdin
+# Paket ayarlarindan visibility=public yaparsaniz giris gerekmez.
+#
+# Ag: nginx BACKEND_HOST uzerinden (varsayilan: servis adi "backend") istek
+# aninda DNS cozumler; iki konteyner ayni autoshorts-net agindadir.
+# /api 502 verirse BACKEND_HOST'u sunucu IP'sine cevirin (backend 8000'te yayinda).
+
+# Docker Compose proje adi ve CasaOS uygulama karti bilgileri.
+name: autoshorts-studio
+
+x-casaos:
+  appstore:
+    icon: https://raw.githubusercontent.com/muratcihanyandi/autoshorts-studio-v2/main/deploy/casaos/autoshorts-icon.png
+    title: AutoShorts Studio
+    port_map: "1478"
+
+services:
+  frontend:
+    image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/frontend:latest
+    platform: linux/arm64
+    container_name: autoshorts-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      BACKEND_HOST: backend
+    ports:
+      - "1478:80"
+    networks:
+      - autoshorts-net
+
+
+  backend:
+    image: ghcr.io/muratcihanyandi/autoshorts-studio-v2/backend:latest
+    platform: linux/arm64
+    container_name: autoshorts-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql+asyncpg://muratcihanyandi:DB_SIFRE_BURAYA@192.168.2.170:5432/autoshorts_studio
+      WORKER_ENABLED: "true"
+      # Etiketli medya agaci: downloads / edited / clips / stock / tmp.
+      # Sunucuda klasoru once elle olusturun: mkdir -p /mnt/usb/Autoshorts_Studio
+      MEDIA_ROOT: /data/media
+    volumes:
+      - /mnt/usb/Autoshorts_Studio:/data/media
+    ports:
+      - "8000:8000"
+    networks:
+      - autoshorts-net
+
+
+networks:
+  autoshorts-net:
+    name: autoshorts-net
