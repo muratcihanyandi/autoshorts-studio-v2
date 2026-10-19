@@ -17,8 +17,7 @@ import { GuideScreen } from './screens/GuideScreen'
 
 type AuthState =
   | { status: 'loading' }
-  | { status: 'setup' }
-  | { status: 'login' }
+  | { status: 'auth'; mode: 'login' | 'signup'; signupOpen: boolean }
   | { status: 'ready'; username: string }
 
 function App() {
@@ -28,16 +27,24 @@ function App() {
     try {
       const status = await fetchAuthStatus()
       if (!status.configured) {
-        setAuth({ status: 'setup' })
+        setAuth({
+          status: 'auth',
+          mode: 'signup',
+          signupOpen: status.signup_open,
+        })
       } else if (!status.authenticated) {
-        setAuth({ status: 'login' })
+        setAuth({
+          status: 'auth',
+          mode: 'login',
+          signupOpen: status.signup_open,
+        })
       } else {
         setAuth({ status: 'ready', username: status.username ?? 'yönetici' })
       }
     } catch {
       // Sunucu henüz yanıt vermiyorsa giriş formu gösterilir; deneme
       // sırasında gerçek hata mesajı görünür.
-      setAuth({ status: 'login' })
+      setAuth({ status: 'auth', mode: 'login', signupOpen: false })
     }
   }, [])
 
@@ -46,7 +53,8 @@ function App() {
   }, [loadAuth])
 
   useEffect(() => {
-    const onUnauthorized = () => setAuth({ status: 'login' })
+    const onUnauthorized = () =>
+      setAuth({ status: 'auth', mode: 'login', signupOpen: false })
     window.addEventListener('studio:unauthorized', onUnauthorized)
     return () =>
       window.removeEventListener('studio:unauthorized', onUnauthorized)
@@ -60,10 +68,11 @@ function App() {
     )
   }
 
-  if (auth.status === 'setup' || auth.status === 'login') {
+  if (auth.status === 'auth') {
     return (
       <AuthScreen
-        mode={auth.status}
+        initialMode={auth.mode}
+        signupOpen={auth.signupOpen}
         onAuthenticated={(username) => {
           setAuth({ status: 'ready', username })
         }}
@@ -75,7 +84,7 @@ function App() {
     try {
       await logoutStudio()
     } finally {
-      setAuth({ status: 'login' })
+      setAuth({ status: 'auth', mode: 'login', signupOpen: false })
     }
   }
 

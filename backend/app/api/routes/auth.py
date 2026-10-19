@@ -1,4 +1,4 @@
-"""Studio login API: first-run setup, login, logout, session status."""
+"""Studio auth API: first-run signup, login, logout, session status."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -25,6 +25,8 @@ class AuthStatus(BaseModel):
     configured: bool
     authenticated: bool
     username: str | None = None
+    # İlk hesap oluşturulana kadar kayıt açıktır; sonrasında kapanır.
+    signup_open: bool = False
 
 
 def _service(request: Request) -> AuthService:
@@ -54,14 +56,14 @@ async def auth_status(request: Request) -> AuthStatus:
         configured=config is not None,
         authenticated=username is not None,
         username=username,
+        signup_open=config is None,
     )
 
 
-@router.post("/setup", response_model=AuthStatus, status_code=201)
-async def setup(
+async def _create_first_account(
     request: Request, response: Response, body: Credentials
 ) -> AuthStatus:
-    """İlk kurulum: yalnızca parola henüz yokken çalışır."""
+    """İlk hesap: yalnızca henüz kullanıcı yokken çalışır."""
     service = _service(request)
     try:
         config = await service.setup(body.username, body.password)
@@ -73,7 +75,24 @@ async def setup(
         configured=True,
         authenticated=True,
         username=str(config["username"]),
+        signup_open=False,
     )
+
+
+@router.post("/signup", response_model=AuthStatus, status_code=201)
+async def signup(
+    request: Request, response: Response, body: Credentials
+) -> AuthStatus:
+    """İlk stüdyo hesabını oluştur (kayıt dönemi)."""
+    return await _create_first_account(request, response, body)
+
+
+@router.post("/setup", response_model=AuthStatus, status_code=201)
+async def setup(
+    request: Request, response: Response, body: Credentials
+) -> AuthStatus:
+    """Geriye dönük uyumluluk: eski istemciler için /signup ile aynı."""
+    return await _create_first_account(request, response, body)
 
 
 @router.post("/login", response_model=AuthStatus)
@@ -100,6 +119,7 @@ async def login(
         configured=True,
         authenticated=True,
         username=str(config["username"]),
+        signup_open=False,
     )
 
 

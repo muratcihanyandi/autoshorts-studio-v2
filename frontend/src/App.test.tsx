@@ -54,6 +54,14 @@ const authPayload = {
   configured: true,
   authenticated: true,
   username: 'admin',
+  signup_open: false,
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
 function mockApiOk() {
@@ -108,32 +116,75 @@ describe('App', () => {
     render(<App />)
 
     expect(
-      await screen.findByRole('heading', { name: 'Stüdyoya giriş' }),
+      await screen.findByRole('heading', { name: 'Giriş yap' }),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Kullanıcı adı')).toBeInTheDocument()
   })
 
-  it('shows the first-run setup when no password is configured', async () => {
+  it('shows the signup screen when no account is configured', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              configured: false,
-              authenticated: false,
-              username: null,
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          ),
+      vi.fn(async () =>
+        jsonResponse({
+          configured: false,
+          authenticated: false,
+          username: null,
+          signup_open: true,
+        }),
       ),
     )
     render(<App />)
 
     expect(
-      await screen.findByRole('heading', { name: 'İlk kurulum' }),
+      await screen.findByRole('heading', { name: 'Hesap oluştur' }),
     ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Kayıt ol' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     expect(screen.getByLabelText('Şifre (tekrar)')).toBeInTheDocument()
+  })
+
+  it('creates the first account and then shows the studio shell', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/status')) {
+          return jsonResponse({
+            configured: false,
+            authenticated: false,
+            username: null,
+            signup_open: true,
+          })
+        }
+        if (url.includes('/api/auth/signup')) {
+          return jsonResponse(authPayload, 201)
+        }
+        const body = url.includes('/api/system')
+          ? systemPayload
+          : url.includes('/api/channels')
+            ? channelsPayload
+            : overviewPayload
+        return jsonResponse(body)
+      }),
+    )
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('Kullanıcı adı'), {
+      target: { value: 'admin' },
+    })
+    fireEvent.change(screen.getByLabelText('Şifre'), {
+      target: { value: 'gizli-sifre' },
+    })
+    fireEvent.change(screen.getByLabelText('Şifre (tekrar)'), {
+      target: { value: 'gizli-sifre' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Hesap oluştur' }))
+
+    expect(
+      await screen.findByRole('navigation', { name: 'Stüdyo gezinme' }),
+    ).toBeInTheDocument()
   })
 
   it('logs in and then shows the studio shell', async () => {
@@ -145,6 +196,7 @@ describe('App', () => {
             configured: true,
             authenticated: false,
             username: null,
+            signup_open: false,
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         )

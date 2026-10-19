@@ -14,13 +14,14 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** Product surface (2026-10-19): first-run studio login with an
-HttpOnly session cookie; the media library now shows only engine-selected
-videos (current video + completed selections) with a stage track, YouTube
-thumbnails and source-channel links. Ready clips are compact cards that open a
-detail dialog with a Range-streamed player, YouTube publishing plan, title,
-description, tags, filters and cover image. Backend 403/403, frontend 22/22,
-type check/build and secret scan clean.
+**Current task:** Product surface (2026-10-19): first-run **signup** and
+**login** screens with tabs, HttpOnly session cookie, and a cleaned final
+login layout (project bullets/footer/technical note removed); the media
+library now shows only engine-selected videos (current video + completed
+selections) with a stage track, YouTube thumbnails and source-channel links.
+Ready clips are compact cards that open a detail dialog with a Range-streamed
+player, YouTube publishing plan, title, description, tags, filters and cover
+image. Backend 403/403, frontend 23/23, type check/build and secret scan clean.
 
 **Last updated:** 2026-10-19
 
@@ -831,8 +832,8 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-19 (product surface session: auth + selected-only media
-library + clip detail/player) on the dev machine (Windows 11, Python
+Verified 2026-10-19 (product surface session: signup/login + selected-only
+media library + clip detail/player) on the dev machine (Windows 11, Python
 3.11.9 venv, Node 24.13.0). Commands run from the stated directories.
 NOTE: on this machine pytest must be run with file redirection, not
 through pipes — piped runs hang (known dev-env quirk); the full suite
@@ -847,8 +848,9 @@ ran foreground with redirection.
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 1 warning (starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 22 passed, 0 failed
-  (App 6, SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
+- Frontend — `cd frontend && npx vitest run`: 23 passed, 0 failed
+  (App 7 — signup, login, first-run and unauthorized flows;
+  SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
   MediaLibraryScreen 3, LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Production build —
   `npm run build`: succeeded.
@@ -962,6 +964,17 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Signup/login follow-up (2026-10-19, user request "Signup ve login
+  ekranları olsun... bu final sürüm"): `POST /api/auth/signup` is the
+  first-account endpoint (`/setup` stays as a compatibility alias);
+  `GET /api/auth/status` now returns `signup_open` (true only before the
+  first account). The React auth surface has **Giriş yap / Kayıt ol**
+  tabs: signup is the initial mode on a fresh install, login after that,
+  and a closed-signup notice if the signup tab is opened later. The final
+  login layout removed the feature bullet list, the Raspberry Pi/CasaOS
+  footer, the technical cookie note and the long description; only the
+  brand mark, headline and form remain. Verified: backend 403/403,
+  frontend 23/23, `tsc -b`/build clean, lint 0 errors, secret scan clean.
 - Product surface session (2026-10-19, user request: "login ekranı olsun,
   sadece seçilen videolar görünsün, hazır videolar izlenebilsin"):
   (1) Login — `app_meta.studio_auth` stores the first-run operator username,
