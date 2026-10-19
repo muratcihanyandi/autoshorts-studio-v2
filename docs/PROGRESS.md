@@ -957,6 +957,32 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- AV1-codec session (2026-10-19, live follow-up "sistem hiç düzgün
+  çalışmıyor"): the user's complaint traced to ONE root cause — YouTube
+  serves AV1 even at 1080p, and the container's OpenCV wheel cannot
+  decode AV1 (cv2 read: False; "Missing Sequence Header") while ffmpeg
+  CLI can (dav1d). Consequences: all 6 rendered clips sat in 'review'
+  ("ornek kare okunamadi" — webcam detection reads frames via OpenCV),
+  and scene/silence analyses timed out (AV1 decode is 3-5x slower than
+  H.264 on the Pi; video 103's media_process exhausted retries).
+  Fixes (e676b9b): yt-dlp format now prefers H.264 at ≤1080p
+  (`bv*[height<=1080][vcodec^=avc]+ba/...` with an unrestricted
+  fallback) so future downloads are OpenCV-decodable and fast;
+  `webcam_detect.sample_frames` gained an ffmpeg frame-extraction
+  fallback (`_sample_frames_ffmpeg`: fps-filter → PNGs → imread,
+  concept-verified against the live AV1 file before deploy; missing
+  files still raise); both vertical_pipeline call sites now run
+  detection via `asyncio.to_thread` (the ffmpeg pass can take minutes
+  and must not block the event loop). Live result after deploy +
+  re-enqueueing the 6 review clips: 4 rendered (stock 0 → 4), 2 remain
+  in review (no stable face in those windows); subtitle corrections
+  grind through 61-86 LLM chunks per video (long compilations) with
+  chunk retries absorbing the provider's occasional 300s timeouts;
+  video 103 stays failed (its already-downloaded AV1 file exceeds the
+  600s scene-analysis timeout — future downloads are H.264 so this
+  does not recur). Known follow-up candidates: raise the scene
+  analysis timeout for very long videos; recover_stale still runs only
+  at worker startup.
 - Reasoning-model session (2026-10-19, live follow-up "Token şifreleme
   anahtarı... diyor ancak girmiştim"): the user's restart had picked the
   bdaf5fd image (built before 25bfdc1 existed), so the cipher fix wasn't
