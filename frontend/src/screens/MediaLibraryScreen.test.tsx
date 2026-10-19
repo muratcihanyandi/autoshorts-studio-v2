@@ -58,6 +58,8 @@ const libraryPayload = {
   clips_total: 1,
   summary: {
     sources_total: 2,
+    entered: 2,
+    queued_pool: 14,
     processed: 1,
     failed: 0,
     shorts_ready: 1,
@@ -72,18 +74,22 @@ describe('MediaLibraryScreen', () => {
   })
 
   it('lists sources with status pills and the clip table', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify(libraryPayload), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      new Response(JSON.stringify(libraryPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
     )
+    vi.stubGlobal('fetch', fetchMock)
     render(<MediaLibraryScreen />)
 
     expect(await screen.findByText('Kaynak videolar')).toBeInTheDocument()
+    // Varsayilan liste yalnizca sisteme girmis videolari ister.
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes('active_only=true'),
+      ),
+    ).toBe(true)
     // Ayni baslik kaynak ve klip tablolarinda da gecer: iki satir beklenir.
     expect(screen.getAllByText('Islenmis video').length).toBe(2)
     expect(screen.getAllByText('Indirilen video').length).toBe(1)
@@ -96,6 +102,7 @@ describe('MediaLibraryScreen', () => {
     expect(screen.getByText('Dikey')).toBeInTheDocument()
     expect(screen.getByText('Hazır')).toBeInTheDocument()
     // Ozet stat kartlari.
+    expect(screen.getByText('İşleme giren')).toBeInTheDocument()
     expect(screen.getByText('Shorts stoğu')).toBeInTheDocument()
   })
 
@@ -176,6 +183,8 @@ describe('MediaLibraryScreen', () => {
       clips_total: 0,
       summary: {
         sources_total: 0,
+        entered: 0,
+        queued_pool: 0,
         processed: 0,
         failed: 0,
         shorts_ready: 0,
@@ -194,5 +203,39 @@ describe('MediaLibraryScreen', () => {
     render(<MediaLibraryScreen />)
 
     expect(await screen.findByText('Kütüphane boş')).toBeInTheDocument()
+  })
+
+  it('explains the waiting pool when nothing has entered yet', async () => {
+    const untouchedOnly = {
+      ...libraryPayload,
+      sources: [],
+      sources_total: 0,
+      clips: [],
+      clips_total: 0,
+      summary: {
+        sources_total: 0,
+        entered: 0,
+        queued_pool: 23,
+        processed: 0,
+        failed: 0,
+        shorts_ready: 0,
+        full_cuts_ready: 0,
+      },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify(untouchedOnly), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    )
+    render(<MediaLibraryScreen />)
+
+    expect(
+      await screen.findByText('Henüz işleme giren video yok'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/23 video otomasyonu/)).toBeInTheDocument()
   })
 })

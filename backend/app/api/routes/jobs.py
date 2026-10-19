@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.schemas_jobs import JobEnqueue, JobOut, JobsOut
 from app.services.job_service import JobService, JobServiceError
+from app.services.pipeline_view import PipelineViewService
 
 router = APIRouter(tags=["jobs"])
 
@@ -19,15 +20,35 @@ def _service(request: Request) -> JobService:
     return JobService(sessionmaker, request.app.state.settings)
 
 
+async def _enrich(request: Request, jobs: list) -> list[JobOut]:
+    """Her işe video başlığı/kanal/aşama bağlamı ekler; veritabanı yoksa
+    veya eşleşme bulunamazsa alanlar null kalır."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return [JobOut.model_validate(job) for job in jobs]
+    context = await PipelineViewService(
+        sessionmaker, request.app.state.settings
+    ).job_context(jobs)
+    out: list[JobOut] = []
+    for job in jobs:
+        item = JobOut.model_validate(job)
+        ctx = context.get(job.id, {})
+        item.title = ctx.get("title")
+        item.channel_name = ctx.get("channel_name")
+        item.ribbon_color = ctx.get("ribbon_color")
+        if job.job_type == "media_process":
+            item.stage = ctx.get("asset_stage")
+        out.append(item)
+    return out
+
+
 @router.get("/jobs", response_model=JobsOut)
 async def list_jobs(
     request: Request, status: str | None = None, limit: int = 50
 ) -> JobsOut:
     service = _service(request)
     jobs = await service.list_jobs(status=status, limit=limit)
-    return JobsOut(
-        jobs=[JobOut.model_validate(job) for job in jobs], total=len(jobs)
-    )
+    return JobsOut(jobs=await _enrich(request, jobs), total=len(jobs))
 
 
 @router.post("/jobs", response_model=JobOut, status_code=status.HTTP_201_CREATED)

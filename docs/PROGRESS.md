@@ -14,11 +14,14 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** M14 verification done (backend 352/352, frontend
-14/14); next: Pi deployment of M14 (image rebuild + restart, migration
-0012) and live verification of the worker heartbeat banner.
+**Current task:** UI de-clutter pass complete locally (2026-10-19):
+Overview live-pipeline panel removed, pipeline detail modal added,
+Automation screen rewritten in natural language, media library defaults
+to entered videos. Backend 394/394, frontend 22/22, build clean. Next:
+Pi deployment (image rebuild + restart; also carries the still-pending
+M14 deploy) and live verification.
 
-**Last updated:** 2026-10-18
+**Last updated:** 2026-10-19
 
 **Primary coding agent:** GLM-5.3 via ZCode
 
@@ -957,6 +960,39 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- UI de-clutter session (2026-10-19, "arayüzden ne olup bittiğini
+  anlayamıyorum"): four operator-facing complaints addressed. (1) The
+  Overview "Canlı boru hattı" panel (job cards, queue, "Son sonuçlar")
+  was removed outright — LivePipeline.tsx + its test deleted, dead
+  pipeline-*/pj-* CSS cleaned. (2) The Overview "Boru hattı" summary
+  table gained a Detay button opening the new
+  PipelineDetailModal.tsx: it lists the authorized source channels
+  (new `sources` block in GET /api/pipeline: title, platform,
+  publishing channel, monitored-video count, excluded not counted)
+  plus current and queued jobs. (3) AutomationScreen was rewritten as
+  a natural-language activity view: GET /api/jobs now enriches every
+  job with title/channel_name/ribbon_color/stage (route-level
+  `_enrich` calling the new PipelineViewService.job_context), the
+  screen groups jobs into "Şu an sürüyor / Sırada bekleyen / Son
+  bitenler" under a status-pill strip; shared phrasing lives in
+  frontend/src/jobNarrative.ts (used by the detail modal too).
+  (4) The media library default list now carries only videos that
+  entered the system: GET /api/media gained `active_only` (asset
+  present OR confirmed OR a running media/hype job, so asset-less
+  in-flight videos stay visible), summary gained
+  `entered`/`queued_pool`, and the first stat card reads "İşleme
+  giren". Untouched discovery-pool rows remain reachable via the
+  "Sırada" filter; "Hata" also reads the full pool so asset-less
+  failed jobs stay visible; "Daha fazla yükle" now shows in every
+  filter. Verified: backend 394/394 (two new tests:
+  test_overview_lists_authorized_sources,
+  test_active_only_keeps_entered_videos, plus extended
+  test_api_endpoints_roundtrip), frontend 22/22, `npm run build`
+  clean. Separately investigated a user-pasted
+  "ERROR:root:... tts.py, line 144: only 0-size arrays..." log:
+  proven NOT from this stack (no tts.py in v2 or the local old
+  projects; v2 backend logs are structured JSON, not `ERROR:root:`);
+  source unidentified — ask the user where it appeared if it recurs.
 - AV1-codec session (2026-10-19, live follow-up "sistem hiç düzgün
   çalışmıyor"): the user's complaint traced to ONE root cause — YouTube
   serves AV1 even at 1080p, and the container's OpenCV wheel cannot

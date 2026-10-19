@@ -12,7 +12,7 @@ import {
 import { usePolling } from '../hooks/usePolling'
 import { Gauge } from '../components/Studio'
 import { ChannelSettingsModal } from '../components/ChannelSettingsModal'
-import { LivePipelinePanel } from '../components/LivePipeline'
+import { PipelineDetailModal } from '../components/PipelineDetailModal'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 
 const PHASE_PILL: Record<
@@ -138,6 +138,7 @@ export function OverviewScreen() {
   const [busyChannel, setBusyChannel] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [modalChannel, setModalChannel] = useState<ChannelRow | null>(null)
+  const [pipelineDetail, setPipelineDetail] = useState(false)
 
   async function toggleChannel(row: ChannelRow) {
     setBusyChannel(row.channel_id)
@@ -265,8 +266,6 @@ export function OverviewScreen() {
             </div>
           </div>
 
-          <LivePipelinePanel />
-
           <div className="two-col">
             <div className="stack">
               <section className="ink-panel" aria-label="Kanallar">
@@ -294,7 +293,15 @@ export function OverviewScreen() {
               </section>
 
               <section className="ink-panel" aria-label="Boru hattı">
-                <h2>Boru hattı</h2>
+                <div className="panel-head-row">
+                  <h2>Boru hattı</h2>
+                  <button
+                    className="btn btn--ghost"
+                    onClick={() => setPipelineDetail(true)}
+                  >
+                    Detay
+                  </button>
+                </div>
                 <table className="info-table">
                   <tbody>
                     <tr>
@@ -419,6 +426,10 @@ export function OverviewScreen() {
           onClose={() => setModalChannel(null)}
           onSaved={() => void overview.retry()}
         />
+      )}
+
+      {pipelineDetail && (
+        <PipelineDetailModal onClose={() => setPipelineDetail(false)} />
       )}
     </>
   )

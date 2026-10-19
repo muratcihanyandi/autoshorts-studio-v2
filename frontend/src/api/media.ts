@@ -36,6 +36,11 @@ export interface LibraryClip {
 
 export interface LibrarySummary {
   sources_total: number
+  /** Sisteme girmiş video sayısı: indirilmiş, işlenmiş, onaylanmış
+   * veya şu an işlenen (kesif havuzundaki bekleyenler hariç). */
+  entered: number
+  /** Hiç işleme girmemiş, keşif havuzunda bekleyen video sayısı. */
+  queued_pool: number
   processed: number
   failed: number
   shorts_ready: number
@@ -54,9 +59,11 @@ export function fetchMedia(
   limit: number = 60,
   offset: number = 0,
   includeExcluded: boolean = false,
+  activeOnly: boolean = false,
 ): Promise<MediaLibrary> {
   const excluded = includeExcluded ? '&include_excluded=true' : ''
+  const active = activeOnly ? '&active_only=true' : ''
   return getJson<MediaLibrary>(
-    `/api/media?limit=${limit}&offset=${offset}${excluded}`,
+    `/api/media?limit=${limit}&offset=${offset}${excluded}${active}`,
   )
 }

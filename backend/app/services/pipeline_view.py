@@ -100,6 +100,7 @@ class PipelineViewService:
             context = await self._resolve_context(session, running, queued, recent)
             averages = await self._job_averages(session)
             expected_bytes = await self._expected_download_bytes(session)
+            sources = await self._sources(session)
 
         active_cards = [
             self._active_card(job, context, averages, expected_bytes)
@@ -116,8 +117,16 @@ class PipelineViewService:
             "active": active_cards,
             "queued": queued_cards,
             "recent": recent_cards,
+            "sources": sources,
             "now": _utcnow().isoformat(),
         }
+
+    async def job_context(self, jobs: list[Job]) -> dict[int, dict[str, Any]]:
+        """Is listesi -> video/kanal baglami. Isler API'sinin her satirini
+        video basligiyla zenginlestirmek icin acik kapidir; ayni cozucu
+        overview() de kullanir."""
+        async with self._sessionmaker() as session:
+            return await self._resolve_context(session, tuple(jobs))
 
     # --- baglam cozumu ---
 
@@ -221,6 +230,51 @@ class PipelineViewService:
                 "asset_status": asset.status if asset else None,
             }
         return context
+
+    @staticmethod
+    async def _sources(session: AsyncSession) -> list[dict[str, Any]]:
+        """Detay penceresinin kaynak listesi: yetkili kaynak kanallar,
+        bagli olduklari yayin kanali ve izleme havuzundaki video sayisi
+        (haric tutulanlar sayilmaz)."""
+        rows = (
+            (
+                await session.execute(
+                    sa.select(
+                        SourceChannel.id,
+                        SourceChannel.title,
+                        SourceChannel.platform,
+                        Channel.name,
+                        Channel.ribbon_color,
+                        sa.func.sum(
+                            sa.case(
+                                (SourceVideo.status != "excluded", 1),
+                                else_=0,
+                            )
+                        ),
+                    )
+                    .join(Channel, SourceChannel.channel_id == Channel.id)
+                    .outerjoin(
+                        SourceVideo,
+                        SourceVideo.source_channel_id == SourceChannel.id,
+                    )
+                    .where(SourceChannel.permission_status == "authorized")
+                    .group_by(SourceChannel.id, Channel.id)
+                    .order_by(Channel.name.asc(), SourceChannel.title.asc())
+                )
+            )
+            .all()
+        )
+        return [
+            {
+                "id": source_id,
+                "title": title,
+                "platform": platform,
+                "channel_name": channel_name,
+                "ribbon_color": ribbon_color,
+                "videos": int(videos or 0),
+            }
+            for source_id, title, platform, channel_name, ribbon_color, videos in rows
+        ]
 
     @staticmethod
     async def _channels_by_id(

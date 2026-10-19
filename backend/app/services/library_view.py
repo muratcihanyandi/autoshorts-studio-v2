@@ -57,18 +57,35 @@ class LibraryViewService:
         limit: int = 60,
         offset: int = 0,
         include_excluded: bool = False,
+        active_only: bool = False,
     ) -> dict[str, Any]:
         async with self._sessionmaker() as session:
             # Kuralin reddettigi (Hariç) videolar varsayilan listede
             # kalabalik yapmaz; yalnizca 'Haric' filtresi isteyince gelir.
+            # active_only: yalnizca sisteme girmis videolar (asset'i olan,
+            # onaylanmis veya su an islenen) — kesif havuzundaki hic
+            # dokunulmamis satirlar listeyi doldurmaz.
+            active_video_ids = await self._active_pipeline_video_ids(session)
             visible: list[Any] = (
                 [] if include_excluded else [SourceVideo.status != "excluded"]
             )
+            if active_only:
+                visible.append(
+                    sa.or_(
+                        MediaAsset.id.isnot(None),
+                        SourceVideo.status == "confirmed",
+                        SourceVideo.id.in_(active_video_ids),
+                    )
+                )
             total = (
                 (
                     await session.execute(
                         sa.select(sa.func.count())
                         .select_from(SourceVideo)
+                        .outerjoin(
+                            MediaAsset,
+                            MediaAsset.source_video_id == SourceVideo.id,
+                        )
                         .where(*visible)
                     )
                 ).scalar()
@@ -109,7 +126,9 @@ class LibraryViewService:
             ]
 
             clips, clips_total = await self._clips(session)
-            summary = await self._summary(session, include_excluded)
+            summary = await self._summary(
+                session, include_excluded, active_video_ids
+            )
 
         return {
             "sources": sources,
@@ -118,6 +137,35 @@ class LibraryViewService:
             "clips_total": clips_total,
             "summary": summary,
         }
+
+    @staticmethod
+    async def _active_pipeline_video_ids(
+        session: AsyncSession,
+    ) -> set[int]:
+        """Su an kosan medya islerine bagli video id'leri. Asset henuz
+        olusmamis olsa da islenmeye baslamis bir video 'girmis' sayilir;
+        listede kaybolmamasi icin active_only kapsamina eklenir."""
+        jobs = (
+            (
+                await session.execute(
+                    sa.select(Job)
+                    .where(
+                        Job.status == "running",
+                        Job.job_type.in_(("media_process", "hype_evaluate")),
+                    )
+                    .order_by(Job.id.desc())
+                    .limit(100)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ids: set[int] = set()
+        for job in jobs:
+            sv = (job.payload or {}).get("source_video_id")
+            if isinstance(sv, int):
+                ids.add(sv)
+        return ids
 
     @staticmethod
     async def _channels(
@@ -286,7 +334,9 @@ class LibraryViewService:
 
     @staticmethod
     async def _summary(
-        session: AsyncSession, include_excluded: bool = False
+        session: AsyncSession,
+        include_excluded: bool = False,
+        active_video_ids: set[int] | None = None,
     ) -> dict[str, int]:
         async def _count(statement: Any) -> int:
             return int((await session.execute(statement)).scalar() or 0)
@@ -317,6 +367,13 @@ class LibraryViewService:
                 RenderedClip.orientation == "horizontal",
             )
         )
+        # Kesif havuzu her zaman haric tutulanlar disindaki toplamdir;
+        # 'sources_total' ise istenen gorunumun (haric dahil) sayisidir.
+        pool_total = await _count(
+            sa.select(sa.func.count()).select_from(SourceVideo).where(
+                SourceVideo.status != "excluded"
+            )
+        )
         sources = await _count(
             sa.select(sa.func.count())
             .select_from(SourceVideo)
@@ -328,8 +385,25 @@ class LibraryViewService:
                 )
             )
         )
+        entered = await _count(
+            sa.select(sa.func.count())
+            .select_from(SourceVideo)
+            .outerjoin(
+                MediaAsset, MediaAsset.source_video_id == SourceVideo.id
+            )
+            .where(
+                SourceVideo.status != "excluded",
+                sa.or_(
+                    MediaAsset.id.isnot(None),
+                    SourceVideo.status == "confirmed",
+                    SourceVideo.id.in_(active_video_ids or set()),
+                ),
+            )
+        )
         return {
             "sources_total": sources,
+            "entered": entered,
+            "queued_pool": max(0, pool_total - entered),
             "processed": processed,
             "failed": failed,
             "shorts_ready": shorts,

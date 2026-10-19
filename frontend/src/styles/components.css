@@ -35,9 +35,29 @@
   letter-spacing: 0.01em;
 }
 
-.ink-panel > *:not(h2):not(.panel-title):not(.info-table) {
+.ink-panel > *:not(h2):not(.panel-title):not(.info-table):not(.panel-head-row) {
   padding: 14px 18px;
   margin: 0;
+}
+
+/* Panel başlık satırı: h2 ile yanındaki eylem butonu aynı çizgide. */
+.ink-panel > .panel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px 9px 18px;
+  border-bottom: 1px solid var(--plate-line);
+}
+
+.panel-head-row h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--plate-ink);
+  padding: 0;
+  border-bottom: none;
+  margin: 0;
+  letter-spacing: 0.01em;
 }
 
 .plate h2.panel-title {
@@ -912,6 +932,82 @@
   color: var(--plate-ink, #1c2733);
 }
 
+/* --- iş akışı satırları (boru hattı detayı + otomasyon) --- */
+.flow-section h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--plate-muted);
+  margin: 0 0 6px;
+}
+
+.flow-section + .flow-section {
+  border-top: 1px solid var(--plate-line);
+  padding-top: 12px;
+}
+
+.flow-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--plate-ink);
+  padding: 5px 0;
+}
+
+.flow-row b {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46ch;
+}
+
+.flow-soft {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--plate-muted);
+}
+
+.flow-soft i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.flow-pos {
+  font-weight: 600;
+  color: var(--plate-muted);
+}
+
+.flow-error {
+  font-size: 12px;
+  color: var(--red-on-plate);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+}
+
+.flow-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Otomasyon özet şeridi: durum pill'leri tek satırda. */
+.auto-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* --- Overview kanal kontrol satırları --- */
 .overview-channel {
   display: flex;
@@ -1016,151 +1112,6 @@
   color: var(--red-on-plate, #b3261e);
   font-size: 12.5px;
   width: 100%;
-}
-
-/* --- Canlı boru hattı (Genel Bakış) --- */
-.pipeline-body {
-  padding: 4px 18px 14px;
-}
-
-.pipeline-job {
-  padding: 12px 0;
-  border-bottom: 1px solid #eef2f6;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pipeline-job:last-child {
-  border-bottom: none;
-}
-
-.pj-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pj-title {
-  font-size: 14px;
-  color: var(--plate-ink);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 46ch;
-}
-
-.pj-channel {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--plate-muted);
-}
-
-.pj-channel i {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.pj-attempt {
-  font-size: 12px;
-  color: var(--amber-on-plate);
-}
-
-.pj-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* Asama cubugu: meter dilinin segmentli hali. Gecmis asamalar okyanus,
-   yuruyen asama koyu okyanus, kalanlar oluk renginde. */
-.stage-track {
-  display: flex;
-  gap: 4px;
-  flex: 1;
-}
-
-.stage-seg {
-  flex: 1;
-  height: 6px;
-  border-radius: 99px;
-  background: #e2e8f0;
-}
-
-.stage-seg.done {
-  background: var(--accent);
-}
-
-.stage-seg.current {
-  background: var(--accent-deep);
-}
-
-.pj-percent {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--plate-ink);
-  min-width: 38px;
-  text-align: right;
-}
-
-.pj-meta {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  color: var(--plate-muted);
-}
-
-.pipeline-section {
-  padding-top: 10px;
-}
-
-.pipeline-section h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--plate-muted);
-  margin: 0 0 6px;
-}
-
-.pipeline-queue-row,
-.pipeline-recent-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--plate-ink);
-  padding: 5px 0;
-}
-
-.pipeline-queue-row b,
-.pipeline-recent-row b {
-  font-size: 13px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 46ch;
-}
-
-.pj-pos {
-  font-weight: 600;
-  color: var(--plate-muted);
-}
-
-.pj-error {
-  font-size: 12px;
-  color: var(--red-on-plate);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40ch;
 }
 
 /* --- Filtre seridi (kutuphane / gunlukler) --- */

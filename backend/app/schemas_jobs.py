@@ -21,6 +21,12 @@ class JobOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
+    # Otomasyon ekraninin dogal cumleleri icin video/kanal baglami;
+    # route dolarsa, baglami olmayan islerde null kalir.
+    title: str | None = None
+    channel_name: str | None = None
+    ribbon_color: str | None = None
+    stage: str | None = None
 
     model_config = {"from_attributes": True}
 

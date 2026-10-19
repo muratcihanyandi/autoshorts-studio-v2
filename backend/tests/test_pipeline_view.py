@@ -247,6 +247,39 @@ class TestPipelineView:
         assert len(failed) == 1
         assert failed[0]["error"].startswith("MediaPipelineError")
 
+    def test_overview_lists_authorized_sources(self, tmp_path):
+        """Kabul kriteri: detay penceresinin kaynak listesi yetkili
+        kaynakları adlarıyla taşır; hariç tutulan video sayılmaz."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _view_env(tmp_path)
+            try:
+                _seed(db)
+                service = PipelineViewService(sessionmaker, settings)
+                full = await service.overview()
+                eng = sa.create_engine(f"sqlite:///{db}")
+                with eng.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "UPDATE source_videos SET status='excluded' "
+                            "WHERE id=3"
+                        )
+                    )
+                eng.dispose()
+                after = await service.overview()
+                return full, after
+            finally:
+                await engine.dispose()
+
+        full, after = asyncio.run(scenario())
+        assert len(full["sources"]) == 1
+        source = full["sources"][0]
+        assert source["title"] == "Kaynak Kanal"
+        assert source["platform"] == "youtube"
+        assert source["channel_name"] == "Test Kanal"
+        assert source["videos"] == 3
+        assert after["sources"][0]["videos"] == 2
+
     def test_api_endpoints_roundtrip(self, tmp_path):
         from tests.conftest import _make_app
 
@@ -259,6 +292,8 @@ class TestPipelineView:
             pipeline = client.get("/api/pipeline").json()
             assert len(pipeline["active"]) == 1
             assert pipeline["active"][0]["title"] == "Indirilen video"
+            assert pipeline["sources"][0]["title"] == "Kaynak Kanal"
+            assert pipeline["sources"][0]["videos"] == 3
 
             media = client.get("/api/media").json()
             assert media["sources_total"] == 3
@@ -267,6 +302,23 @@ class TestPipelineView:
             assert tags[1] == "#done"
             assert tags[2] == "#downloading"
             assert tags[3] == "#queued"
+
+            # Isler API'si dogal cumleleri icin video baglami tasir.
+            jobs = client.get("/api/jobs").json()
+            running = [j for j in jobs["jobs"] if j["status"] == "running"]
+            assert len(running) == 1
+            assert running[0]["title"] == "Indirilen video"
+            assert running[0]["channel_name"] == "Test Kanal"
+            assert running[0]["stage"] == "download"
+
+            # active_only: kesif havuzundaki dokunulmamis video duser.
+            active_media = client.get(
+                "/api/media", params={"active_only": True}
+            ).json()
+            assert active_media["sources_total"] == 2
+            assert {s["id"] for s in active_media["sources"]} == {1, 2}
+            assert active_media["summary"]["entered"] == 2
+            assert active_media["summary"]["queued_pool"] == 1
 
             logs = client.get("/api/logs").json()
             assert len(logs["entries"]) == 4
@@ -366,6 +418,56 @@ class TestLibraryView:
         assert tags[3] == "#excluded"
         assert with_excluded["sources_total"] == 3
         assert with_excluded["summary"]["sources_total"] == 3
+
+
+    def test_active_only_keeps_entered_videos(self, tmp_path):
+        """Kabul kriteri: kütüphane varsayılan olarak yalnızca sisteme
+        girmiş videoları taşır — asset'i olan, onaylı ya da o an işlenen.
+        Keşif havuzunda hiç dokunulmamış satırlar düşer."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _view_env(tmp_path)
+            try:
+                _seed(db)
+                # Dokunulmamis gorunen ama su an islenen video: asset'i
+                # henuz yok, running is baglaminda listede kalmali.
+                eng = sa.create_engine(f"sqlite:///{db}")
+                with eng.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "INSERT INTO source_videos "
+                            "(id, source_channel_id, youtube_video_id, "
+                            " title, status) VALUES "
+                            "(4, 1, 'yt-4', 'Yeni islenen video', 'planned')"
+                        )
+                    )
+                    conn.execute(
+                        sa.text(
+                            "INSERT INTO jobs (job_type, payload, status, "
+                            "priority, attempts, max_attempts, started_at) "
+                            "VALUES ('hype_evaluate', :p, 'running', 5, 1, "
+                            "3, :s)"
+                        ),
+                        {
+                            "p": json.dumps({"source_video_id": 4}),
+                            "s": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                eng.dispose()
+                service = LibraryViewService(sessionmaker, settings)
+                full = await service.media_library()
+                active = await service.media_library(active_only=True)
+                return full, active
+            finally:
+                await engine.dispose()
+
+        full, active = asyncio.run(scenario())
+        assert [s["id"] for s in full["sources"]] == [4, 3, 2, 1]
+        # 4: running is; 2: asset var; 1: islenmis. 3: dokunulmamis, duser.
+        assert [s["id"] for s in active["sources"]] == [4, 2, 1]
+        assert active["sources_total"] == 3
+        assert active["summary"]["entered"] == 3
+        assert active["summary"]["queued_pool"] == 1
 
 
 class TestAuditView:

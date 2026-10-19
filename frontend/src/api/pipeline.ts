@@ -48,10 +48,21 @@ export interface RecentJobCard {
   finished_at: string | null
 }
 
+/** Detay penceresinin kaynak satırı: yetkili kaynak kanal. */
+export interface PipelineSource {
+  id: number
+  title: string
+  platform: string
+  channel_name: string | null
+  ribbon_color: string | null
+  videos: number
+}
+
 export interface PipelineView {
   active: ActiveJobCard[]
   queued: QueuedJobCard[]
   recent: RecentJobCard[]
+  sources: PipelineSource[]
   now: string
 }
 

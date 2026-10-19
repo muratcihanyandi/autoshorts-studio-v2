@@ -3,18 +3,119 @@ import {
   cancelJob,
   fetchJobs,
   JOB_STATUS_LABEL,
-  JOB_TYPE_LABEL,
   retryJob,
   type Job,
 } from '../api/jobs'
 import { usePolling } from '../hooks/usePolling'
+import { formatDuration, formatTimeShort } from '../format'
+import { jobAction } from '../jobNarrative'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 
-function statusClass(status: Job['status']): string {
-  if (status === 'succeeded') return 'tone-green'
-  if (status === 'failed') return 'tone-red'
-  if (status === 'running' || status === 'queued') return 'tone-amber'
-  return ''
+function statusTone(status: Job['status']): string {
+  if (status === 'running') return 'run'
+  if (status === 'failed') return 'error'
+  if (status === 'succeeded') return 'ok'
+  if (status === 'cancelling') return 'warn'
+  return 'idle'
+}
+
+function secondsBetween(a: string | null, b: number): number | null {
+  if (!a) return null
+  const from = new Date(a).getTime()
+  if (Number.isNaN(from)) return null
+  return Math.max(0, Math.round((b - from) / 1000))
+}
+
+/** Süren iş için geçen süre, bitmiş iş için toplam süre. */
+function jobDuration(job: Job, now: number): number | null {
+  if (job.status === 'running' || job.status === 'cancelling') {
+    return secondsBetween(job.started_at, now)
+  }
+  if (!job.started_at || !job.finished_at) return null
+  const started = new Date(job.started_at).getTime()
+  const finished = new Date(job.finished_at).getTime()
+  if (Number.isNaN(started) || Number.isNaN(finished)) return null
+  return Math.max(0, Math.round((finished - started) / 1000))
+}
+
+/** Tek işin anlatım satırı: durum, video, olup biten, kanal ve süre —
+ * sade bir cümle okuyuşu; teknik ayrıntılar yalnız hata varsa girer. */
+function JobRow({
+  job,
+  now,
+  position,
+  busy,
+  onCancel,
+  onRetry,
+}: {
+  job: Job
+  now: number
+  position: number | null
+  busy: boolean
+  onCancel: (job: Job) => void
+  onRetry: (job: Job) => void
+}) {
+  const canCancel = job.status === 'queued' || job.status === 'running'
+  const canRetry = job.status === 'failed' || job.status === 'cancelled'
+  const duration = jobDuration(job, now)
+  const action = jobAction(job)
+  return (
+    <div className="flow-row">
+      {position !== null && <span className="flow-pos nums">{position}.</span>}
+      <span className={`pill pill--${statusTone(job.status)}`}>
+        {JOB_STATUS_LABEL[job.status]}
+      </span>
+      {job.title ? <b>{job.title}</b> : <b>{action}</b>}
+      {job.title && <span className="flow-soft">{action}</span>}
+      {job.channel_name && (
+        <span className="flow-soft">
+          {job.ribbon_color && (
+            <i style={{ background: job.ribbon_color }} aria-hidden="true" />
+          )}
+          {job.channel_name}
+        </span>
+      )}
+      {duration !== null && (
+        <span className="flow-soft nums">
+          {formatDuration(duration)}
+          {job.attempts > 1 ? ` · deneme ${job.attempts}/${job.max_attempts}` : ''}
+        </span>
+      )}
+      {job.finished_at && (
+        <span className="flow-soft nums">{formatTimeShort(job.finished_at)}</span>
+      )}
+      {job.last_error && (
+        <span className="flow-error" title={job.last_error}>
+          {job.last_error.slice(0, 90)}
+          {job.last_error.length > 90 ? '…' : ''}
+        </span>
+      )}
+      {(canCancel || canRetry) && (
+        <span className="flow-actions">
+          {canCancel && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={busy}
+              onClick={() => onCancel(job)}
+            >
+              İptal
+            </button>
+          )}
+          {canRetry && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={busy}
+              onClick={() => onRetry(job)}
+            >
+              Yeniden dene
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function AutomationScreen() {
@@ -36,11 +137,27 @@ export function AutomationScreen() {
     }
   }
 
+  const jobs = state.status === 'ok' ? state.data.jobs : []
+  const now = Date.now()
+  const running = jobs.filter(
+    (j) => j.status === 'running' || j.status === 'cancelling',
+  )
+  const queued = jobs.filter((j) => j.status === 'queued')
+  const finished = jobs.filter(
+    (j) =>
+      j.status === 'succeeded' ||
+      j.status === 'failed' ||
+      j.status === 'cancelled',
+  )
+  const failedCount = finished.filter((j) => j.status === 'failed').length
+
   return (
     <>
       <div className="screen-head">
         <h1>Otomasyon</h1>
-        <span className="screen-sub">İş kuyruğu: kaynak izleme ve üretim hattı</span>
+        <span className="screen-sub">
+          Hangi video ne durumda — sistem kendi devam eder
+        </span>
       </div>
 
       {actionError && (
@@ -49,10 +166,10 @@ export function AutomationScreen() {
         </div>
       )}
 
-      {state.status === 'loading' && <LoadingState label="İş kuyruğu okunuyor…" />}
+      {state.status === 'loading' && <LoadingState label="İşler okunuyor…" />}
       {state.status === 'error' && (
         <ErrorState
-          title="İş kuyruğu alınamadı"
+          title="İşler alınamadı"
           message={`Arka uca ulaşılamadı: ${state.message}.`}
           onRetry={retry}
         />
@@ -60,70 +177,99 @@ export function AutomationScreen() {
       {state.status === 'ok' && (
         <>
           {state.stale && <StaleNote onRetry={retry} />}
-          <section className="plate">
-            <h2 className="panel-title">İş Kuyruğu</h2>
-            {state.data.jobs.length === 0 ? (
-              <p className="plate-note">
-                Kuyruk boş. Yetkili kaynak eklendiğinde sistem kaynak
-                yoklaması işlerini otomatik oluşturur; her iş burada
-                izlenebilir.
-              </p>
+
+          <section className="ink-panel" aria-label="Otomasyon işleri">
+            <div className="auto-summary">
+              {running.length + queued.length === 0 ? (
+                <span className="pill pill--ok">Sistem bekliyor</span>
+              ) : (
+                <>
+                  {running.length > 0 && (
+                    <span className="pill pill--run">
+                      {running.length} iş sürüyor
+                    </span>
+                  )}
+                  {queued.length > 0 && (
+                    <span className="pill pill--idle">
+                      {queued.length} sırada
+                    </span>
+                  )}
+                </>
+              )}
+              {failedCount > 0 && (
+                <span className="pill pill--error">
+                  {failedCount} başarısız — yeniden denelenebilir
+                </span>
+              )}
+            </div>
+
+            {jobs.length === 0 ? (
+              <div className="flow-section">
+                <p className="plate-note">
+                  Kuyruk boş — süren ya da bekleyen iş yok. Yetkili kaynak
+                  eklendiğinde sistem taramayı kendisi başlatır; her video
+                  burada ne olduğundan anlatılır.
+                </p>
+              </div>
             ) : (
-              <table className="info-table">
-                <tbody>
-                  {state.data.jobs.map((job) => (
-                    <tr key={job.id}>
-                      <th>
-                        {JOB_TYPE_LABEL[job.job_type] ?? job.job_type}
-                        <span className="source-badge">
-                          #{job.id}
-                        </span>
-                      </th>
-                      <td>
-                        <div className="llm-provider-info">
-                          <span
-                            className={`job-line ${statusClass(job.status)}`}
-                            style={{ borderBottom: 'none', display: 'block' }}
-                          >
-                            <span>{JOB_STATUS_LABEL[job.status]}</span>
-                            <span>
-                              deneme {job.attempts}/{job.max_attempts}
-                            </span>
-                          </span>
-                          {job.last_error && (
-                            <span className="llm-meta save-error">
-                              {job.last_error}
-                            </span>
-                          )}
-                        </div>
-                        <div className="channel-actions">
-                          {(job.status === 'queued' || job.status === 'running') && (
-                            <button
-                              type="button"
-                              className="btn--ghost"
-                              disabled={busy === job.id}
-                              onClick={() => void act(job.id, cancelJob)}
-                            >
-                              İptal
-                            </button>
-                          )}
-                          {(job.status === 'failed' ||
-                            job.status === 'cancelled') && (
-                            <button
-                              type="button"
-                              className="btn--ghost"
-                              disabled={busy === job.id}
-                              onClick={() => void act(job.id, retryJob)}
-                            >
-                              Yeniden Dene
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <>
+                <div className="flow-section">
+                  <h3>Şu an sürüyor</h3>
+                  {running.length === 0 ? (
+                    <p className="plate-note">Şu an süren iş yok.</p>
+                  ) : (
+                    running.map((job) => (
+                      <JobRow
+                        key={job.id}
+                        job={job}
+                        now={now}
+                        position={null}
+                        busy={busy === job.id}
+                        onCancel={(j) => void act(j.id, cancelJob)}
+                        onRetry={(j) => void act(j.id, retryJob)}
+                      />
+                    ))
+                  )}
+                </div>
+
+                <div className="flow-section">
+                  <h3>Sırada bekleyen</h3>
+                  {queued.length === 0 ? (
+                    <p className="plate-note">Bekleyen iş yok.</p>
+                  ) : (
+                    queued.map((job, index) => (
+                      <JobRow
+                        key={job.id}
+                        job={job}
+                        now={now}
+                        position={index + 1}
+                        busy={busy === job.id}
+                        onCancel={(j) => void act(j.id, cancelJob)}
+                        onRetry={(j) => void act(j.id, retryJob)}
+                      />
+                    ))
+                  )}
+                </div>
+
+                <div className="flow-section">
+                  <h3>Son bitenler</h3>
+                  {finished.length === 0 ? (
+                    <p className="plate-note">Henüz bitmiş iş yok.</p>
+                  ) : (
+                    finished.map((job) => (
+                      <JobRow
+                        key={job.id}
+                        job={job}
+                        now={now}
+                        position={null}
+                        busy={busy === job.id}
+                        onCancel={(j) => void act(j.id, cancelJob)}
+                        onRetry={(j) => void act(j.id, retryJob)}
+                      />
+                    ))
+                  )}
+                </div>
+              </>
             )}
             <p className="plate-note">
               İşler veritabanında kalıcıdır; uygulama yeniden başlasa da

@@ -119,9 +119,23 @@ export function MediaLibraryScreen() {
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [statusBusy, setStatusBusy] = useState<number | null>(null)
 
+  // Varsayılan liste yalnızca sisteme girmiş videoları taşır (indirilen,
+  // işlenen, onaylı ya da o an işlenen). Keşif havuzu ve hata durumları
+  // kendi filtrelerinde tam listeden okunur: henüz asset'i oluşmamış
+  // hatalı/sıradaki satırlar da görünsün.
+  const fullPool =
+    tagFilter === '#queued' || tagFilter === '#excluded' || tagFilter === '#error'
+  const activeOnly = !fullPool
+
   const fetchCb = useCallback(
-    () => fetchMedia(limit + extraPages * limit, 0, tagFilter === '#excluded'),
-    [limit, extraPages, tagFilter],
+    () =>
+      fetchMedia(
+        limit + extraPages * limit,
+        0,
+        tagFilter === '#excluded',
+        activeOnly,
+      ),
+    [limit, extraPages, tagFilter, activeOnly],
   )
   const library = usePolling(fetchCb, 10000)
 
@@ -171,19 +185,29 @@ export function MediaLibraryScreen() {
           )}
 
           {data.sources_total === 0 ? (
-            <EmptyState title="Kütüphane boş">
-              Yetkili kaynak kanallardan indirilen videolar, üretilen
-              klipler ve yayın için bekleyen özel stok burada listelenecek.
-              Otomasyon çalışırken ilk indirme işlemi kendi kendine
-              başlar — yapman gereken bir şey yok.
-            </EmptyState>
+            data.summary.queued_pool > 0 ? (
+              <EmptyState title="Henüz işleme giren video yok">
+                Keşif havuzunda {data.summary.queued_pool} video otomasyonu
+                bekliyor. İlk indirme kendiliğinden başlar; bir video
+                sisteme girdiğinde burada görünür.
+              </EmptyState>
+            ) : (
+              <EmptyState title="Kütüphane boş">
+                Yetkili kaynak kanallardan indirilen videolar, üretilen
+                klipler ve yayın için bekleyen özel stok burada listelenecek.
+                Otomasyon çalışırken ilk indirme işlemi kendi kendine
+                başlar — yapman gereken bir şey yok.
+              </EmptyState>
+            )
           ) : (
             <>
               <div className="stat-grid" aria-label="Kütüphane özeti">
                 <div className="stat-card">
-                  <span>Kaynak video</span>
-                  <b className="nums">{data.summary.sources_total}</b>
-                  <small>yetkili kanallardan</small>
+                  <span>İşleme giren</span>
+                  <b className="nums">{data.summary.entered}</b>
+                  <small>
+                    keşif havuzunda {data.summary.queued_pool} video sırada
+                  </small>
                 </div>
                 <div className="stat-card">
                   <span>İşlenmiş</span>
@@ -246,7 +270,7 @@ export function MediaLibraryScreen() {
                     </tbody>
                   </table>
                 )}
-                {hasMore && tagFilter === null && (
+                {hasMore && (
                   <button
                     className="btn btn--ghost more-button"
                     onClick={() => setExtraPages((n) => n + 1)}

@@ -5,6 +5,25 @@ import { AutomationScreen } from './AutomationScreen'
 const jobsPayload = {
   jobs: [
     {
+      id: 8,
+      job_type: 'media_process',
+      payload: { source_video_id: 3 },
+      status: 'running',
+      priority: 5,
+      attempts: 1,
+      max_attempts: 3,
+      last_error: null,
+      worker_id: 'worker-ab',
+      heartbeat_at: '2026-10-17T00:00:30Z',
+      started_at: '2026-10-17T00:00:00Z',
+      finished_at: null,
+      created_at: '2026-10-17T00:00:00Z',
+      title: 'Tepki videosu 3',
+      channel_name: 'Craftest',
+      ribbon_color: '#123456',
+      stage: 'download',
+    },
+    {
       id: 7,
       job_type: 'source_discover',
       payload: { channel_id: 1 },
@@ -18,13 +37,17 @@ const jobsPayload = {
       started_at: null,
       finished_at: null,
       created_at: '2026-10-17T00:00:00Z',
+      title: null,
+      channel_name: null,
+      ribbon_color: null,
+      stage: null,
     },
     {
       id: 6,
-      job_type: 'source_discover',
-      payload: { channel_id: 2 },
+      job_type: 'media_process',
+      payload: { source_video_id: 2 },
       status: 'failed',
-      priority: 9,
+      priority: 5,
       attempts: 3,
       max_attempts: 3,
       last_error: 'RuntimeError: patladi',
@@ -33,9 +56,13 @@ const jobsPayload = {
       started_at: '2026-10-17T00:00:00Z',
       finished_at: '2026-10-17T00:01:00Z',
       created_at: '2026-10-17T00:00:00Z',
+      title: 'Tepki videosu 2',
+      channel_name: 'Craftest',
+      ribbon_color: '#123456',
+      stage: 'transcript',
     },
   ],
-  total: 2,
+  total: 3,
 }
 
 describe('AutomationScreen', () => {
@@ -44,7 +71,7 @@ describe('AutomationScreen', () => {
     vi.unstubAllGlobals()
   })
 
-  it('lists queued and failed jobs with actions', async () => {
+  it('tells each job as a natural sentence grouped by state', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -56,14 +83,26 @@ describe('AutomationScreen', () => {
     )
     render(<AutomationScreen />)
 
-    expect(await screen.findByText('İş Kuyruğu')).toBeInTheDocument()
-    expect(screen.getAllByText('Kaynak yoklaması').length).toBe(2)
-    expect(screen.getByText('kuyrukta')).toBeInTheDocument()
+    expect(await screen.findByText('Şu an sürüyor')).toBeInTheDocument()
+    expect(screen.getByText('Sırada bekleyen')).toBeInTheDocument()
+    expect(screen.getByText('Son bitenler')).toBeInTheDocument()
+    // Videolu is: baslik + dogal eylem cumlesi.
+    expect(screen.getAllByText('Tepki videosu 3').length).toBe(1)
+    expect(screen.getByText('indiriliyor')).toBeInTheDocument()
+    // Videosuz is: kendi ozneli cumle.
+    expect(
+      screen.getByText('yetkili kaynaklarda yeni videolar aranıyor'),
+    ).toBeInTheDocument()
+    // Durum pill'leri.
+    expect(screen.getByText('sürüyor')).toBeInTheDocument()
+    expect(screen.getByText('sırada')).toBeInTheDocument()
     expect(screen.getByText('başarısız')).toBeInTheDocument()
     expect(screen.getByText(/patladi/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'İptal' })).toBeInTheDocument()
+    // Eylemler: kosan ve siradaki is iptal edilir, hatali is yeniden
+    // denenir.
+    expect(screen.getAllByRole('button', { name: 'İptal' }).length).toBe(2)
     expect(
-      screen.getByRole('button', { name: 'Yeniden Dene' }),
+      screen.getByRole('button', { name: 'Yeniden dene' }),
     ).toBeInTheDocument()
   })
 
@@ -81,12 +120,13 @@ describe('AutomationScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<AutomationScreen />)
 
-    await screen.findByText('kuyrukta')
-    fireEvent.click(screen.getByRole('button', { name: 'İptal' }))
+    await screen.findByText('sürüyor')
+    // Ilk 'Iptal' sirasi 'Su an suruyor' bolumundeki kosi isin (id 8).
+    fireEvent.click(screen.getAllByRole('button', { name: 'İptal' })[0])
 
     await waitFor(() => {
       const post = fetchMock.mock.calls.find(
-        (c) => String(c[0]).includes('/api/jobs/7/cancel') && c[1]?.method === 'POST',
+        (c) => String(c[0]).includes('/api/jobs/8/cancel') && c[1]?.method === 'POST',
       )
       expect(post).toBeDefined()
     })
