@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.services.channel_service import record_event
 from app.services.oauth_service import OAuthService
+from app.services.source_orientation import produces_full_cut
 from app.services.publishing_schedule import (
     ScheduleError,
     is_due,
@@ -219,10 +220,10 @@ class PublishingService:
             raise PublishingError(
                 "Kaynak kanalin hak kaydi yetkili degil; yayin reddedildi."
             )
-        if context["is_horizontal"] and not context["reaction_source"]:
+        if context["is_horizontal"] and not context["full_cut_source"]:
             raise PublishingError(
-                "Yatay tam kesit yayini yalnizca reaksiyon kaynaklarinda "
-                "aciktir."
+                "Yatay tam kesit yayini yalnızca yatay/reaksiyon "
+                "kaynaklarında açıktır."
             )
         if context["already_published"]:
             # Kabul kriteri: yinelenen yukleme engellenir (idempotent).
@@ -552,6 +553,7 @@ class PublishingService:
             ),
             "is_horizontal": False,
             "reaction_source": bool(source.reaction_source),
+            "full_cut_source": produces_full_cut(source),
             "orientation": "vertical",
         }
 
@@ -653,6 +655,7 @@ class PublishingService:
             ),
             "is_horizontal": True,
             "reaction_source": bool(source.reaction_source),
+            "full_cut_source": produces_full_cut(source),
             "orientation": "horizontal",
         }
 

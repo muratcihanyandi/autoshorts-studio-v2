@@ -184,6 +184,58 @@ async def _make_processed(
         await session.commit()
 
 
+async def _seed_ready_clip(sessionmaker, channel_id: int, video_id: int):
+    """Gorev 2 stok semasi: videoya secilmis aday + render edilmis dikey
+    klip ekler; aday kimligini doner."""
+    from app.models import ClipCandidate, PublishedVideo, RenderedClip
+
+    async with sessionmaker() as session:
+        candidate = ClipCandidate(
+            source_video_id=video_id,
+            start_seconds=0.0,
+            end_seconds=30.0,
+            duration_seconds=30.0,
+            score=0.9,
+            status="selected",
+        )
+        session.add(candidate)
+        await session.flush()
+        render = RenderedClip(
+            clip_candidate_id=candidate.id,
+            source_video_id=video_id,
+            orientation="vertical",
+            status="rendered",
+            file_path=f"/x/{candidate.id}.mp4",
+            file_bytes=100,
+        )
+        session.add(render)
+        await session.flush()
+        await session.commit()
+        return candidate.id
+
+
+async def _publish_clip(sessionmaker, channel_id: int, candidate_id: int):
+    """Hazir klipi paylasilmis yap: PublishedVideo satiri stoktan dusurur."""
+    from app.models import PublishedVideo, SourceVideo, ClipCandidate
+
+    async with sessionmaker() as session:
+        candidate = await session.get(ClipCandidate, candidate_id)
+        session.add(
+            PublishedVideo(
+                clip_candidate_id=candidate_id,
+                source_video_id=candidate.source_video_id,
+                orientation="vertical",
+                channel_id=channel_id,
+                youtube_video_id=f"yt-{candidate_id}",
+                visibility="public",
+                status="verified",
+                title="Yayinlandi",
+            )
+        )
+        await session.commit()
+
+
+
 class TestStartStopStateMachine:
     def test_start_enqueues_refill_and_worker_processes(self, tmp_path):
         """Kabul: Baslat gercekten isi alir — stok bos, planned video
@@ -331,7 +383,7 @@ class TestStartStopStateMachine:
 
 class TestStockRefill:
     def test_stock_target_stops_new_downloads(self, tmp_path):
-        """Kabul: hazir stok hedefe ulasinca yeni yatay indirme yok."""
+        """Kabul: hazir klip stogu hedefe ulasinca yeni yatay indirme yok."""
         from app.services.automation_service import refill_channel_stock
 
         async def scenario():
@@ -346,6 +398,7 @@ class TestStockRefill:
                 ids = await _seed_planned_video(sessionmaker, channel_id, n=5)
                 for video_id in ids[:3]:
                     await _make_processed(sessionmaker, channel_id, video_id)
+                    await _seed_ready_clip(sessionmaker, channel_id, video_id)
                 result = await refill_channel_stock(
                     sessionmaker, settings, channel_id
                 )
@@ -388,8 +441,8 @@ class TestStockRefill:
         assert second["reason"] == "baska bir yatay kaynak isleniyor"
 
     def test_stock_depletion_resumes_production(self, tmp_path):
-        """Kabul: stok azaldiginda (kaynak #confirmed oldugunda) otomasyon
-        yeniden uretime gecer."""
+        """Kabul: stok azaldiginda (klip paylasildiginda) otomasyon yeniden
+        uretime gecer."""
         from app.services.automation_service import refill_channel_stock
 
         async def scenario():
@@ -400,14 +453,18 @@ class TestStockRefill:
                     sessionmaker, settings, channel_id
                 )
                 ids = await _seed_planned_video(sessionmaker, channel_id, n=4)
+                clip_ids = []
                 for video_id in ids[:2]:
                     await _make_processed(sessionmaker, channel_id, video_id)
-                # Stok dolu: yeni indirme yok.
+                    clip_ids.append(
+                        await _seed_ready_clip(
+                            sessionmaker, channel_id, video_id
+                        )
+                    )
+                # Stok dolu (2 hazir klip >= hedef 2): yeni indirme yok.
                 full = await refill_channel_stock(sessionmaker, settings, channel_id)
-                # Bir kaynak #confirmed: stok 1'e dusuyor.
-                await _make_processed(
-                    sessionmaker, channel_id, ids[0], confirmed=True
-                )
+                # Bir klip paylasildi: stok 1'e dusuyor, uretim surer.
+                await _publish_clip(sessionmaker, channel_id, clip_ids[0])
                 resumed = await refill_channel_stock(
                     sessionmaker, settings, channel_id
                 )

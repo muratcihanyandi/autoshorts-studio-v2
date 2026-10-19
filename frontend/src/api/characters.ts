@@ -1,6 +1,7 @@
 import { ApiError, getJson, sendJson } from './client'
 
 export type SourcePlatform = 'youtube' | 'twitch' | 'kick'
+export type SourceOrientation = 'auto' | 'vertical' | 'horizontal'
 export type SourcePermission = 'authorized' | 'pending' | 'rejected'
 
 export interface CharacterOut {
@@ -43,6 +44,7 @@ export interface SourceOut {
   character_id: number | null
   character_name: string | null
   reaction_source: boolean
+  output_orientation: SourceOrientation
   trim_start_seconds: number
   trim_end_seconds: number
   filter_rules: SourceFilterRules
@@ -62,6 +64,7 @@ export interface SourceCreateInput {
   title: string
   character_id?: number
   reaction_source?: boolean
+  output_orientation?: SourceOrientation
   trim_start_seconds?: number
   trim_end_seconds?: number
   filter_rules?: SourceFilterRules
@@ -77,6 +80,7 @@ export interface SourceFilterRules {
 export interface SourceUpdateInput {
   permission_status?: SourcePermission
   reaction_source?: boolean
+  output_orientation?: SourceOrientation
   trim_start_seconds?: number
   trim_end_seconds?: number
   filter_rules?: SourceFilterRules

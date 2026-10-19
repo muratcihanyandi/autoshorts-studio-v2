@@ -39,6 +39,8 @@ type NumberKey =
   | 'retry_backoff_seconds'
   | 'horizontal_stock_target_default'
   | 'shorts_per_video'
+  | 'clip_min_seconds'
+  | 'clip_max_seconds'
   | 'download_rate_limit_kbps'
   | 'planned_poll_interval_minutes'
 
@@ -103,6 +105,18 @@ const NUMBER_FIELDS: {
     label: 'Video Başına Shorts',
     help: 'Bir yatay videodan çıkarılacak en fazla Shorts sayısı.',
     min: 1,
+  },
+  {
+    key: 'clip_min_seconds',
+    label: 'Klip Süresi Alt Sınır (sn)',
+    help: 'Motorun seçebileceği en kısa klip süresi.',
+    min: 5,
+  },
+  {
+    key: 'clip_max_seconds',
+    label: 'Klip Süresi Üst Sınır (sn)',
+    help: 'En uzun klip süresi (Shorts sınırı 180 sn). Süre esnek: an 1-2 dakika sürüyorsa klip de o kadar uzun seçilir.',
+    min: 20,
   },
   {
     key: 'download_rate_limit_kbps',

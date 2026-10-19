@@ -68,6 +68,8 @@ EDITABLE_FIELDS = (
     "retry_backoff_seconds",
     "horizontal_stock_target_default",
     "shorts_per_video",
+    "clip_min_seconds",
+    "clip_max_seconds",
     "min_free_disk_gb",
     "download_rate_limit_kbps",
     "planned_poll_interval_minutes",
@@ -93,6 +95,8 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "retry_backoff_seconds": (0, 3600),
     "horizontal_stock_target_default": (1, 50),
     "shorts_per_video": (1, 10),
+    "clip_min_seconds": (5, 120),
+    "clip_max_seconds": (20, 180),
     "download_rate_limit_kbps": (0, 10_000_000),
     "planned_poll_interval_minutes": (1, 1440),
     "media_retention_days": (-1, 3650),
@@ -247,6 +251,8 @@ class SettingsService:
                 "horizontal_stock_target_default"
             ),
             shorts_per_video=number("shorts_per_video"),
+            clip_min_seconds=number("clip_min_seconds"),
+            clip_max_seconds=number("clip_max_seconds"),
             min_free_disk_gb=plain("min_free_disk_gb"),
             download_rate_limit_kbps=number("download_rate_limit_kbps"),
             planned_poll_interval_minutes=number(

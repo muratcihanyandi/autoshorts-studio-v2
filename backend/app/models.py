@@ -47,6 +47,11 @@ class ChannelStatus(str, enum.Enum):
 
 SOURCE_PERMISSION_STATUSES = ("pending", "authorized", "rejected")
 
+# Kaynağin çıktı yönü (Görev 2): 'auto' mevcut reaction_source bayrağına
+# göre karar verir, 'vertical' yalnız dikey short üretir (yatay dosya
+# üretim sonrası silinir), 'horizontal' budanmış yatay tam kesit üretir.
+OUTPUT_ORIENTATIONS = ("auto", "vertical", "horizontal")
+
 SOURCE_VIDEO_STATUSES = (
     "discovered",
     "excluded",
@@ -229,6 +234,18 @@ class SourceChannel(Base):
     authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Reaksiyon kaynagi: budanmis yatay tam kesit + dikey shortlar uretilir.
     reaction_source: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Çıktı yönü (Görev 2): auto/vertical/horizontal; auto reaction_source
+    # bayrağına düşer, vertical yatay tam kesiti hiç üretmez, horizontal
+    # bayraktan bağımsız yatay tam kesit üretir.
+    output_orientation: Mapped[str] = mapped_column(
+        String(12),
+        CheckConstraint(
+            "output_orientation IN ('auto', 'vertical', 'horizontal')",
+            name="ck_source_channels_output_orientation",
+        ),
+        server_default="auto",
+        nullable=False,
+    )
     trim_start_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
     trim_end_seconds: Mapped[float] = mapped_column(nullable=False, default=0.0)
     filter_rules: Mapped[dict[str, Any]] = mapped_column(

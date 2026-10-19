@@ -217,7 +217,7 @@ export function ChannelSettingsModal({
             {settings && (
               <>
                 <section className="field">
-                  <span>Yatay video stok hedefi</span>
+                  <span>Hazır video stok hedefi</span>
                   <input
                     type="number"
                     min={1}
@@ -226,8 +226,9 @@ export function ChannelSettingsModal({
                     onChange={(e) => setStockTarget(Number(e.target.value) || 1)}
                   />
                   <small className="field-help">
-                    Hazır yatay stok bu sayıya ulaşınca yeni kaynak indirilmez;
-                    stok azalınca üretim yeniden başlar. Varsayılan 3.
+                    Hazır video stoğu (dikey + yatay) bu sayıya ulaşınca yeni kaynak
+                    indirilmez; videolar paylaşıldıkça stok azalır ve üretim
+                    yeniden başlar. Varsayılan 3.
                   </small>
                 </section>
 

@@ -422,6 +422,7 @@ class LibraryViewService:
             "source_channel_title": source.title,
             "source_channel_youtube_id": source.youtube_channel_id,
             "reaction_source": bool(source.reaction_source),
+            "output_orientation": source.output_orientation,
             "filter_rules": source.filter_rules or {},
             "trim_start_seconds": source.trim_start_seconds,
             "trim_end_seconds": source.trim_end_seconds,
@@ -999,6 +1000,9 @@ class LibraryViewService:
                     "duration_seconds": video.duration_seconds,
                     "reaction_source": (
                         bool(source.reaction_source) if source is not None else False
+                    ),
+                    "output_orientation": (
+                        source.output_orientation if source is not None else None
                     ),
                 }
                 if video is not None

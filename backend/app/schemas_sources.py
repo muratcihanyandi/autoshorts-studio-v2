@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SOURCE_PERMISSION_VALUES = ("authorized", "rejected")
 RULE_KEYS = {"exclude_title_patterns", "max_age_days", "require_reaction_content"}
+OUTPUT_ORIENTATION_VALUES = ("auto", "vertical", "horizontal")
 
 
 def _validate_rules(value: dict | None) -> dict | None:
@@ -40,6 +41,7 @@ class SourceCreate(BaseModel):
     platform: Literal["youtube", "twitch", "kick"] = "youtube"
     character_id: int | None = None
     reaction_source: bool = False
+    output_orientation: Literal["auto", "vertical", "horizontal"] = "auto"
     trim_start_seconds: float = Field(default=0.0, ge=0)
     trim_end_seconds: float = Field(default=0.0, ge=0)
     filter_rules: dict | None = None
@@ -61,6 +63,7 @@ class SourceUpdate(BaseModel):
     platform: Literal["youtube", "twitch", "kick"] | None = None
     character_id: int | None = None
     reaction_source: bool | None = None
+    output_orientation: Literal["auto", "vertical", "horizontal"] | None = None
     trim_start_seconds: float | None = Field(default=None, ge=0)
     trim_end_seconds: float | None = Field(default=None, ge=0)
     filter_rules: dict | None = None
@@ -94,6 +97,7 @@ class SourceOut(BaseModel):
     # Görünüm kolaylığı için karakter adı (rota katmanı doldurur).
     character_name: str | None = None
     reaction_source: bool
+    output_orientation: str
     trim_start_seconds: float
     trim_end_seconds: float
     permission_status: str

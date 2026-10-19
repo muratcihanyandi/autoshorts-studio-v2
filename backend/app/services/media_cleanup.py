@@ -135,3 +135,73 @@ async def _render_for_row(
     return (
         (await session.execute(statement)).scalars().one_or_none()
     )
+
+
+async def cleanup_vertical_source_files(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    *,
+    source_video_id: int | None = None,
+) -> dict:
+    """Görev 2: dikey yönlü kaynakların yatay dosyalarını sil.
+
+    output_orientation='vertical' olan bir kaynağın Shorts üretimi
+    tamamlanınca (#confirmed) indirilen yatay video ve altyazı yan dosyası
+    diskten kalkar; stokta yalnız dikey klipler kalır. DB kayıtları
+    (media_assets, transcripts) durur — kütüphanede dosyasız satır olarak
+    görünür, denetim izi korunur.
+    """
+    del settings  # politika ayarı yok: dikey kaynakta teslim anında silinir
+    cleaned = 0
+    async with sessionmaker() as session:
+        from app.models import MediaAsset, SourceChannel, Transcript
+
+        query = (
+            sa.select(MediaAsset, SourceVideo, SourceChannel)
+            .join(SourceVideo, MediaAsset.source_video_id == SourceVideo.id)
+            .join(
+                SourceChannel, SourceVideo.source_channel_id == SourceChannel.id
+            )
+            .where(
+                SourceVideo.status == "confirmed",
+                SourceChannel.output_orientation == "vertical",
+                MediaAsset.file_path != "",
+            )
+        )
+        if source_video_id is not None:
+            query = query.where(MediaAsset.source_video_id == source_video_id)
+        rows = (await session.execute(query)).all()
+        for asset, video, source in rows:
+            removed: list[str] = []
+            if _remove_file(asset.file_path):
+                removed.append(str(asset.file_path))
+            asset.file_path = ""
+            transcript = (
+                (
+                    await session.execute(
+                        sa.select(Transcript).where(
+                            Transcript.media_asset_id == asset.id
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            if transcript is not None and transcript.raw_path:
+                if _remove_file(transcript.raw_path):
+                    removed.append(str(transcript.raw_path))
+                transcript.raw_path = None
+            if removed:
+                record_event(
+                    session,
+                    source.channel_id,
+                    "media.vertical_source_cleaned",
+                    {
+                        "source_video_id": video.id,
+                        "files": removed,
+                    },
+                )
+                cleaned += 1
+        if cleaned:
+            await session.commit()
+    return {"cleaned": cleaned}

@@ -139,6 +139,8 @@ class SourceService:
                 source.character_id = new_character
             if "reaction_source" in changes:
                 source.reaction_source = changes["reaction_source"]
+            if "output_orientation" in changes:
+                source.output_orientation = changes["output_orientation"]
             if "trim_start_seconds" in changes:
                 source.trim_start_seconds = changes["trim_start_seconds"]
             if "trim_end_seconds" in changes:

@@ -62,11 +62,14 @@ DEFAULT_HYPE_SYSTEM_PROMPT = (
     "degerlendirip en iyi baslangic/bitis zamanlarini belirle.\n"
     "- Klip heyecanli anin TAM ORTASINDA baslamamali: hazirlik kismini, "
     "cumlenin baslangicini ve reaksiyonun olusmasini icine al.\n"
-    "- Klip reaksiyon tamamlanmadan bitmemeli.\n"
+    "- Klip reaksiyon tamamlanmadan bitmemeli; hype ani (tepki/heyecan) "
+    "biter BITMEZ bitir — olayin dogal kapanisini kesme.\n"
+    "- Klip suresi ESNEKTIR: anin dogasina gore 20 saniye ile 3 dakika "
+    "arasinda secilebilir; sureyi doldurmak icin anin sonunu budama.\n"
     "- Ses analizi yaniltici olabilir (muzik, oyun efektleri); transkript "
     "baglamina oncelik ver.\n"
     "- Kesin olmayan bilgileri kesin gibi one surme; guven puanini "
-    "dusrerek belirt.\n"
+    "dusurerek belirt.\n"
     "- Yaniti yalnizca istenen JSON biciminde ver."
 )
 
@@ -90,14 +93,17 @@ PROMPT_TEMPLATE = (
     "bolgeleri var. Her aday icin en iyi baslangic/bitis zamanlarini "
     "belirle.\n\n"
     "Video toplam suresi: {duration:.1f} saniye\n"
-    "Klip sure kurallari: en az {min_seconds}, en cok {max_seconds} "
-    "saniye\n\n"
+    "Klip sure araligi: en az {min_seconds}, en cok {max_seconds} saniye. "
+    "Sure esnektir — anin dogal suresine gore 20 saniyeden 1-2 dakikaya "
+    "kadar sec; sureyi doldurmak icin anin sonunu BUDAMA.\n\n"
     "Adaylar:\n{candidates}\n\n"
     "Yaniti SADECE su JSON biciminde ver:\n"
     '{{"evaluations": [{{"candidate_id": 1, "start_seconds": 12.5, '
     '"end_seconds": 48.0, "reason": "kisa gerekce", "confidence": 0.8}}]}}\n'
     "Kurallar: start_seconds < end_seconds olmali; zamanlar video "
-    "sinirlari icinde kalmali; heyecanli anin ortasindan kesme."
+    "sinirlari icinde kalmali; heyecanli anin ortasindan kesme; hype ani "
+    "(tepki/heyecan) tamamlanmadan klip BITMEMELI, olay biter bitmez "
+    "bitir."
 )
 
 
@@ -182,7 +188,9 @@ def validate_window(
         if end - start < min_seconds:
             start = max(0.0, end - min_seconds)
     elif length > max_seconds:
-        end = start + max_seconds
+        # Gorev 3: hype aninin SONU korunur. Sure asil siniri asarsa
+        # baslangic one cekilir; bitis (olayin dogal kapanisi) budanmaz.
+        start = max(0.0, end - max_seconds)
     if not (0 <= start < end <= duration):
         return None
     return start, end

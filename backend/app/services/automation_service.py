@@ -552,14 +552,15 @@ async def refill_channel_stock(
     settings: Settings,
     channel_id: int,
 ) -> dict[str, Any]:
-    """Stock-target-aware horizontal refill for one channel.
+    """Ready-clip-stock-aware horizontal refill for one channel (Görev 2).
 
-    Ready stock (#done, not yet #confirmed) below the target triggers
-    exactly ONE new media_process job — the global single-source rule
-    means no second horizontal source starts until this one finishes.
-    Sources bound to unfollowed characters are skipped when the channel
-    has a follow list; without a follow list every authorized source of
-    the channel is eligible (M13 behavior).
+    The production gate counts READY UNPUBLISHED CLIPS (rendered vertical
+    shorts + horizontal full cuts with no PublishedVideo row). While that
+    stock is at or above the channel target no new source is downloaded;
+    as clips get shared the stock depletes and production resumes. The
+    global single-source rule still keeps at most one horizontal source
+    in the pipeline at any time. Sources bound to unfollowed characters
+    are skipped when the channel has a follow list.
     """
     from app.services.job_service import JobService
     from app.services.status_service import StatusService
@@ -574,11 +575,11 @@ async def refill_channel_stock(
             "channel_id": channel_id,
             "enqueued": False,
             "reason": "otomasyon calismiyor",
-            "stock": await status.horizontal_stock_level(channel_id),
+            "stock": await status.ready_clip_stock(channel_id),
             "target": profile.horizontal_stock_target,
         }
 
-    stock = await status.horizontal_stock_level(channel_id)
+    stock = await status.ready_clip_stock(channel_id)
     target = profile.horizontal_stock_target
     if stock >= target:
         return {

@@ -14,14 +14,16 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** Product surface (2026-10-19): first-run **signup** and
-**login** screens with tabs, HttpOnly session cookie, and a cleaned final
-login layout (project bullets/footer/technical note removed); the media
-library now shows only engine-selected videos (current video + completed
-selections) with a stage track, YouTube thumbnails and source-channel links.
-Ready clips are compact cards that open a detail dialog with a Range-streamed
-player, YouTube publishing plan, title, description, tags, filters and cover
-image. Backend 403/403, frontend 23/23, type check/build and secret scan clean.
+**Current task:** Three-task product update (2026-10-19): (1) a working
+calendar — `GET /api/calendar` plus a month-grid CalendarScreen showing
+every planned and occurred publication with click-through metadata;
+(2) source output orientation (auto/vertical/horizontal) — vertical
+sources produce only Shorts, the horizontal file is deleted after
+processing, and refill now maintains a ready-clip stock; (3) flexible
+clip duration (site-editable, 20–180 s) with hype-aware boundaries
+that never cut the hype moment short. Backend 410/410, frontend 30/30,
+type check/build/lint and secret scan clean. Pi deployment pending
+(new image + migration 0014).
 
 **Last updated:** 2026-10-19
 
@@ -832,34 +834,44 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-19 (product surface session: signup/login + selected-only
-media library + clip detail/player) on the dev machine (Windows 11, Python
-3.11.9 venv, Node 24.13.0). Commands run from the stated directories.
-NOTE: on this machine pytest must be run with file redirection, not
-through pipes — piped runs hang (known dev-env quirk); the full suite
-ran foreground with redirection.
+Verified 2026-10-19 (three-task update: calendar + source output
+orientation + flexible clip duration) on the dev machine (Windows 11,
+Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
+directories. NOTE: on this machine pytest must be run with file
+redirection, not through pipes — piped runs hang (known dev-env
+quirk); one foreground `-q` run stalled once at ~86% and was rerun
+cleanly (verbose rerun and a second `-q` run both completed in ~90 s,
+so the stall was environmental, not a test hang).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
   (output redirected to a log file)
-  - Passed: **403**, Failed: 0, Skipped: 0 (403 collected; 5 new auth
-    tests, 4 new product media tests; the media regression test
-    explicitly requests `active_only=false` for its tag-vocabulary
-    assertions).
+  - Passed: **410**, Failed: 0, Skipped: 0 (2 new calendar-view tests,
+    5 new source-orientation tests; stock-refill tests in
+    test_channel_automation moved to ready-clip semantics with
+    `_seed_ready_clip`/`_publish_clip` fixtures).
+  - Found and fixed during verification: `SettingsService._view` was
+    constructing `SettingsOut` without the new clip-duration fields
+    (11 test_settings failures + 1 subtitle-correction failure with a
+    pydantic missing-field error); fixed by adding
+    `clip_min_seconds`/`clip_max_seconds` to `_view` and INT_FIELDS
+    bounds (5–120 / 20–180).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 1 warning (starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 23 passed, 0 failed
-  (App 7 — signup, login, first-run and unauthorized flows;
-  SettingsScreen 4, AutomationScreen 3, CharactersScreen 5,
-  MediaLibraryScreen 3, LogsScreen 1).
+- Frontend — `cd frontend && npx vitest run`: 30 passed, 0 failed
+  (CalendarScreen 4 — new, CharactersScreen 7 — +2 orientation tests,
+  SettingsScreen 5 — +1 clip-duration test, MediaLibraryScreen 3,
+  AutomationScreen 3, App 7, LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Production build —
-  `npm run build`: succeeded.
+  `npm run build`: succeeded. Lint — `npm run lint` (oxlint): 0 errors,
+  8 React Compiler advisories (pre-existing purity/setState-in-effect
+  pattern shared by the older screens).
 - Secret scan — `python tools/scan_secrets.py`: clean (synthetic test
   credentials carry justified `# secret-scan-ok` markers).
 
-Previous full-suite record (2026-10-18, post-scheduled-public +
-library-cleanup sessions): backend 383/384 (two chunks), frontend
-21→22 — superseded by the totals above.
+Previous full-suite record (2026-10-19, product surface session:
+signup/login + selected-only media library + clip detail/player):
+backend 403/403, frontend 23/23 — superseded by the totals above.
 
 Previous full-suite record (2026-10-17, connection-guide + LLM
 management session):
@@ -950,20 +962,79 @@ historical, superseded by the totals above):
 
 ## 9. Immediate Next Actions
 
-1. Milestone 12 (next): production hardening (fault injection, backups,
+1. User (to deploy the three-task update): pull the new image and run
+   `alembic upgrade head` on the Pi — migration 0014 adds
+   `source_channels.output_orientation`; after that set each source's
+   "Çıktı Yönü" from the Characters screen (existing sources default
+   to `auto` = previous behavior).
+2. Milestone 12 (next): production hardening (fault injection, backups,
    repeated test runs, Pi verification).
-2. User (to exercise M7/M8 on the Pi): pull the new image (includes
+3. User (to exercise M7/M8 on the Pi): pull the new image (includes
    ffmpeg + yt-dlp + OpenCV + fonts), run `alembic upgrade head`
    (migrations 0007+0008), and optionally import authorized test media
    via a `media_process` job payload with `import_path`, or connect a
    real YouTube source (B4).
-3. User (to connect a real YouTube channel): enter the Google Cloud
+4. User (to connect a real YouTube channel): enter the Google Cloud
    OAuth client values + Fernet key via the site settings screen or
    compose env vars (B4).
 4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
 
+- Three-task product update (2026-10-19, user request: working calendar,
+  vertical-only source output, flexible clip duration):
+  (1) **Calendar (Görev 1)** — new `CalendarViewService` +
+  `GET /api/calendar?year&month` simulates every running channel's
+  publish slots month-wide from today forward, applying the same
+  preference order as `publish_for_channel` (vertical first, then
+  horizontal; per-orientation daily limits). Queue per channel is
+  verified-private uploads first (`scheduled` — these slots are
+  certain), then rendered-but-unpublished clips (`planned` from the
+  ready-clip stock); exhausted slots become `empty` entries with the
+  reason in `note` ("Günlük limit doldu" / "Bu dilim için hazır video
+  yok"); public entries inside the month are listed as `published`.
+  Every entry carries channel/ribbon, orientation, title, thumbnail,
+  YouTube link, `clip_render_id` and the latest metadata revision.
+  `CalendarScreen.tsx` renders a Monday-first 42-cell month grid with
+  orientation-bordered status chips, a legend with counts, month
+  navigation (Önceki/Bugün/Sonraki), a channel publish-times table and
+  click-through detail: entries with a render open `ClipDetailModal`,
+  the rest open an inline metadata modal. Polls every 60 s.
+  (2) **Source output orientation (Görev 2)** — migration 0014 adds
+  `source_channels.output_orientation` ('auto'/'vertical'/'horizontal',
+  server default 'auto', check constraint). `produces_full_cut()`
+  (app/services/source_orientation.py) is the single gate: vertical
+  never renders horizontal full cuts (pipeline guard in
+  vertical_pipeline + worker fullcut feed SQL + publishing context
+  guard), horizontal produces them regardless of the reaction flag,
+  auto keeps the old reaction_source behavior. When a vertical source
+  reaches #confirmed, `maybe_confirm_source` now calls
+  `cleanup_vertical_source_files`: the horizontal source file and its
+  transcript sidecar are deleted from disk (asset row kept with
+  `file_path=''`; audit event `media.vertical_source_cleaned`), so only
+  vertical clips remain in stock. Stock semantics changed everywhere:
+  `StatusService.ready_clip_stock(channel_id)` counts rendered clips
+  without a PublishedVideo row (vertical via selected candidates,
+  horizontal via candidate-null renders); automation refill and the
+  overview "hazır stok X/Y" row use it, so production stops when the
+  ready-clip stock meets the target and resumes as publishing depletes
+  it. CharactersScreen offers the orientation choice in the add-source
+  form ("Çıktı Yönü") and a per-row select; non-auto rows carry a
+  badge.
+  (3) **Flexible clip duration (Görev 3)** — `clip_max_seconds`
+  default 90→180; both `clip_min_seconds` (5–120) and
+  `clip_max_seconds` (20–180) are site-editable settings (INT_FIELDS +
+  SettingsScreen "Klip Süresi Alt/Üst Sınır (sn)"). The hype selection
+  prompt now requests windows of roughly 20 s–3 min and demands the
+  clip END with the hype moment ("hype anı tamamlanmadan klip
+  BİTMEMELİ; olay biter bitmez bitir"); `validate_window` clamps
+  over-max windows by preserving the END and moving the start earlier
+  (previously it cut the end, truncating the moment).
+  Verified: backend 410/410 (test_calendar_view 2, test_source_orientation
+  5; ready-clip stock fixtures in test_channel_automation), frontend
+  30/30, `tsc -b`/build clean, oxlint 0 errors, secret scan clean.
+  DEPLOY NOTE: requires the new image plus `alembic upgrade head`
+  (migration 0014) on the Pi; the settings `_view` fix is included.
 - Signup/login follow-up (2026-10-19, user request "Signup ve login
   ekranları olsun... bu final sürüm"): `POST /api/auth/signup` is the
   first-account endpoint (`/setup` stays as a compatibility alias);

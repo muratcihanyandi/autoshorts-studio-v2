@@ -34,11 +34,13 @@ from app.models import (
     ClipCandidate,
     Job,
     MediaAsset,
+    PublishedVideo,
     RenderedClip,
     SourceChannel,
     SourceVideo,
 )
 from app.services.channel_service import record_event
+from app.services.source_orientation import produces_full_cut
 
 TAG_QUEUED = "#queued"
 TAG_DOWNLOADING = "#downloading"
@@ -136,6 +138,79 @@ class StatusService:
 
     async def full_cut_count(self, channel_id: int) -> int:
         return await self._rendered_count(channel_id, "horizontal")
+
+    async def ready_clip_stock(self, channel_id: int) -> int:
+        """Hazır video stoğu (Görev 2): render edilmiş ama henüz yüklenmemiş
+        (PublishedVideo satırı olmayan) dikey shortlar + yatay tam kesitler.
+        Üretim kapısı bu sayıya bakar — hedefe ulaşınca yeni kaynak
+        indirilmez, videolar paylaşıldıkça stok azalır ve üretim sürer."""
+        async with self._sessionmaker() as session:
+            vertical = int(
+                (
+                    await session.execute(
+                        sa.select(sa.func.count())
+                        .select_from(ClipCandidate)
+                        .join(
+                            SourceVideo,
+                            ClipCandidate.source_video_id == SourceVideo.id,
+                        )
+                        .join(
+                            SourceChannel,
+                            SourceVideo.source_channel_id == SourceChannel.id,
+                        )
+                        .join(
+                            RenderedClip,
+                            RenderedClip.clip_candidate_id == ClipCandidate.id,
+                        )
+                        .outerjoin(
+                            PublishedVideo,
+                            PublishedVideo.clip_candidate_id == ClipCandidate.id,
+                        )
+                        .where(
+                            SourceChannel.channel_id == channel_id,
+                            SourceChannel.permission_status == "authorized",
+                            RenderedClip.status == "rendered",
+                            RenderedClip.orientation == "vertical",
+                            PublishedVideo.id.is_(None),
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
+            horizontal = int(
+                (
+                    await session.execute(
+                        sa.select(sa.func.count())
+                        .select_from(RenderedClip)
+                        .join(
+                            SourceVideo,
+                            RenderedClip.source_video_id == SourceVideo.id,
+                        )
+                        .join(
+                            SourceChannel,
+                            SourceVideo.source_channel_id == SourceChannel.id,
+                        )
+                        .outerjoin(
+                            PublishedVideo,
+                            sa.and_(
+                                PublishedVideo.source_video_id == SourceVideo.id,
+                                PublishedVideo.clip_candidate_id.is_(None),
+                                PublishedVideo.orientation == "horizontal",
+                            ),
+                        )
+                        .where(
+                            SourceChannel.channel_id == channel_id,
+                            SourceChannel.permission_status == "authorized",
+                            RenderedClip.clip_candidate_id.is_(None),
+                            RenderedClip.orientation == "horizontal",
+                            RenderedClip.status == "rendered",
+                            PublishedVideo.id.is_(None),
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
+        return vertical + horizontal
 
     async def _rendered_count(self, channel_id: int, orientation: str) -> int:
         async with self._sessionmaker() as session:
@@ -414,6 +489,8 @@ class StatusService:
             "engine_activity": activity,
             "horizontal_stock": await self.horizontal_stock_level(channel.id),
             "horizontal_stock_target": int(stock_target),
+            "ready_stock": await self.ready_clip_stock(channel.id),
+            "ready_stock_target": int(stock_target),
             "queued_horizontal": await self.queued_horizontal_count(channel.id),
             "shorts_ready": await self.shorts_count(channel.id),
             "full_cuts_ready": await self.full_cut_count(channel.id),
@@ -497,7 +574,7 @@ class StatusService:
                 # Cikarilacak aday yok: uretim bitti sayilir.
                 shorts_done = True
             full_cut_done = True
-            if source.reaction_source:
+            if produces_full_cut(source):
                 full_cut_done = (
                     (
                         await session.execute(
@@ -516,6 +593,7 @@ class StatusService:
             if not (shorts_done and full_cut_done):
                 return False
             video.status = "confirmed"
+            vertical_only = source.output_orientation == "vertical"
             record_event(
                 session,
                 source.channel_id,
@@ -526,4 +604,13 @@ class StatusService:
                 },
             )
             await session.commit()
+        if vertical_only:
+            # Görev 2: dikey yönlü kaynakta Shorts üretimi bitti — yatay
+            # kaynak dosyası diskten kalkar, stokta yalnız dikey klipler
+            # kalır. DB kayıtları durur (denetim izi korunur).
+            from app.services.media_cleanup import cleanup_vertical_source_files
+
+            await cleanup_vertical_source_files(
+                self._sessionmaker, self._settings, source_video_id=source_video_id
+            )
         return True

@@ -86,9 +86,9 @@ function OverviewChannelRow({
       </span>
       <div className="oc-metrics">
         <span>
-          stok{' '}
+          hazır stok{' '}
           <span className="nums">
-            {row.horizontal_stock}/{row.horizontal_stock_target}
+            {row.ready_stock}/{row.ready_stock_target}
           </span>
         </span>
         <span>

@@ -35,6 +35,7 @@ from app.models import (
 )
 from app.services.channel_service import record_event
 from app.services.character_match import search_region, similarity
+from app.services.source_orientation import produces_full_cut
 from app.services.vertical_render import (
     HORIZONTAL_H,
     HORIZONTAL_W,
@@ -291,12 +292,12 @@ class VerticalPipelineService:
             )
             if source is None:
                 raise VerticalPipelineError("Kaynak kanal bulunamadi.")
-            if not source.reaction_source:
-                # Hak kurali: reaksiyon olmayan kaynak hicbir kosulda
-                # yatay satir uretmez.
+            if not produces_full_cut(source):
+                # Hak kuralı: yatay tam kesit üretmeyen yön hiçbir koşulda
+                # yatay satır üretmez (Görev 2: vertical yönü).
                 raise VerticalPipelineError(
-                    "Yatay tam kesit yalnizca reaksiyon kaynaklarinda "
-                    "uretilir."
+                    "Yatay tam kesit yalnızca yatay/reaksiyon kaynaklarında "
+                    "üretilir."
                 )
             channel_id = source.channel_id
             asset = (

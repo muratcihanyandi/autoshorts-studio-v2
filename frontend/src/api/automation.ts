@@ -51,6 +51,8 @@ export interface ChannelRow {
   engine_activity: EngineActivity
   horizontal_stock: number
   horizontal_stock_target: number
+  ready_stock: number
+  ready_stock_target: number
   queued_horizontal: number
   shorts_ready: number
   full_cuts_ready: number

@@ -50,6 +50,7 @@ const sourcesPayload = {
       character_id: 1,
       character_name: 'Pelin Yayıncı',
       reaction_source: false,
+      output_orientation: 'auto',
       trim_start_seconds: 0,
       trim_end_seconds: 0,
       filter_rules: {},
@@ -229,9 +230,64 @@ describe('CharactersScreen', () => {
         platform: 'twitch',
         title: 'Pelin Twitch',
         character_id: 1,
+        output_orientation: 'auto',
         reaction_source: true,
         trim_start_seconds: 10,
         trim_end_seconds: 20,
+      })
+    })
+  })
+
+  it('sends the chosen output orientation when adding a source', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CharactersScreen />)
+
+    await screen.findByText('Pelin Yayıncı')
+    fireEvent.click(screen.getByRole('button', { name: 'Kaynak Ekle' }))
+    fireEvent.change(await screen.findByLabelText('UC… Kanal Kimliği'), {
+      target: { value: 'UCdikey' },
+    })
+    fireEvent.change(screen.getByLabelText('Başlık'), {
+      target: { value: 'Dikey Kaynak' },
+    })
+    // Görev 2: dikey seçilirse yalnız Shorts üretilir, yatay dosya silinir.
+    fireEvent.change(screen.getByLabelText('Çıktı Yönü'), {
+      target: { value: 'vertical' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Kaynak Ekle' }))
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/api/channels/3/sources') &&
+          c[1]?.method === 'POST',
+      )
+      expect(post).toBeDefined()
+      expect(JSON.parse(String(post![1]!.body))).toMatchObject({
+        youtube_channel_id: 'UCdikey',
+        title: 'Dikey Kaynak',
+        character_id: 1,
+        output_orientation: 'vertical',
+      })
+    })
+  })
+
+  it('changes the output orientation of an existing source', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CharactersScreen />)
+
+    const select = await screen.findByLabelText('Pelin Ana Kanalı çıktı yönü')
+    fireEvent.change(select, { target: { value: 'vertical' } })
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes('/api/sources/7') && c[1]?.method === 'PATCH',
+      )
+      expect(patch).toBeDefined()
+      expect(JSON.parse(String(patch![1]!.body))).toEqual({
+        output_orientation: 'vertical',
       })
     })
   })

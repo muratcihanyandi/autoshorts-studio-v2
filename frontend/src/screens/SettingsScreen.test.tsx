@@ -20,6 +20,8 @@ const settingsPayload = {
   retry_backoff_seconds: { value: 60, source: 'environment' },
   horizontal_stock_target_default: { value: 3, source: 'environment' },
   shorts_per_video: { value: 3, source: 'environment' },
+  clip_min_seconds: { value: 20, source: 'environment' },
+  clip_max_seconds: { value: 180, source: 'environment' },
   min_free_disk_gb: { value: '2.0', source: 'environment' },
   download_rate_limit_kbps: { value: 0, source: 'environment' },
   planned_poll_interval_minutes: { value: 5, source: 'environment' },
@@ -179,6 +181,30 @@ describe('SettingsScreen', () => {
       )
       expect(put).toBeDefined()
       expect(JSON.parse(String(put![1]!.body))).toEqual({ daily_quota_units: 5000 })
+    })
+  })
+
+  it('saves the flexible clip duration bounds', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SettingsScreen />)
+
+    // Görev 3: klip süresi alt/üst sınırı siteden ayarlanabilir.
+    expect(
+      await screen.findByLabelText(/Klip Süresi Alt Sınır \(sn\)/i),
+    ).toHaveValue(20)
+    expect(screen.getByLabelText(/Klip Süresi Üst Sınır \(sn\)/i)).toHaveValue(180)
+    fireEvent.change(screen.getByLabelText(/Klip Süresi Üst Sınır \(sn\)/i), {
+      target: { value: '120' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Ayarları Kaydet' }))
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes('/api/settings') && c[1]?.method === 'PUT',
+      )
+      expect(put).toBeDefined()
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ clip_max_seconds: 120 })
     })
   })
 

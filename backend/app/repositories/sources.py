@@ -44,6 +44,7 @@ class SourceRepository:
             platform=data.platform,
             character_id=data.character_id,
             reaction_source=data.reaction_source,
+            output_orientation=data.output_orientation,
             trim_start_seconds=data.trim_start_seconds,
             trim_end_seconds=data.trim_end_seconds,
             filter_rules=data.filter_rules or {},

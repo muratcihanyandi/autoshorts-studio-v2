@@ -36,6 +36,8 @@ export interface SettingsView {
   retry_backoff_seconds: IntSetting
   horizontal_stock_target_default: IntSetting
   shorts_per_video: IntSetting
+  clip_min_seconds: IntSetting
+  clip_max_seconds: IntSetting
   min_free_disk_gb: PlainSetting
   download_rate_limit_kbps: IntSetting
   planned_poll_interval_minutes: IntSetting
@@ -65,6 +67,8 @@ export type SettingsPatch = Partial<{
   retry_backoff_seconds: number
   horizontal_stock_target_default: number
   shorts_per_video: number
+  clip_min_seconds: number
+  clip_max_seconds: number
   min_free_disk_gb: number
   download_rate_limit_kbps: number
   planned_poll_interval_minutes: number

@@ -57,8 +57,11 @@ class Settings(BaseSettings):
     # and are probed on PATH; binaries live in the container image.
     ffmpeg_bin: str = "ffmpeg"
     ffprobe_bin: str = "ffprobe"
+    # Klip sure araligi (Gorev 3): alt sinir korunur, ust sinir Shorts'un
+    # 3 dakika limitine cekildi — hype ani 20 sn'e sigmiyorsa 1-2 dk da
+    # secilebilir. Ayarlar ekranindan degistirilebilir.
     clip_min_seconds: int = 20
-    clip_max_seconds: int = 90
+    clip_max_seconds: int = 180
     silence_noise_db: float = -35.0
     silence_min_seconds: float = 1.5
     scene_threshold: float = 0.4

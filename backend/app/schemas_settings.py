@@ -56,6 +56,8 @@ class SettingsOut(BaseModel):
     retry_backoff_seconds: IntSettingOut
     horizontal_stock_target_default: IntSettingOut
     shorts_per_video: IntSettingOut
+    clip_min_seconds: IntSettingOut
+    clip_max_seconds: IntSettingOut
     min_free_disk_gb: PlainSettingOut
     download_rate_limit_kbps: IntSettingOut
     planned_poll_interval_minutes: IntSettingOut
@@ -88,6 +90,8 @@ class SettingsUpdate(BaseModel):
     retry_backoff_seconds: int | None = None
     horizontal_stock_target_default: int | None = None
     shorts_per_video: int | None = None
+    clip_min_seconds: int | None = None
+    clip_max_seconds: int | None = None
     min_free_disk_gb: float | None = None
     download_rate_limit_kbps: int | None = None
     planned_poll_interval_minutes: int | None = None

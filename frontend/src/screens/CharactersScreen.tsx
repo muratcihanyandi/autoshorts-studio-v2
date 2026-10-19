@@ -20,6 +20,7 @@ import {
   type CharacterUpdateInput,
   type SourceCreateInput,
   type SourceOut,
+  type SourceOrientation,
   type SourcePlatform,
   type SourcesResponse,
 } from '../api/characters'
@@ -38,10 +39,18 @@ const EMPTY_SOURCE_FORM = {
   platform: 'youtube' as SourcePlatform,
   platform_key: '',
   title: '',
+  orientation: 'auto' as SourceOrientation,
   reaction: false,
   reaction_only: false,
   trim_start: '',
   trim_end: '',
+}
+
+/** Görev 2: kaynağın çıktı yönü etiketleri. */
+const ORIENTATION_LABEL: Record<SourceOrientation, string> = {
+  auto: 'Otomatik',
+  vertical: 'Dikey video',
+  horizontal: 'Yatay video',
 }
 
 function hataMesaji(err: unknown): string {
@@ -154,6 +163,12 @@ function SourceRow({
       )
     })
 
+  const changeOrientation = (orientation: SourceOrientation) =>
+    run(async () => {
+      await updateSource(source.id, { output_orientation: orientation })
+      setNote(`Çıktı yönü: ${ORIENTATION_LABEL[orientation]}.`)
+    })
+
   const recencyDays = source.filter_rules?.max_age_days ?? 0
 
   const changeRecency = (days: number) =>
@@ -181,6 +196,11 @@ function SourceRow({
         {PERMISSION_LABEL[source.permission_status]}
       </span>
       {source.reaction_source && <span className="source-badge">reaksiyon</span>}
+      {source.output_orientation !== 'auto' && (
+        <span className="source-badge">
+          {ORIENTATION_LABEL[source.output_orientation]}
+        </span>
+      )}
       {reactionOnly && <span className="source-badge">yalnız tepki</span>}
       {recencyDays > 0 && (
         <span className="source-badge">son {recencyDays} gün</span>
@@ -195,6 +215,19 @@ function SourceRow({
         >
           {reactionOnly ? 'Tepki Kuralını Kapat' : 'Yalnız Tepki'}
         </button>
+        <select
+          aria-label={`${source.title} çıktı yönü`}
+          value={source.output_orientation}
+          disabled={busy}
+          onChange={(e) =>
+            void changeOrientation(e.target.value as SourceOrientation)
+          }
+          title="Bu kaynaktan ne üretilecek: Otomatik (reaksiyon bayrağına göre), Dikey (yalnız Shorts; yatay dosya işin sonunda silinir) veya Yatay (budanmış tam kesit)."
+        >
+          <option value="auto">Yön: Otomatik</option>
+          <option value="vertical">Yön: Dikey video</option>
+          <option value="horizontal">Yön: Yatay video</option>
+        </select>
         <select
           aria-label={`${source.title} güncellik penceresi`}
           value={recencyDays}
@@ -334,6 +367,7 @@ function SourceAddForm({
       platform: form.platform,
       title: form.title.trim(),
       character_id: characterId,
+      output_orientation: form.orientation,
     }
     if (form.reaction) {
       input.reaction_source = true
@@ -390,6 +424,28 @@ function SourceAddForm({
             {form.platform === 'youtube'
               ? 'Kaynak kanalın UC ile başlayan kimliği.'
               : 'Kanalın tam adresi; videolar “VOD Ekle” ile elle girilir.'}
+          </span>
+        </div>
+        <div className="field">
+          <label htmlFor={`src-orientation-${characterId}`}>Çıktı Yönü</label>
+          <select
+            id={`src-orientation-${characterId}`}
+            value={form.orientation}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                orientation: e.target.value as SourceOrientation,
+              }))
+            }
+          >
+            <option value="auto">Otomatik</option>
+            <option value="vertical">Dikey video</option>
+            <option value="horizontal">Yatay video</option>
+          </select>
+          <span className="field-help">
+            Otomatik: reaksiyon bayrağına göre. Dikey: yatay video indirilip
+            işlenir, dikeyler çıkar, yatay dosya silinir. Yatay: budanmış
+            yatay tam kesit üretilir.
           </span>
         </div>
         <div className="field">

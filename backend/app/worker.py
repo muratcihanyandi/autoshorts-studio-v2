@@ -701,13 +701,15 @@ class JobWorker:
             fullcut_video_ids = (
                 (
                     await session.execute(
-                        text(
+                        sa.text(
                             "SELECT sv.id FROM source_videos sv"
                             " JOIN source_channels sc"
                             " ON sv.source_channel_id = sc.id"
                             " JOIN publishing_profiles pp"
                             " ON pp.channel_id = sc.channel_id"
-                            " WHERE sc.reaction_source"
+                            " WHERE (sc.output_orientation = 'horizontal'"
+                            "  OR (sc.output_orientation = 'auto'"
+                            "      AND sc.reaction_source = TRUE))"
                             " AND pp.automation_state IN ('running','paused')"
                             " AND NOT EXISTS ("
                             " SELECT 1 FROM rendered_clips rc"
@@ -910,15 +912,27 @@ class JobWorker:
         await self.cleanup_tmp_once()
 
     async def cleanup_media_once(self) -> dict:
-        """Retention dolumu gelen yayin dosyalarini temizle."""
-        from app.services.media_cleanup import cleanup_published_media
+        """Retention dolumu gelen yayın dosyalarını ve dikey yönlü
+        kaynakların kalan yatay dosyalarını temizle."""
+        from app.services.media_cleanup import (
+            cleanup_published_media,
+            cleanup_vertical_source_files,
+        )
 
         try:
-            return await cleanup_published_media(
+            result = await cleanup_published_media(
                 self._sessionmaker, self._effective
             )
         except Exception:  # noqa: BLE001 - temizlik best-effort
-            return {"cleaned": 0}
+            result = {"cleaned": 0}
+        try:
+            vertical = await cleanup_vertical_source_files(
+                self._sessionmaker, self._effective
+            )
+        except Exception:  # noqa: BLE001 - temizlik best-effort
+            vertical = {"cleaned": 0}
+        result["vertical_cleaned"] = vertical.get("cleaned", 0)
+        return result
 
     async def _maybe_cleanup_media(self) -> None:
         """Run the retention cleanup at most once per hour."""
