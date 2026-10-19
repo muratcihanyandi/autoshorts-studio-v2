@@ -34,6 +34,7 @@ async def _enrich(request: Request, jobs: list) -> list[JobOut]:
         item = JobOut.model_validate(job)
         ctx = context.get(job.id, {})
         item.title = ctx.get("title")
+        item.youtube_video_id = ctx.get("youtube_video_id")
         item.channel_name = ctx.get("channel_name")
         item.ribbon_color = ctx.get("ribbon_color")
         if job.job_type == "media_process":

@@ -12,6 +12,7 @@ export interface ActiveJobCard {
   job_type: string
   source_video_id: number | null
   title: string | null
+  youtube_video_id?: string | null
   channel_id: number | null
   channel_name: string | null
   ribbon_color: string | null
@@ -31,6 +32,7 @@ export interface QueuedJobCard {
   job_id: number
   job_type: string
   title: string | null
+  youtube_video_id?: string | null
   channel_name: string | null
   position: number
   attempts: number
@@ -41,6 +43,7 @@ export interface RecentJobCard {
   job_id: number
   job_type: string
   title: string | null
+  youtube_video_id?: string | null
   channel_name: string | null
   status: 'succeeded' | 'failed'
   duration_seconds: number | null

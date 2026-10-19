@@ -24,6 +24,7 @@ class JobOut(BaseModel):
     # Otomasyon ekraninin dogal cumleleri icin video/kanal baglami;
     # route dolarsa, baglami olmayan islerde null kalir.
     title: str | None = None
+    youtube_video_id: str | None = None
     channel_name: str | None = None
     ribbon_color: str | None = None
     stage: str | None = None

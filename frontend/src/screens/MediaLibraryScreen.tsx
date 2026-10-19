@@ -53,12 +53,53 @@ function SourceRow({
     source.tag,
   )
   const busy = statusBusy === source.id
+  const ytUrl = source.youtube_video_id
+    ? `https://www.youtube.com/watch?v=${source.youtube_video_id}`
+    : null
+  const thumbUrl = source.youtube_video_id
+    ? `https://i.ytimg.com/vi/${source.youtube_video_id}/mqdefault.jpg`
+    : null
+
   return (
     <tr>
       <td>
-        <div className="lib-title">
-          <b>{source.title}</b>
-          <small className="nums">{source.youtube_video_id}</small>
+        <div className="lib-video-cell">
+          {thumbUrl && ytUrl && (
+            <a
+              href={ytUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="lib-thumb-wrap"
+              title="YouTube'da izle"
+            >
+              <img
+                src={thumbUrl}
+                alt=""
+                loading="lazy"
+                className="lib-thumb"
+              />
+              <span className="lib-play-icon" aria-hidden="true">
+                ▶
+              </span>
+            </a>
+          )}
+          <div className="lib-title">
+            <b>{source.title}</b>
+            <div className="lib-meta-row">
+              {ytUrl && (
+                <a
+                  href={ytUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="lib-yt-link nums"
+                  title="YouTube videosunu yeni sekmede aç"
+                >
+                  YouTube ↗
+                </a>
+              )}
+              <small className="nums">{source.youtube_video_id}</small>
+            </div>
+          </div>
         </div>
       </td>
       <td>

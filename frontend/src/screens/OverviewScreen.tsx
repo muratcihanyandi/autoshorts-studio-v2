@@ -293,17 +293,7 @@ export function OverviewScreen() {
               </section>
 
               <section className="ink-panel" aria-label="Boru hattı">
-                <div className="panel-head-row">
-                  <h2>Boru hattı</h2>
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => setPipelineDetail(true)}
-                    title="Boru hattında çalışan işleri, aşamaları ve kaynakları göster"
-                  >
-                    Boru Hattı Detayları
-                  </button>
-                </div>
+                <h2>Boru hattı</h2>
                 <table className="info-table">
                   <tbody>
                     <tr

@@ -138,6 +138,17 @@ export function PipelineDetailModal({ onClose }: { onClose: () => void }) {
                             : ''}
                         </span>
                       )}
+                      {card.youtube_video_id && (
+                        <a
+                          href={`https://www.youtube.com/watch?v=${card.youtube_video_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="lib-yt-link nums"
+                          title="YouTube'da izle"
+                        >
+                          YouTube ↗
+                        </a>
+                      )}
                     </div>
                   ))
                 )}
@@ -161,6 +172,17 @@ export function PipelineDetailModal({ onClose }: { onClose: () => void }) {
                       )}
                       {card.channel_name && (
                         <span className="flow-soft">{card.channel_name}</span>
+                      )}
+                      {card.youtube_video_id && (
+                        <a
+                          href={`https://www.youtube.com/watch?v=${card.youtube_video_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="lib-yt-link nums"
+                          title="YouTube'da izle"
+                        >
+                          YouTube ↗
+                        </a>
                       )}
                     </div>
                   ))

@@ -14,12 +14,11 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** UI simplification and natural-language overhaul complete (2026-10-19):
-Overview pipeline panel upgraded with prominent interactive detail triggers,
-Automation screen transformed with a natural-language hero summary and clean
-video cards (eliminating raw text clutter), and Media Library strictly defaults
-to entered/downloaded videos with discovery pool relegated to its dedicated tab.
-Frontend 22/22 tests passing, Vite build clean. Next: push and deploy to Pi.
+**Current task:** UI simplification, visual thumbnails and cleanups (2026-10-19):
+Overview redundant top pipeline button removed (preserving bottom detail triggers and
+interactive rows). Media Library, Automation, and Pipeline Details now display
+YouTube video thumbnails and direct watch links. Backend schemas and pipeline services
+enriched with youtube_video_id. Frontend 22/22 tests passing, Vite build clean.
 
 **Last updated:** 2026-10-19
 

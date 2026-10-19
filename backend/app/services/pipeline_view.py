@@ -180,6 +180,7 @@ class PipelineViewService:
                             SourceVideo.title,
                             SourceVideo.duration_seconds,
                             SourceChannel.channel_id,
+                            SourceVideo.youtube_video_id,
                         )
                         .join(SourceChannel, SourceVideo.source_channel_id == SourceChannel.id)
                         .where(SourceVideo.id.in_(video_ids))
@@ -188,12 +189,13 @@ class PipelineViewService:
                 .all()
             )
             channels = await self._channels_by_id(session, {r[3] for r in rows})
-            for vid, title, duration, cid in rows:
+            for vid, title, duration, cid, yt_id in rows:
                 channel = channels.get(cid)
                 videos[vid] = {
                     "title": title,
                     "duration_seconds": duration,
                     "channel_id": cid,
+                    "youtube_video_id": yt_id,
                     "channel_name": channel["name"] if channel else None,
                     "ribbon_color": channel["ribbon_color"] if channel else None,
                 }
@@ -221,6 +223,7 @@ class PipelineViewService:
             asset = assets.get(sv) if sv is not None else None
             context[job.id] = {
                 "title": (video or {}).get("title"),
+                "youtube_video_id": (video or {}).get("youtube_video_id"),
                 "duration_seconds": (video or {}).get("duration_seconds"),
                 "channel_id": cid if isinstance(cid, int) else None,
                 "channel_name": (channel or {}).get("name") if channel else None,
@@ -408,6 +411,7 @@ class PipelineViewService:
             "job_type": job.job_type,
             "source_video_id": ctx.get("source_video_id"),
             "title": ctx.get("title"),
+            "youtube_video_id": ctx.get("youtube_video_id"),
             "channel_id": ctx.get("channel_id"),
             "channel_name": ctx.get("channel_name"),
             "ribbon_color": ctx.get("ribbon_color"),
@@ -433,6 +437,7 @@ class PipelineViewService:
             "job_id": job.id,
             "job_type": job.job_type,
             "title": ctx.get("title"),
+            "youtube_video_id": ctx.get("youtube_video_id"),
             "channel_name": ctx.get("channel_name"),
             "position": position,
             "attempts": job.attempts,
@@ -453,6 +458,7 @@ class PipelineViewService:
             "job_id": job.id,
             "job_type": job.job_type,
             "title": ctx.get("title"),
+            "youtube_video_id": ctx.get("youtube_video_id"),
             "channel_name": ctx.get("channel_name"),
             "status": job.status,
             "duration_seconds": duration,

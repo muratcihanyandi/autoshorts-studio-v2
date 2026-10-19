@@ -25,6 +25,7 @@ export interface Job {
   /** Video/kanal bağlamı: otomasyon ekranının doğal cümleleri için
    * arka uçtan doldurulur; eşleşme yoksa null kalır. */
   title: string | null
+  youtube_video_id?: string | null
   channel_name: string | null
   ribbon_color: string | null
   stage: string | null

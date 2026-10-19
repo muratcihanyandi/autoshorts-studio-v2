@@ -75,6 +75,17 @@ function JobRow({
           {job.channel_name}
         </span>
       )}
+      {job.youtube_video_id && (
+        <a
+          href={`https://www.youtube.com/watch?v=${job.youtube_video_id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="lib-yt-link nums"
+          title="YouTube'da izle"
+        >
+          YouTube ↗
+        </a>
+      )}
       {duration !== null && (
         <span className="flow-soft nums">
           {formatDuration(duration)}
