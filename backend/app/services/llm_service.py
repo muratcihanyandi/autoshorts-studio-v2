@@ -337,7 +337,7 @@ class LlmProviderService:
         prompt: str,
         *,
         schema: type[T] | None = None,
-        max_tokens: int = 1024,
+        max_tokens: int = 4096,
         http: httpx.AsyncClient | None = None,
         system_prompt: str | None = None,
     ) -> LlmResult:
@@ -345,7 +345,10 @@ class LlmProviderService:
 
         `system_prompt` (M13 metaveri zinciri) taşınabilir olduğunda
         sağlayıcıya sistem talimatı olarak iletilir; None davranışı
-        değiştirmez.
+        değiştirmez. Varsayılan token butcesi 4096'dir: dusunen
+        (reasoning) modeller gorunur icerikten once yuzlerce token
+        dusunme icin harcar; 1024 gibi kucuk butceler content null
+        donen kesik yanitlara yol aciyordu.
         """
         chain = await self._load_chain()
         if not chain:
@@ -480,9 +483,14 @@ class LlmProviderService:
         if response.status_code != 200:
             raise _ProviderHttpError(response.status_code)
         try:
-            return response.json()["choices"][0]["message"]["content"]
+            content = response.json()["choices"][0]["message"]["content"]
         except Exception as exc:  # noqa: BLE001 - bozuk gövde -> invalid
             raise _BadResponseBody from exc
+        # Dusunen (reasoning) modeller token butcesi dusunmeye yetmeyince
+        # content null dondurur; bos yanit gecersiz sayilir.
+        if not isinstance(content, str) or not content.strip():
+            raise _BadResponseBody
+        return content
 
     async def _call_anthropic(
         self,
@@ -512,9 +520,12 @@ class LlmProviderService:
         if response.status_code != 200:
             raise _ProviderHttpError(response.status_code)
         try:
-            return response.json()["content"][0]["text"]
+            text = response.json()["content"][0]["text"]
         except Exception as exc:  # noqa: BLE001
             raise _BadResponseBody from exc
+        if not isinstance(text, str) or not text.strip():
+            raise _BadResponseBody
+        return text
 
     async def _call_google(
         self,
@@ -540,9 +551,14 @@ class LlmProviderService:
         if response.status_code != 200:
             raise _ProviderHttpError(response.status_code)
         try:
-            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            text = response.json()["candidates"][0]["content"]["parts"][0][
+                "text"
+            ]
         except Exception as exc:  # noqa: BLE001
             raise _BadResponseBody from exc
+        if not isinstance(text, str) or not text.strip():
+            raise _BadResponseBody
+        return text
 
     async def test_provider(
         self, provider_id: int, http: httpx.AsyncClient | None = None
@@ -555,7 +571,10 @@ class LlmProviderService:
         started = time.monotonic()
         try:
             api_key = self._cipher().decrypt(provider.api_key_enc)  # secret-scan-ok: decrypted only in-memory for the request
-            text = await self._call(client, provider, api_key, "ping", 8)
+            # 256 token: dusunen modeller gorunur ilk token'dan once
+            # birkac yuz token dusunme harcar; 8 token'lik ping hep
+            # content null ile kesilirdi.
+            text = await self._call(client, provider, api_key, "ping", 256)
             latency = int((time.monotonic() - started) * 1000)
             await self._log(
                 str(uuid.uuid4()), provider, STATUS_SUCCESS, latency
@@ -565,6 +584,17 @@ class LlmProviderService:
                 status=STATUS_SUCCESS,
                 latency_ms=latency,
                 detail=text[:200],
+            )
+        except _BadResponseBody:
+            latency = int((time.monotonic() - started) * 1000)
+            await self._log(
+                str(uuid.uuid4()), provider, STATUS_INVALID_RESPONSE, latency
+            )
+            result = LlmTestResult(
+                provider_id=provider.id,
+                status=STATUS_INVALID_RESPONSE,
+                latency_ms=latency,
+                detail="Sağlayıcı boş/geçersiz yanıt gövdesi döndürdü.",
             )
         except _ProviderHttpError as exc:
             latency = int((time.monotonic() - started) * 1000)
@@ -631,6 +661,10 @@ class _BadResponseBody(Exception):
 def _parse_json(text: str) -> dict | list | None:
     import json
 
+    if not isinstance(text, str):
+        # Null icerik (ornek: reasoning modeli butceyi dusunmeye harcadi)
+        # buraya kadar gelmemeli; savunma katmani.
+        return None
     stripped = text.strip()
     # Bazı sağlayıcılar JSON'u kod bloğuna sarar.
     if stripped.startswith("```"):

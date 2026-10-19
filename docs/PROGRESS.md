@@ -957,6 +957,35 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Reasoning-model session (2026-10-19, live follow-up "Token şifreleme
+  anahtarı... diyor ancak girmiştim"): the user's restart had picked the
+  bdaf5fd image (built before 25bfdc1 existed), so the cipher fix wasn't
+  live yet — repulled and restarted with the 25bfdc1 image. The cipher
+  error was then gone (first LLM call 200 OK) but a NEW live failure
+  surfaced: `AttributeError: 'NoneType' object has no attribute 'strip'`
+  in subtitle_correct/hype jobs, unlogged in llm_request_logs (crash
+  before the log line). Root cause (probed live with a container-side
+  script that never prints the API key — response body only): the
+  user's provider routes google/gemma-4-31b, a REASONING model that
+  spends completion tokens on thinking BEFORE visible content; when
+  the max_tokens budget is consumed by reasoning the OpenAI-compat
+  response comes back 200 with `content: null` (ping with 8 tokens:
+  null + reasoning_budget_exhausted; subtitle-like prompt with 1024:
+  valid JSON — 309 reasoning + 60 content). The old `_call_openai`
+  returned the null content unchecked and `_parse_json(None)` crashed.
+  Fixes: all three adapters (openai/anthropic/google) now validate the
+  extracted text is a non-empty string, else `_BadResponseBody` →
+  logged invalid_response + chain falls through (no more raw
+  AttributeError); `_parse_json` is None-defensive; `complete()`
+  default max_tokens 1024 → 4096 (reasoning headroom for 20-segment
+  subtitle chunks); the Dene ping test uses 256 tokens instead of 8
+  (a reasoning model can never answer within 8) and catches
+  _BadResponseBody → invalid_response result instead of an unhandled
+  500. Tests: test_llm +1 (null-content → LlmServiceError with
+  invalid_response log, not AttributeError), chain-dependent files
+  re-run clean (test_llm 23, subtitle/metadata/automation/
+  channel_automation 54). Deploy: image pull + restart; then retry a
+  subtitle_correct job live and verify llm_request_logs shows success.
 - Reaction-channels + recency session (2026-10-19, user directive:
   "1080p üstü indirmesin; motor indirmiyor; güncellik önemli — RRaenee
   tepki videoları paylaşan kanallar tespit etsin, son 7/15 gün

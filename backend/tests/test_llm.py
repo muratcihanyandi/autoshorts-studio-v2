@@ -380,6 +380,34 @@ class TestFallbackChain:
         assert rows[1][1] == "Yedek" and rows[1][2] == "success"
         assert rows[0][0] == rows[1][0]  # aynı istek grubu
 
+    def test_null_content_is_invalid_response_not_crash(self, tmp_path):
+        """Dusunen model token butcesini dusunmeye harcayip content null
+        dondurunce zincir AttributeError ile degil, tanimli
+        invalid_response ile kapanir (canli durum: gemma reasoning)."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {"content": None},
+                            "finish_reason": "length",
+                        }
+                    ]
+                },
+            )
+
+        (kind, exc), db = _run_chain(tmp_path, [PRIMARY_PAYLOAD], handler)
+        assert kind == "error"
+        from app.services.llm_service import LlmServiceError
+
+        assert isinstance(exc, LlmServiceError)  # AttributeError degil
+        rows = _sync_rows(
+            db, "SELECT provider_name, status FROM llm_request_logs"
+        )
+        assert rows == [("Ana", "invalid_response")]
+
     def test_all_failures_raise_bounded_error(self, tmp_path):
         calls = {"n": 0}
 
