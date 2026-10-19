@@ -147,3 +147,16 @@ class TestRealAnalysis:
         intro_end, outro_start = asyncio.run(scenario())
         assert intro_end == pytest.approx(2.0, abs=0.5)
         assert outro_start == pytest.approx(10.0, abs=0.5)
+
+
+def test_analysis_timeout_scales_with_duration():
+    """Uzun VOD bütçesi: kısa videolar tabanda kalır, saatlik yayınlar
+    süreyle oranlanır (bilinen sahne analizi düşüşü)."""
+    from app.services.media_analysis import analysis_timeout
+
+    assert analysis_timeout(None) == 600.0
+    assert analysis_timeout(0) == 600.0
+    assert analysis_timeout(-5) == 600.0
+    assert analysis_timeout(300) == 600.0
+    # 4 saatlik yayin: 2x gercek zaman + 5 dk pay.
+    assert analysis_timeout(14400) == 14400 * 0.5 + 300

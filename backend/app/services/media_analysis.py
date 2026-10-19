@@ -25,6 +25,16 @@ _SILENCE_END = re.compile(r"silence_end:\s*(-?\d+(?:\.\d+)?)")
 _PTS_TIME = re.compile(r"pts_time:\s*(\d+(?:\.\d+)?)")
 
 
+def analysis_timeout(duration_seconds: float | None, base: float = 600.0) -> float:
+    """Sure ile orantili analiz zamani asimi: kisa videolar taban degerle
+    (10 dk) korunur, uzun VOD'larda cozumleme payi 2x gercek zaman + 5 dk
+    olur. Saatlerce suren yayin kayitlari Pi'de sabit 600 sn'yi asiyordu
+    ve tum islemeyi dusturuyordu."""
+    if not duration_seconds or duration_seconds <= 0:
+        return base
+    return max(base, duration_seconds * 0.5 + 300.0)
+
+
 def parse_silence_log(log_text: str) -> list[tuple[float, float]]:
     """Pair silence_start/silence_end lines into (start, end) runs."""
     starts: list[float] = []

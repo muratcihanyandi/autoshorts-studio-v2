@@ -35,6 +35,7 @@ from app.services.clip_candidates import (
 )
 from app.services.media_analysis import (
     audio_rms_windows,
+    analysis_timeout,
     detect_scene_changes,
     detect_silence,
     intro_outro_from_silences,
@@ -440,19 +441,39 @@ class MediaPipelineService:
         async with self._sessionmaker() as session:
             asset = await session.get(MediaAsset, asset_id)
             media_path = asset.file_path
+            inspection = (
+                (
+                    await session.execute(
+                        sa.select(MediaInspection).where(
+                            MediaInspection.media_asset_id == asset_id
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+            # Uzun VOD'lar icin analiz zamani asimi sure ile oranlanir;
+            # sabit 600 sn saatlerce suren yayinlarda yetismiyordu.
+            budget = analysis_timeout(
+                inspection.duration_seconds if inspection else None
+            )
 
         silences = await detect_silence(
             self._settings.ffmpeg_bin,
             media_path,
             noise_db=self._settings.silence_noise_db,
             min_seconds=self._settings.silence_min_seconds,
+            timeout=budget,
         )
         scenes = await detect_scene_changes(
             self._settings.ffmpeg_bin,
             media_path,
             threshold=self._settings.scene_threshold,
+            timeout=budget,
         )
-        energy = await audio_rms_windows(self._settings.ffmpeg_bin, media_path)
+        energy = await audio_rms_windows(
+            self._settings.ffmpeg_bin, media_path, timeout=budget
+        )
 
         async with self._sessionmaker() as session:
             asset = await session.get(MediaAsset, asset_id)

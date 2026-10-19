@@ -981,6 +981,25 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Live follow-up (2026-10-19, "sistem yine durdu"): after the DB reset
+  the user connected sources and the engine started processing a
+  1.8 GB multi-hour VOD from the main Rraenee channel; the run failed
+  with "sahne analizi zaman asimina ugradi" — the fixed 600 s analysis
+  timeout cannot cover hour-long streams on the Pi (known limitation
+  from the AV1 session). Fix: `media_analysis.analysis_timeout()` now
+  scales the silence/scene/energy budget with the inspected duration
+  (min 600 s, else duration × 0.5 + 300 s ≈ 2× realtime + 5 min) and
+  `_stage_analysis` passes that budget to all three analysis calls.
+  Backend 411/411 (new `test_analysis_timeout_scales_with_duration`).
+  SECOND live blocker, provider-side and NOT fixed by code: the
+  configured LLM provider (evren-llmapi routing a reasoning model)
+  rejected 17 of 22 real subtitle requests with `invalid_response`
+  (68–98 s latencies) plus 3 network errors — only 2 succeeded, so
+  `subtitle_correct` exhausted its attempts ("Tüm LLM sağlayıcıları
+  başarısız"). Full-VOD processing will keep failing until the
+  provider/model is made reliable (shorter clip-channel videos are
+  far likelier to complete); the user was told to check the
+  "Son İstekler" panel and consider a second provider.
 - Three-task product update (2026-10-19, user request: working calendar,
   vertical-only source output, flexible clip duration):
   (1) **Calendar (Görev 1)** — new `CalendarViewService` +
