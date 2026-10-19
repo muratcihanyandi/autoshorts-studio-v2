@@ -106,9 +106,13 @@ class YtDlpAdapter:
             "--merge-output-format", "mp4",
             "--write-auto-subs",
             "--sub-langs", "tr,en",
-            # 1080p tavanı: Pi'de 4K AV1 indirme + faststart ikinci geçiş
-            # dakikalarca sürer ve dikey render zaten 1080x1920'ye küçültür.
-            "-f", "bv*[height<=1080]+ba/b[height<=1080]",
+            # 1080p tavan + H.264 tercihi: YouTube 1080p'de de AV1 sunar;
+            # AV1'i OpenCV (webcam tespiti) cozumleyemez ve Pi'de cozumleme
+            # 3-5 kat yavastir. H.264 yoksa sinirsiz yedek devreye girer.
+            "-f",
+            "bv*[height<=1080][vcodec^=avc]+ba"
+            "/b[height<=1080][vcodec^=avc]"
+            "/bv*[height<=1080]+ba/b[height<=1080]",
             "-o", output_path,
         ]
         if self._settings.download_rate_limit_kbps > 0:

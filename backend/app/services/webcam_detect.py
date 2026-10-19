@@ -129,13 +129,37 @@ def sample_frames(
     start_seconds: float,
     end_seconds: float,
     samples_per_second: float = DEFAULT_SAMPLES_PER_SECOND,
+    ffmpeg_bin: str = "ffmpeg",
 ) -> list[tuple[int, object]]:
     """Seek-read frames at the requested rate; returns
     (frame_index_from_zero, frame). Frame index counts samples, not
-    video frames."""
+    video frames.
+
+    OpenCV'in cozumleyemedigi codec'lerde (orn. AV1 — opencv tekerlegi
+    dav1d tasimaz) ffmpeg ile kare cikarma yedegi devreye girer.
+    """
+    if not Path(video_path).is_file():
+        raise RuntimeError(f"Video acilamadi: {video_path}")
+    samples = _sample_frames_opencv(
+        video_path, start_seconds, end_seconds, samples_per_second
+    )
+    if samples:
+        return samples
+    return _sample_frames_ffmpeg(
+        video_path, start_seconds, end_seconds, samples_per_second,
+        ffmpeg_bin,
+    )
+
+
+def _sample_frames_opencv(
+    video_path: str | Path,
+    start_seconds: float,
+    end_seconds: float,
+    samples_per_second: float,
+) -> list[tuple[int, object]]:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Video acilamadi: {video_path}")
+        return []
     step = 1.0 / max(0.1, samples_per_second)
     samples: list[tuple[int, object]] = []
     try:
@@ -151,6 +175,57 @@ def sample_frames(
     finally:
         cap.release()
     return samples
+
+
+def _sample_frames_ffmpeg(
+    video_path: str | Path,
+    start_seconds: float,
+    end_seconds: float,
+    samples_per_second: float,
+    ffmpeg_bin: str,
+) -> list[tuple[int, object]]:
+    """Yedek yol: ffmpeg pencereyi fps filtresiyle PNG karelerine acar
+    (ffmpeg AV1 dahil tum codec'leri cozumler), kareler imread ile
+    okunur."""
+    import subprocess
+    import tempfile
+
+    duration = max(0.0, float(end_seconds) - float(start_seconds))
+    if duration <= 0:
+        return []
+    with tempfile.TemporaryDirectory(prefix="webcam-frames-") as tmp:
+        pattern = str(Path(tmp) / "frame_%05d.png")
+        cmd = [
+            ffmpeg_bin,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{float(start_seconds):.3f}",
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(video_path),
+            "-vf",
+            f"fps={max(0.1, samples_per_second)}",
+            "-vsync",
+            "0",
+            pattern,
+        ]
+        try:
+            subprocess.run(
+                cmd, check=True, capture_output=True, timeout=600
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+        samples: list[tuple[int, object]] = []
+        for index, path in enumerate(
+            sorted(Path(tmp).glob("frame_*.png"))
+        ):
+            frame = cv2.imread(str(path))
+            if frame is not None:
+                samples.append((index, frame))
+        return samples
 
 
 def cluster_detections(
@@ -192,11 +267,16 @@ def detect_webcam_region(
     detector: FaceDetector | None = None,
     samples_per_second: float = DEFAULT_SAMPLES_PER_SECOND,
     iou_threshold: float = DEFAULT_IOU_THRESHOLD,
+    ffmpeg_bin: str = "ffmpeg",
 ) -> WebcamResult:
     """Best stable face cluster in the window = webcam region."""
     detector = detector or HaarFaceDetector()
     frames = sample_frames(
-        video_path, start_seconds, end_seconds, samples_per_second
+        video_path,
+        start_seconds,
+        end_seconds,
+        samples_per_second,
+        ffmpeg_bin=ffmpeg_bin,
     )
     frames_sampled = len(frames)
     if not frames_sampled:

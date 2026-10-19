@@ -99,6 +99,24 @@ class TestRealDetection:
         height, width = frames[0][1].shape[:2]
         assert (width, height) == (1280, 720)
 
+    def test_ffmpeg_fallback_extracts_frames(self, face_video):
+        """OpenCV'in cozumleyemedigi codec (orn. AV1) yedegi: ffmpeg kare
+        cikarma yolu kendi basina calismali — ayni oran, ayni boyut."""
+        from app.services.webcam_detect import _sample_frames_ffmpeg
+
+        frames = _sample_frames_ffmpeg(
+            face_video, 0.0, 8.0, 1.0, ffmpeg_bin="ffmpeg"
+        )
+        assert 6 <= len(frames) <= 8  # fps filtresi kucuk kayma toleransi
+        height, width = frames[0][1].shape[:2]
+        assert (width, height) == (1280, 720)
+
+    def test_missing_file_raises(self, tmp_path):
+        import pytest
+
+        with pytest.raises(RuntimeError):
+            sample_frames(tmp_path / "yok.mp4", 0.0, 1.0)
+
     def test_detect_webcam_region_on_face_video(self, face_video):
         result = detect_webcam_region(face_video, 0.0, 8.0)
         # Cogunluk karede yuz var: guven yuksek, bolge yuzun civarinda.

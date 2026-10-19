@@ -421,10 +421,12 @@ class TestYtDlpAdapter:
         # Altyazi 429'u (timedtext limiti) tolere et: video inmezse fetch
         # cikti kontroluyle zaten hata verir.
         assert "--ignore-errors" in cmd
-        # 1080p tavana: 4K/AV1 indirme Pi'de dakikalarca surer.
+        # 1080p tavana + H.264 tercihi: AV1'i OpenCV cozumleyemez.
         assert (
             cmd[cmd.index("-f") + 1]
-            == "bv*[height<=1080]+ba/b[height<=1080]"
+            == "bv*[height<=1080][vcodec^=avc]+ba"
+            "/b[height<=1080][vcodec^=avc]"
+            "/bv*[height<=1080]+ba/b[height<=1080]"
         )
 
     def test_command_without_rate_limit(self, tmp_path):

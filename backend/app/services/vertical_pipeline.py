@@ -15,6 +15,7 @@ face behave exactly as before.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -152,10 +153,13 @@ class VerticalPipelineService:
         if calibration is not None and calibration.manual:
             detection = None  # manuel bolge: tespit gerekmez
         else:
-            detection = detect_webcam_region(
+            # to_thread: tespit (ve AV1'de ffmpeg yedegi) donguyu bloklamaz.
+            detection = await asyncio.to_thread(
+                detect_webcam_region,
                 asset.file_path,
                 candidate.start_seconds,
                 candidate.end_seconds,
+                ffmpeg_bin=self._settings.ffmpeg_bin,
             )
         resolved = self._calibrations.resolve(calibration, detection)
         resolved = await self._validate_against_character(
@@ -425,7 +429,13 @@ class VerticalPipelineService:
         ref_bgr = await self._load_reference_face(source.character_id)
         if ref_bgr is None:
             return resolved
-        frames = sample_frames(video_path, start_seconds, end_seconds)
+        frames = await asyncio.to_thread(
+            sample_frames,
+            video_path,
+            start_seconds,
+            end_seconds,
+            ffmpeg_bin=self._settings.ffmpeg_bin,
+        )
         if not frames:
             return resolved  # kare okunamadi: tespit sonucu gecerli sayilir
         frame = frames[0][1]
