@@ -296,15 +296,21 @@ export function OverviewScreen() {
                 <div className="panel-head-row">
                   <h2>Boru hattı</h2>
                   <button
-                    className="btn btn--ghost"
+                    type="button"
+                    className="btn btn--secondary"
                     onClick={() => setPipelineDetail(true)}
+                    title="Boru hattında çalışan işleri, aşamaları ve kaynakları göster"
                   >
-                    Detay
+                    Boru Hattı Detayları
                   </button>
                 </div>
                 <table className="info-table">
                   <tbody>
-                    <tr>
+                    <tr
+                      className="interactive-row"
+                      onClick={() => setPipelineDetail(true)}
+                      title="Kaynak detaylarını görmek için tıklayın"
+                    >
                       <th>Kaynak izleme</th>
                       <td className="nums">
                         {overview.state.data.sources.monitored} yetkili kaynak
@@ -317,7 +323,11 @@ export function OverviewScreen() {
                         </span>
                       </td>
                     </tr>
-                    <tr>
+                    <tr
+                      className="interactive-row"
+                      onClick={() => setPipelineDetail(true)}
+                      title="Kuyruk ve çalışan iş detaylarını görmek için tıklayın"
+                    >
                       <th>İş kuyruğu</th>
                       <td className="nums">
                         {overview.state.data.jobs.active} sürüyor ·{' '}
@@ -374,6 +384,12 @@ export function OverviewScreen() {
                     </tr>
                   </tbody>
                 </table>
+                <div style={{ padding: '10px 18px', borderTop: '1px solid var(--plate-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <small style={{ color: 'var(--plate-muted)' }}>İşlenen videolar ve izlenen kanalların ayrıntıları</small>
+                  <button type="button" className="btn btn--ghost" onClick={() => setPipelineDetail(true)}>
+                    Detayları İncele →
+                  </button>
+                </div>
               </section>
             </div>
 

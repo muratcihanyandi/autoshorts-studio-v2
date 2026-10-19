@@ -1008,6 +1008,136 @@
   flex-wrap: wrap;
 }
 
+/* Otomasyon doğal durum kahraman paneli */
+.auto-hero {
+  background: var(--paper-white);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.auto-hero-text h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--plate-ink);
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-hero-text p {
+  font-size: 13.5px;
+  color: var(--plate-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.auto-hero-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Doğal iş kartları */
+.job-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.job-card {
+  background: var(--paper-white);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  border-left: 4px solid var(--accent);
+}
+
+.job-card--running {
+  border-left-color: #2563eb;
+  background: #f8faff;
+}
+
+.job-card--queued {
+  border-left-color: #94a3b8;
+}
+
+.job-card--succeeded {
+  border-left-color: #16a34a;
+}
+
+.job-card--failed {
+  border-left-color: #dc2626;
+  background: #fff8f8;
+}
+
+.job-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.job-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--plate-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.job-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--plate-muted);
+}
+
+.job-card-action-text {
+  font-weight: 500;
+  color: var(--plate-ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.job-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--plate-line);
+}
+
+.interactive-row {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.interactive-row:hover {
+  background-color: var(--surface-hover, rgba(0, 0, 0, 0.025));
+}
+
+
 /* --- Overview kanal kontrol satırları --- */
 .overview-channel {
   display: flex;

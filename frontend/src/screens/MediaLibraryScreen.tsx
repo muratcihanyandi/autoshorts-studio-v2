@@ -17,15 +17,15 @@ const TAG_VIEW: Record<string, { tone: string; label: string }> = {
   '#excluded': { tone: 'idle', label: 'Hariç' },
 }
 
-/** Kullanıcının etiket filtresi: null = tümü (hariçler arka uçta gizli). */
+/** Kullanıcının etiket filtresi: null = sisteme girmiş tümü (indirilen/işlenen). */
 const FILTERS: { tag: string | null; label: string }[] = [
-  { tag: null, label: 'Tümü' },
-  { tag: '#queued', label: 'Sırada' },
+  { tag: null, label: 'Tümü (İndirilenler)' },
   { tag: '#downloading', label: 'İndiriliyor' },
   { tag: '#processing', label: 'İşleniyor' },
   { tag: '#done', label: 'Stokta' },
   { tag: '#error', label: 'Hata' },
   { tag: '#excluded', label: 'Hariç' },
+  { tag: '#queued', label: 'Keşif Havuzu' },
 ]
 
 const CLIP_STATUS_VIEW: Record<string, { tone: string; label: string }> = {

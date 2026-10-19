@@ -14,12 +14,12 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** UI de-clutter pass complete locally (2026-10-19):
-Overview live-pipeline panel removed, pipeline detail modal added,
-Automation screen rewritten in natural language, media library defaults
-to entered videos. Backend 394/394, frontend 22/22, build clean. Next:
-Pi deployment (image rebuild + restart; also carries the still-pending
-M14 deploy) and live verification.
+**Current task:** UI simplification and natural-language overhaul complete (2026-10-19):
+Overview pipeline panel upgraded with prominent interactive detail triggers,
+Automation screen transformed with a natural-language hero summary and clean
+video cards (eliminating raw text clutter), and Media Library strictly defaults
+to entered/downloaded videos with discovery pool relegated to its dedicated tab.
+Frontend 22/22 tests passing, Vite build clean. Next: push and deploy to Pi.
 
 **Last updated:** 2026-10-19
 

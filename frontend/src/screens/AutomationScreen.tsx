@@ -178,33 +178,58 @@ export function AutomationScreen() {
         <>
           {state.stale && <StaleNote onRetry={retry} />}
 
-          <section className="ink-panel" aria-label="Otomasyon işleri">
-            <div className="auto-summary">
-              {running.length + queued.length === 0 ? (
-                <span className="pill pill--ok">Sistem bekliyor</span>
-              ) : (
-                <>
-                  {running.length > 0 && (
-                    <span className="pill pill--run">
-                      {running.length} iş sürüyor
-                    </span>
-                  )}
-                  {queued.length > 0 && (
-                    <span className="pill pill--idle">
-                      {queued.length} sırada
-                    </span>
-                  )}
-                </>
+          {/* Doğal Sistem Durumu Paneli */}
+          <div className="auto-hero">
+            <div className="auto-hero-text">
+              <h2>
+                {running.length > 0 ? (
+                  <>🚀 Sistem Aktif Çalışıyor</>
+                ) : queued.length > 0 ? (
+                  <>⏳ İşlem Sırası Bekleniyor</>
+                ) : (
+                  <>☕ Sistem Boşta ve Hazır</>
+                )}
+              </h2>
+              <p>
+                {running.length > 0
+                  ? `Şu anda ${running.length} video üzerinde çalışılıyor, ${queued.length} video sırada bekliyor. İşlemler tamamlandıkça klipler kütüphaneye eklenecek.`
+                  : queued.length > 0
+                    ? `Kuyrukta ${queued.length} video sırasını bekliyor. Otomasyon motoru sıradaki videoyu işlemeye başlayacak.`
+                    : 'Şu an yürütülen veya bekleyen bir işlem yok. Yetkili kaynaklara yeni video yüklendiğinde sistem otomatik olarak indirme ve işleme sürecini başlatır.'}
+              </p>
+            </div>
+            <div className="auto-hero-pills">
+              {running.length > 0 && (
+                <span className="pill pill--run">
+                  {running.length} sürüyor
+                </span>
+              )}
+              {queued.length > 0 && (
+                <span className="pill pill--idle">
+                  {queued.length} sırada
+                </span>
+              )}
+              {running.length === 0 && queued.length === 0 && (
+                <span className="pill pill--ok">Hazır</span>
               )}
               {failedCount > 0 && (
                 <span className="pill pill--error">
-                  {failedCount} başarısız — yeniden denelenebilir
+                  {failedCount} başarısız
                 </span>
               )}
             </div>
+          </div>
+
+          <section className="ink-panel" aria-label="Otomasyon işleri">
+            <div className="panel-head-row">
+              <h2>İş Akışı ve Süreç Durumu</h2>
+              <span className="nums flow-soft">
+                Toplam {jobs.length} kayıt
+              </span>
+            </div>
 
             {jobs.length === 0 ? (
-              <div className="flow-section">
+              <div className="flow-section" style={{ padding: '24px 18px' }}>
                 <p className="plate-note">
                   Kuyruk boş — süren ya da bekleyen iş yok. Yetkili kaynak
                   eklendiğinde sistem taramayı kendisi başlatır; her video

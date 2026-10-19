@@ -2,8 +2,7 @@
  * Otomasyon ekranı ve boru hattı detay penceresi paylaşır; amaç satır
  * satır teknik log yerine "hangi video ne oluyor" anlatmak. */
 
-/** Yatay medya işleme aşamalarının eylem karşılıkları
- * (backend PIPELINE_STAGES sırasıyla aynıdır). */
+/** Yatay medya işleme aşamalarının eylem karşılıkları */
 const MEDIA_STAGE_ACTION: Record<string, string> = {
   download: 'indiriliyor',
   inspect: 'dosya denetiminden geçiyor',
@@ -45,10 +44,44 @@ export function jobAction(job: {
   }
 }
 
+/** Detaylı ve anlaşılır aşama açıklaması. */
+export function jobStageDetail(job: {
+  job_type: string
+  stage?: string | null
+}): string {
+  if (job.job_type === 'media_process') {
+    switch (job.stage) {
+      case 'download':
+        return 'Video yüksek kalitede cihaza indiriliyor.'
+      case 'inspect':
+        return 'Video çözünürlüğü ve ses kanalları inceleniyor.'
+      case 'transcript':
+        return 'Whisper yapay zekası video sesini dinleyip metne çeviriyor.'
+      case 'analysis':
+        return 'Yapay zeka videodaki en etkileyici sahneleri seçiyor.'
+      case 'candidates':
+        return 'Kısa Shorts videoları için en uygun kesit adayları belirleniyor.'
+      default:
+        return 'Video işleme boru hattından geçiyor.'
+    }
+  }
+  if (job.job_type === 'hype_evaluate') {
+    return 'Seçilen klip adayları yapay zeka ile puanlanıp sıralanıyor.'
+  }
+  if (job.job_type === 'clip_render') {
+    return 'Yatay video 9:16 dikey formatta kırpılıp altyazıları ekleniyor.'
+  }
+  if (job.job_type === 'source_discover') {
+    return 'Yetkili kanallara yeni bir video yüklenip yüklenmediği taranıyor.'
+  }
+  return 'Sistem görevi yürütülüyor.'
+}
+
 /** Bitmiş işlerin sonuç cümlesi: tamamlanan/hatalı/iptal. */
 export function jobOutcome(status: string): string | null {
-  if (status === 'succeeded') return 'tamamlandı'
-  if (status === 'failed') return 'başarısız oldu'
-  if (status === 'cancelled') return 'iptal edildi'
+  if (status === 'succeeded') return 'Başarıyla tamamlandı ve stoka eklendi'
+  if (status === 'failed') return 'İşlem sırasında hata oluştu'
+  if (status === 'cancelled') return 'İşlem kullanıcı tarafından iptal edildi'
   return null
 }
+
