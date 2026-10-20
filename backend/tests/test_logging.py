@@ -30,3 +30,23 @@ def test_redact_hides_secret_assignments() -> None:
     assert "abc123def" not in redacted
     assert "k_1234567890" not in redacted
     assert redacted.count("[REDACTED]") == 3
+
+
+def test_redact_bare_query_key():
+    """Sorgu dizgesindeki çıplak key= parametresi de maskelenir
+    (httpx URL'lerinde YouTube anahtarı bu şekildedi)."""
+    from app.logging_config import _redact
+
+    out = _redact("GET https://api?part=1&key=AIzaSyXYZ123")
+    assert "AIzaSyXYZ123" not in out
+    assert "key=[REDACTED]" in out
+
+
+def test_httpx_logger_demoted_to_warning():
+    """httpx INFO'da tam URL bastığı için susturulur."""
+    import logging
+
+    from app.logging_config import setup_logging
+
+    setup_logging("info")
+    assert logging.getLogger("httpx").level == logging.WARNING

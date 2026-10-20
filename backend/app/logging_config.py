@@ -12,7 +12,7 @@ import sys
 from datetime import datetime, timezone
 
 _REDACT_PATTERN = re.compile(
-    r"(?i)\b(password|passwd|secret|api_key|apikey|token|authorization)\b(\s*[=:]\s*)\S+"
+    r"(?i)\b(password|passwd|secret|api_key|apikey|key|token|authorization)\b(\s*[=:]\s*)\S+"
 )
 
 
@@ -44,3 +44,7 @@ def setup_logging(level: str = "info") -> None:
     except ValueError:
         root.setLevel(logging.INFO)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # httpx INFO satirlari istegin TAM URL'ini basar; sorgu dizgesindeki
+    # YouTube anahtari boylece konteyner loglarina dustu (canli bulgu
+    # 2026-10-20). Kendi isteklerimiz zaten yapisal loglaniyor.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
