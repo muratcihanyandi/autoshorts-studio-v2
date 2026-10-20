@@ -8,6 +8,8 @@ export interface StageStep {
   key: string
   label: string
   state: StageState
+  /** Aktif adımın canlı detayı (örn. indirme yüzdesi "%63"). */
+  detail: string | null
 }
 
 export interface SelectedCandidate {

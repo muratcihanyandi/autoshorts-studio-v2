@@ -23,6 +23,9 @@ export function StageTrack({ steps }: { steps: StageStep[] }) {
             {step.state === 'done' ? '✓' : step.state === 'failed' ? '!' : index + 1}
           </span>
           <span className="stage-label">{step.label}</span>
+          {step.detail && (
+            <span className="stage-detail nums">{step.detail}</span>
+          )}
         </li>
       ))}
     </ol>

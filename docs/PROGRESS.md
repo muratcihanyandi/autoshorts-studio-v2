@@ -981,6 +981,19 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Download percentage (2026-10-20, user request: "indiriliyor diyor
+  ama % kaç göremiyorum"): yt-dlp now runs with `--newline` and the
+  adapter parses `[download] xx.x%` lines from stdout
+  (`parse_progress_line`, monotonically guarded); `fetch` accepts an
+  async `on_progress` callback (fake runners and LocalImportAdapter
+  take it as an ignored keyword). The pipeline's download stage writes
+  the live percent into `app_meta.download_progress` (throttled to
+  ~2 points/10 s, best-effort, cleared when the stage ends) and the
+  media library decorates the active download stage step with
+  `detail: "%63"`; StageTrack renders it next to the step label.
+  Verified: backend 421/421 (new: progress parsing, callback
+  transport, pipeline write-and-clear, library detail), frontend
+  31/31, build clean.
 - Overnight follow-up (2026-10-20, user report: "bir gecedir açık,
   videoları arayüzden silemiyorum, hazır klipler yüklenmiyor"):
   live forensics showed the media files (1.mp4, 2.mp4, sidecars, all

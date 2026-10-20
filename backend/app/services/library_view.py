@@ -155,6 +155,14 @@ class LibraryViewService:
             current_source_id = (
                 max(active_video_ids) if active_video_ids else None
             )
+            from app.models import AppMeta
+
+            from app.services.media_pipeline import DOWNLOAD_PROGRESS_KEY
+
+            progress_row = await session.get(AppMeta, DOWNLOAD_PROGRESS_KEY)
+            download_progress = (
+                progress_row.value if progress_row is not None else {}
+            )
 
             sources = [
                 self._source_card(
@@ -166,6 +174,7 @@ class LibraryViewService:
                     selected_map.get(video.id, []),
                     video.id in full_cut_ids,
                     video.id == current_source_id,
+                    download_progress,
                 )
                 for video, source, asset in video_rows
             ]
@@ -336,8 +345,10 @@ class LibraryViewService:
         selected_count: int,
         latest_job: Job | None,
         is_current: bool,
-    ) -> list[dict[str, str]]:
-        """Beş boru hattı aşaması + klip seçimi; ürün şeridi için."""
+        download_percent: float | None = None,
+    ) -> list[dict[str, str | None]]:
+        """Beş boru hattı aşaması + klip seçimi; ürün şeridi için.
+        İndirme sırasında download adımı yüzde detayı taşır."""
         states = {key: "pending" for key in _STAGE_KEYS}
         selection_state = "pending"
         if asset is not None:
@@ -366,11 +377,22 @@ class LibraryViewService:
             if latest_job is not None and latest_job.status == "failed":
                 states["download"] = "failed"
         result = [
-            {"key": key, "label": label, "state": states[key]}
+            {
+                "key": key,
+                "label": label,
+                "state": states[key],
+                "detail": (
+                    f"%{download_percent:.0f}"
+                    if key == "download"
+                    and download_percent is not None
+                    and states[key] == "active"
+                    else None
+                ),
+            }
             for key, label in _STAGE_SPECS
         ]
         result.append(
-            {"key": "selection", "label": "Klip seçimi", "state": selection_state}
+            {"key": "selection", "label": "Klip seçimi", "state": selection_state, "detail": None}
         )
         return result
 
@@ -384,6 +406,7 @@ class LibraryViewService:
         selected: list[dict[str, Any]],
         full_cut_ready: bool,
         is_current: bool,
+        download_progress: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         channel_id = source.channel_id
         channel = channels.get(channel_id) if channel_id is not None else None
@@ -434,7 +457,18 @@ class LibraryViewService:
             "file_bytes": asset.file_bytes if asset is not None else 0,
             "origin": asset.origin if asset is not None else None,
             "stages": LibraryViewService._source_stages(
-                asset, len(selected), job, is_current
+                asset,
+                len(selected),
+                job,
+                is_current,
+                download_percent=(
+                    download_progress.get("percent")
+                    if download_progress
+                    and asset is not None
+                    and download_progress.get("media_asset_id") == asset.id
+                    and asset.status == "downloading"
+                    else None
+                ),
             ),
             "selected_candidates": selected,
             "selected_count": len(selected),

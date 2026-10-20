@@ -441,7 +441,7 @@ class TestYtDlpAdapter:
 
         calls = []
 
-        async def fake_runner(cmd):
+        async def fake_runner(cmd, on_progress=None):
             calls.append(cmd)
             output = tmp_path / "downloads" / "3.mp4"
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -460,6 +460,49 @@ class TestYtDlpAdapter:
         assert result.file_bytes == 12
         assert len(calls) == 1
         assert any("vid-abc" in part for part in calls[0])
+        # --newline: ilerleme satirlari ayri satirda akar (yuzde icin).
+        assert "--newline" in calls[0]
+
+    def test_parse_progress_line(self):
+        """yt-dlp ilerleme satırından yüzde çıkar; diğer satırlar None."""
+        from app.services.media_download import parse_progress_line
+
+        assert parse_progress_line(
+            b"[download]  63.4% of ~1.23GiB at 1.50MiB/s ETA 01:12"
+        ) == 63.4
+        assert parse_progress_line("[download]   0.0% of 3.00GiB") == 0.0
+        assert parse_progress_line("[download] 100% of 3.00GiB in 00:10") == 100.0
+        assert parse_progress_line(b"[youtube] Extracting URL") is None
+        assert parse_progress_line(b"[Merger] Merging formats") is None
+
+    def test_fetch_reports_progress_to_callback(self, tmp_path):
+        """Sahte runner ilerleme yüzdelerini callback'e taşır."""
+        from app.services.media_download import YtDlpAdapter
+
+        async def fake_runner(cmd, on_progress=None):
+            if on_progress is not None:
+                await on_progress(10.0)
+                await on_progress(42.5)
+                await on_progress(42.0)  # geri gitme: tekrar bildirilmez
+            output = tmp_path / "downloads" / "7.mp4"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"X" * 8)
+            return 0
+
+        seen = []
+
+        async def on_progress(percent):
+            seen.append(percent)
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings(), runner=fake_runner)
+            return await adapter.fetch(
+                7, "vid-p", tmp_path / "downloads", on_progress=on_progress
+            )
+
+        result = asyncio.run(scenario())
+        assert result.file_bytes == 8
+        assert seen == [10.0, 42.5]
 
     def test_missing_binary_reports_turkish_error(self, tmp_path, monkeypatch):
         from app.services.media_download import (
@@ -787,7 +830,14 @@ class TestMediaPipelineEndToEnd:
                 self.active = 0
                 self.max_active = 0
 
-            async def fetch(self, source_video_id, youtube_video_id, dest_dir):
+            async def fetch(
+                self,
+                source_video_id,
+                youtube_video_id,
+                dest_dir,
+                *,
+                on_progress=None,
+            ):
                 self.active += 1
                 self.max_active = max(self.max_active, self.active)
                 await asyncio.sleep(0.2)
@@ -907,3 +957,128 @@ class TestMediaProcessJob:
             _sync_one(tmp_path, "source_videos", video_id, "status") == "processed"
         )
         assert len(_sync_rows(tmp_path, "SELECT id FROM clip_candidates")) >= 1
+
+
+def test_download_stage_writes_and_clears_progress(tmp_path):
+    """İndirme yüzdesi app_meta'da yaşar: fetch sırasında güncellenir,
+    bitince temizlenir (UI'da '%63' gösteriminin kaynağı)."""
+    from app.config import Settings
+    from app.db import create_engine_and_sessionmaker
+    from app.models import (
+        AppMeta,
+        Base,
+        Channel,
+        MediaAsset,
+        SourceChannel,
+        SourceVideo,
+    )
+    from app.services.media_download import DownloadResult
+    from app.services.media_pipeline import (
+        DOWNLOAD_PROGRESS_KEY,
+        MediaPipelineService,
+    )
+
+    class ProgressAdapter:
+        def __init__(self) -> None:
+            self.sessionmaker = None
+
+        async def fetch(
+            self,
+            source_video_id,
+            youtube_video_id,
+            dest_dir,
+            *,
+            on_progress=None,
+        ):
+            if on_progress is not None:
+                await on_progress(10.0)
+                await on_progress(65.0)
+                async with self.sessionmaker() as probe:
+                    row = await probe.get(AppMeta, DOWNLOAD_PROGRESS_KEY)
+                    seen.append(dict(row.value) if row else None)
+            out = dest_dir / f"{source_video_id}.mp4"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"X" * 16)
+            return DownloadResult(
+                path=out, origin="youtube", file_bytes=16
+            )
+
+    seen: list = []
+    _adapter = ProgressAdapter()
+
+    async def scenario():
+        db_path = tmp_path / "prog.db"
+        sync_engine = sa.create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(sync_engine)
+        sync_engine.dispose()
+        settings = Settings(
+            database_url=f"sqlite+aiosqlite:///{db_path}",
+            media_root=str(tmp_path / "media"),
+        )
+        engine, sessionmaker = create_engine_and_sessionmaker(
+            settings.database_url
+        )
+        from app.services.media_storage import ensure_media_tree
+
+        ensure_media_tree(tmp_path / "media")
+        _adapter.sessionmaker = sessionmaker
+        try:
+            async with sessionmaker() as session:
+                channel = Channel(name="Kanal")
+                session.add(channel)
+                await session.flush()
+                source = SourceChannel(
+                    channel_id=channel.id,
+                    youtube_channel_id="UC-p",
+                    title="Kaynak",
+                    permission_status="authorized",
+                )
+                session.add(source)
+                await session.flush()
+                video = SourceVideo(
+                    source_channel_id=source.id,
+                    youtube_video_id="vid-p",
+                    title="Video",
+                    status="planned",
+                )
+                session.add(video)
+                await session.flush()
+                asset = MediaAsset(
+                    source_video_id=video.id,
+                    origin="youtube",
+                    status="downloading",
+                    stage="download",
+                    file_path="",
+                )
+                session.add(asset)
+                await session.commit()
+                asset_id, video_id, channel_id = (
+                    asset.id,
+                    video.id,
+                    channel.id,
+                )
+            service = MediaPipelineService(
+                sessionmaker,
+                settings,
+                youtube_adapter=_adapter,
+            )
+            await service._stage_download(
+                asset_id, channel_id, video_id, "vid-p", None
+            )
+            async with sessionmaker() as session:
+                row = await session.get(AppMeta, DOWNLOAD_PROGRESS_KEY)
+                final = dict(row.value) if row else None
+                saved = await session.get(MediaAsset, asset_id)
+                return final, saved.file_path, saved.status
+        finally:
+            await engine.dispose()
+
+    final, file_path, status = asyncio.run(scenario())
+    # Fetch sirasinda son yuzde yazildi; bitince kayit temizlendi.
+    assert seen == [
+        {"media_asset_id": 1, "percent": 65.0}
+    ]
+    assert final == {"media_asset_id": 1, "percent": None}
+    # Indirme asamasi tamamlandi: dosya ve durum kayda gecti.
+    assert file_path and file_path.endswith(".mp4")
+    assert status == "downloaded"

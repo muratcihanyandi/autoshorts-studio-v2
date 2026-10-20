@@ -279,3 +279,51 @@ def test_remove_source_video_clears_files_rows_and_jobs(tmp_path):
     assert counts == 0
     assert not (media_root / "edited" / "1.mp4").exists()
     assert not (media_root / "thumbnails" / "preview_1.jpg").exists()
+
+
+def test_download_stage_carries_percent_detail(tmp_path):
+    """İndirme sırasında download adımı canlı yüzde detayı taşır
+    (app_meta.download_progress -> '%63')."""
+    import json
+
+    media_root = tmp_path / "media"
+    app = _make_app(tmp_path, media_root=str(media_root))
+    _seed(app.state.test_db_path)
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "UPDATE media_assets SET status='downloading',"
+                    " stage='download', file_path='' WHERE source_video_id = 2"
+                )
+            )
+            asset_id = conn.execute(
+                sa.text(
+                    "SELECT id FROM media_assets WHERE source_video_id = 2"
+                )
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO app_meta (key, value)"
+                    " VALUES ('download_progress', :value)"
+                ),
+                {
+                    "value": json.dumps(
+                        {"media_asset_id": asset_id, "percent": 63.4}
+                    )
+                },
+            )
+    finally:
+        engine.dispose()
+
+    with TestClient(app) as client:
+        payload = client.get("/api/media").json()
+
+    current = next(s for s in payload["sources"] if s["id"] == 2)
+    download_step = next(
+        step for step in current["stages"] if step["key"] == "download"
+    )
+    assert download_step["state"] == "active"
+    assert download_step["detail"] == "%63"

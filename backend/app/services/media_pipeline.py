@@ -13,6 +13,7 @@ stage appends a channel audit event.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.models import (
+    AppMeta,
     ClipCandidate,
     MediaAsset,
     MediaInspection,
@@ -65,6 +67,30 @@ _STAGE_STATUS = {
 
 class MediaPipelineError(Exception):
     """Pipeline failure with a user-facing Turkish message."""
+
+
+DOWNLOAD_PROGRESS_KEY = "download_progress"
+
+
+async def _write_download_progress(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    asset_id: int,
+    percent: float | None,
+) -> None:
+    """Indirme yuzdesini app_meta'ya yaz (UI: '%63' gosterimi). Tek
+    indirme kurali nedeniyle tek kayit yeter; percent=None temizler.
+    Best-effort: ilerleme yazimi indirmeyi asla dusurmez."""
+    try:
+        async with sessionmaker() as session:
+            row = await session.get(AppMeta, DOWNLOAD_PROGRESS_KEY)
+            value = {"media_asset_id": asset_id, "percent": percent}
+            if row is None:
+                session.add(AppMeta(key=DOWNLOAD_PROGRESS_KEY, value=value))
+            else:
+                row.value = value
+            await session.commit()
+    except Exception:  # noqa: BLE001 - ilerleme yazimi best-effort
+        pass
 
 
 class MediaPipelineService:
@@ -238,15 +264,43 @@ class MediaPipelineService:
         else:
             adapter = YtDlpAdapter(self._settings)
 
-        # Sirali indirme: ayni anda tek indirme (kabul kriteri).
-        if self._download_lock is not None:
-            async with self._download_lock:
+        # Indirme yuzdesi app_meta'da tutulur (tek indirme kurali: tek
+        # kayit yeter); kisitirma her satiri degil ~2 puan/10 sn'yi yazar.
+        progress_state = {"percent": -1.0, "at": 0.0}
+
+        async def on_progress(percent: float) -> None:
+            now = time.monotonic()
+            if (
+                percent - progress_state["percent"] < 2.0
+                and now - progress_state["at"] < 10.0
+            ):
+                return
+            progress_state["percent"] = percent
+            progress_state["at"] = now
+            await _write_download_progress(
+                self._sessionmaker, asset_id, percent
+            )
+
+        try:
+            # Sirali indirme: ayni anda tek indirme (kabul kriteri).
+            if self._download_lock is not None:
+                async with self._download_lock:
+                    result = await adapter.fetch(
+                        source_video_id,
+                        youtube_video_id,
+                        dest_dir,
+                        on_progress=on_progress,
+                    )
+            else:
                 result = await adapter.fetch(
-                    source_video_id, youtube_video_id, dest_dir
+                    source_video_id,
+                    youtube_video_id,
+                    dest_dir,
+                    on_progress=on_progress,
                 )
-        else:
-            result = await adapter.fetch(
-                source_video_id, youtube_video_id, dest_dir
+        finally:
+            await _write_download_progress(
+                self._sessionmaker, asset_id, None
             )
 
         async with self._sessionmaker() as session:

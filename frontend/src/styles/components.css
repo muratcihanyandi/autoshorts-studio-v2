@@ -2576,3 +2576,11 @@
   display: inline-flex;
   gap: 6px;
 }
+
+/* Aktif aşamanın canlı detayı: indirme yüzdesi gibi. */
+.stage-detail {
+  font-size: 11px;
+  color: var(--plate-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
