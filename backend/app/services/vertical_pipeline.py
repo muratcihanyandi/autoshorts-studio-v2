@@ -149,30 +149,40 @@ class VerticalPipelineService:
         if existing_render is not None and existing_render.status == "rendered":
             return {"clip_candidate_id": clip_candidate_id, "skipped": True}
 
+        # Satir once olusur: tespit/validasyon (dosyayi acar) hata verirse
+        # satir 'failed' kalir ve render beslemesi NOT EXISTS kosuluyla bu
+        # adayi tekrar secmez — yoksa besleme her turlu yeni is acardi
+        # (canlida elle silinmis indirme dosyasi 170 islik dongusurdu).
+        render_row = await self._ensure_render_row(clip_candidate_id)
+
         # Webcam bolgesi: kalibrasyon (manuel) > tespit.
         calibration = await self._calibrations.get(source_channel_id)
-        if calibration is not None and calibration.manual:
-            detection = None  # manuel bolge: tespit gerekmez
-        else:
-            # to_thread: tespit (ve AV1'de ffmpeg yedegi) donguyu bloklamaz.
-            detection = await asyncio.to_thread(
-                detect_webcam_region,
+        try:
+            if calibration is not None and calibration.manual:
+                detection = None  # manuel bolge: tespit gerekmez
+            else:
+                # to_thread: tespit (ve AV1'de ffmpeg yedegi) donguyu bloklamaz.
+                detection = await asyncio.to_thread(
+                    detect_webcam_region,
+                    asset.file_path,
+                    candidate.start_seconds,
+                    candidate.end_seconds,
+                    ffmpeg_bin=self._settings.ffmpeg_bin,
+                )
+            resolved = self._calibrations.resolve(calibration, detection)
+            resolved = await self._validate_against_character(
+                resolved,
+                source,
                 asset.file_path,
                 candidate.start_seconds,
                 candidate.end_seconds,
-                ffmpeg_bin=self._settings.ffmpeg_bin,
+                calibration,
             )
-        resolved = self._calibrations.resolve(calibration, detection)
-        resolved = await self._validate_against_character(
-            resolved,
-            source,
-            asset.file_path,
-            candidate.start_seconds,
-            candidate.end_seconds,
-            calibration,
-        )
-
-        render_row = await self._ensure_render_row(clip_candidate_id)
+        except Exception as exc:  # noqa: BLE001 - render hatasi kayda gecer
+            await self._mark_failed(
+                render_row.id, f"{type(exc).__name__}: {exc}"
+            )
+            raise
 
         if resolved.region is None:
             confidence = detection.confidence if detection else 0.0

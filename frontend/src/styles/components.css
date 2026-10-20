@@ -2569,3 +2569,10 @@
     padding: 10px 14px;
   }
 }
+
+/* Video kaldırma: kart alt satırında sağa itilir, iki adımlı onay. */
+.source-remove {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}

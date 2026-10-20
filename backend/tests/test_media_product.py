@@ -211,3 +211,71 @@ def test_stream_is_closed_after_login_is_configured(tmp_path):
         assert setup.status_code == 201
         client.post("/api/auth/logout")
         assert client.get("/api/media/clips/1/stream").status_code == 401
+
+
+def test_remove_source_video_clears_files_rows_and_jobs(tmp_path):
+    """Arayüzden video kaldırma (kullanıcı isteği 2026-10-20): dosyalar,
+    aday/render/metaveri satırları ve bekleyen işler temizlenir; video
+    'excluded' olarak varsayılan görünümden kaybolur, tekrar keşfedilmez."""
+    media_root = tmp_path / "media"
+    app = _make_app(tmp_path, media_root=str(media_root))
+    _seed_product(app.state.test_db_path, media_root)
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.begin() as conn:
+            candidate_id = conn.execute(
+                sa.text("SELECT id FROM clip_candidates")
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (job_type, payload, status, priority,"
+                    " attempts, max_attempts) VALUES"
+                    " ('clip_render', :p, 'queued', 5, 0, 3)"
+                ),
+                {"p": f'{{"clip_candidate_id": {candidate_id}}}'},
+            )
+    finally:
+        engine.dispose()
+
+    with TestClient(app) as client:
+        missing = client.delete("/api/media/videos/999")
+        assert missing.status_code == 404
+
+        removed = client.delete("/api/media/videos/1")
+        assert removed.status_code == 200, removed.text
+        body = removed.json()
+        assert body["status"] == "excluded"
+        assert body["files_removed"] >= 2  # render ciktisi + kapak
+        assert body["jobs_cancelled"] == 1  # adaya bagli kuyruk isi
+
+        after = client.get(
+            "/api/media", params={"active_only": False}
+        ).json()
+        assert all(source["id"] != 1 for source in after["sources"])
+        assert all(clip["id"] != 1 for clip in after["clips"])
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.connect() as conn:
+            status = conn.execute(
+                sa.text("SELECT status FROM source_videos WHERE id = 1")
+            ).scalar()
+            counts = conn.execute(
+                sa.text(
+                    "SELECT (SELECT count(*) FROM media_assets"
+                    " WHERE source_video_id = 1)"
+                    " + (SELECT count(*) FROM clip_candidates"
+                    " WHERE source_video_id = 1)"
+                    " + (SELECT count(*) FROM rendered_clips"
+                    " WHERE source_video_id = 1)"
+                    " + (SELECT count(*) FROM clip_metadata"
+                    " WHERE source_video_id = 1)"
+                )
+            ).scalar()
+    finally:
+        engine.dispose()
+    assert status == "excluded"
+    assert counts == 0
+    assert not (media_root / "edited" / "1.mp4").exists()
+    assert not (media_root / "thumbnails" / "preview_1.jpg").exists()

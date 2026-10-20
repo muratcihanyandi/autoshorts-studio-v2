@@ -53,6 +53,12 @@ class TestInstallPlan:
         assert plan["cmd"][:4] == [sys.executable, "-m", "pip", "install"]
         assert wi.WHISPER_PACKAGE in plan["cmd"]
         assert "--target" not in plan["cmd"]
+        # openai-whisper sdist-only: izole build ortaminin en yeni
+        # setuptools'u pkg_resources kaldiriyor, kurulum dusuyor.
+        assert wi.BUILD_ISOLATION_OFF in plan["cmd"]
+        # Yalin kurulum: torch'un CUDA yigini yerine acik liste.
+        assert "--no-deps" in plan["cmd"]
+        assert "torch" in plan["cmd"]
         assert plan["env"] == {}
 
     def test_linux_targets_media_tree(self, tmp_path, monkeypatch):
@@ -70,6 +76,9 @@ class TestInstallPlan:
         assert plan["target"] == str(tmp_path / "media" / ".whisper")
         assert "--target" in plan["cmd"]
         assert wi.WHISPER_PACKAGE in plan["cmd"]
+        assert wi.BUILD_ISOLATION_OFF in plan["cmd"]
+        assert "--no-deps" in plan["cmd"]
+        assert "torch" in plan["cmd"]
         assert plan["env"]["PYTHONPATH"] == str(tmp_path / "media" / ".whisper")
 
     def test_linux_without_media_root_falls_back_direct(self, tmp_path, monkeypatch):

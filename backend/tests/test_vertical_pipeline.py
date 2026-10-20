@@ -823,3 +823,47 @@ class TestCharacterValidationPipeline:
 
         result = asyncio.run(scenario())
         assert result.get("rendered") is True
+
+
+def test_missing_source_file_marks_render_failed_stops_feed(tmp_path):
+    """Dosyası silinmiş aday (elle silinmiş indirme): render satırı
+    'failed' işaretlenir ve besleme bu adayı tekrar seçmez — canlıda
+    gece boyunca 170 işlik sonsuz yeniden deneme döngüsünün kökü
+    buydu (satırsız hata beslemeyi yeniden tetikliyordu)."""
+    from app.services.vertical_pipeline import VerticalPipelineService
+    from app.worker import JobWorker
+
+    async def scenario():
+        sessionmaker, settings, engine = _vertical_env(tmp_path)
+        try:
+            _, candidate_id = await _seed_chain(
+                sessionmaker, str(tmp_path / "media" / "downloads" / "yok.mp4")
+            )
+            service = VerticalPipelineService(sessionmaker, settings)
+            error = None
+            try:
+                await service.run(candidate_id)
+            except Exception as exc:  # noqa: BLE001 - hata tasiyici
+                error = str(exc)
+            worker = JobWorker(sessionmaker, settings)
+            enqueued = await worker.enqueue_render_jobs()
+            async with sessionmaker() as session:
+                row = (
+                    (
+                        await session.execute(
+                            sa.select(RenderedClip).where(
+                                RenderedClip.clip_candidate_id == candidate_id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .one_or_none()
+                )
+            return error, row.status if row is not None else None, enqueued
+        finally:
+            await engine.dispose()
+
+    error, render_status, enqueued = asyncio.run(scenario())
+    assert error is not None  # hata kullaniciya tasinir
+    assert render_status == "failed"  # satir kayitli
+    assert enqueued == 0  # besleme yeniden is acmaz

@@ -981,6 +981,39 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Overnight follow-up (2026-10-20, user report: "bir gecedir açık,
+  videoları arayüzden silemiyorum, hazır klipler yüklenmiyor"):
+  live forensics showed the media files (1.mp4, 2.mp4, sidecars, all
+  rendered clips in edited/) had been deleted OUTSIDE the app (no
+  audit events, only in-flight download files survived) — the user
+  had cleaned the USB manually because the UI had no removal path.
+  Video 2's selected candidates then failed every render with
+  "Video açılamadı" and the render feed re-enqueued them endlessly
+  (170 failed jobs overnight) because the error fired BEFORE the
+  RenderedClip row existed. Four changes shipped:
+  (1) **UI video removal** — `DELETE /api/media/videos/{id}`
+  (app/services/video_removal.py) deletes the download file,
+  sidecars, rendered clips, covers, asset/candidate/render/metadata/
+  transcript/inspection/planning rows, cancels queued jobs for the
+  video and marks it excluded (manual excludes are never restored by
+  rule reapply, discovery dedupe keeps it out); MediaLibraryScreen
+  cards gained a two-step "Kaldır" action.
+  (2) **Render retry loop fixed** — the RenderedClip row is now
+  created BEFORE webcam detection/validation and marked failed on
+  error, so the feed's NOT EXISTS predicate stops re-enqueueing
+  broken candidates (a manual job retry still re-renders).
+  (3) **Download timeout 1h → 4h** — YouTube throttles 6 GB VODs to
+  ~1 MB/s, so hour-long downloads could never finish; hung processes
+  still fail out and the failed-asset skip moves to the next video.
+  (4) **Auto-approve enabled live** — the publish flow already
+  supported `publishing_profiles.settings.auto_approve_metadata`;
+  it was switched on for the live channel so ready clips upload at
+  the next slot without manual metadata approval (root cause of
+  "hazır bekliyorlar": all three rendered clips sat on DRAFT
+  metadata and publish_due kept reporting no_ready).
+  Verified: backend 415/415 (new: removal API roundtrip, render-row
+  failure stops the feed), frontend 31/31 (new: card removal flow),
+  tsc/build clean, secret scan clean.
 - Flow hardening session (2026-10-19/20, user request: "LLM subtitle
   correction'u kaldıralım, her şey aksın, videolar sırayla
   işlensin"): four engine changes, one deploy.

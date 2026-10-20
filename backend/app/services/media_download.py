@@ -128,7 +128,10 @@ class YtDlpAdapter:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), 3600.0)
+        # 4 saat: YouTube 6 GB'lik VOD'lari ~1 MB/sn'e kadar kisar; 1 saat
+        # bolumunde buyuk dosyalar asla bitmiyordu. Asili surecler yine
+        # kalici hata sonrasi kuyruk disi kalir (failed asset skip).
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), 14400.0)
         if proc.returncode != 0:
             tail = stderr.decode("utf-8", "replace").strip()[-500:]
             raise MediaDownloadError(f"yt-dlp basarisiz: {tail}")

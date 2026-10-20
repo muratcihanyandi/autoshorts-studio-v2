@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MediaLibraryScreen } from './MediaLibraryScreen'
 
@@ -174,16 +174,18 @@ const detailPayload = {
 }
 
 function mockFetch() {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input)
-    const body = url.includes('/api/media/clips/9')
-      ? detailPayload
-      : libraryPayload
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  })
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      const body = url.includes('/api/media/clips/9')
+        ? detailPayload
+        : libraryPayload
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    },
+  )
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
@@ -282,3 +284,30 @@ describe('MediaLibraryScreen', () => {
     ).toBeInTheDocument()
   })
 })
+
+  it('removes a source video through the card action', async () => {
+    const fetchMock = mockFetch()
+    render(<MediaLibraryScreen />)
+
+    // İki adımlı onay: Kaldır -> Kalıcı olarak kaldır.
+    fireEvent.click(await screen.findByRole('button', { name: 'Kaldır' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Kalıcı olarak kaldır' }),
+    )
+
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/api/media/videos/1') &&
+          c[1]?.method === 'DELETE',
+      )
+      expect(del).toBeDefined()
+    })
+    // Kaldırma sonrası liste yeniden çekilir.
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/media?'))
+          .length,
+      ).toBeGreaterThanOrEqual(2)
+    })
+  })

@@ -41,6 +41,42 @@ logger = logging.getLogger(__name__)
 # CPU tekerlekleridir).
 WHISPER_PACKAGE = "openai-whisper==20231117"
 
+# openai-whisper PyPI'da yalnizca kaynak paketi (sdist) olarak dagitilir
+# ve setup.py'si pkg_resources import eder. Pip'in izole build ortamina
+# indirdigi en yeni setuptools bu modulu kaldiriyor; kurulum bunun
+# yuzunden dusuyor. --no-build-isolation, build'i bu yorumlayicinin
+# kendi setuptools'unun (pkg_resources iceren surum) yurutmesini saglar.
+BUILD_ISOLATION_OFF = "--no-build-isolation"
+
+# torch 2026 tekerleri (aarch64 dahil) butun CUDA 13 yiginini
+# bagimlilik olarak ceker: Pi'de kullanilmayan ~4 GB ve paylasilan medya
+# diskine agir yuk. --no-deps + acik bagimlilik listesi kurulumu
+# yalnizca CPU calisma zamani paketlerine indirir (~600 MB). Liste,
+# whisper'in install_requires'i ile torch/numba/tiktoken'in import
+# zincirini kapsar; yeni bir bagimlilik eklendiginde burada taze tut.
+LEAN_DEPS = (
+    "torch",
+    "numpy",
+    "numba",
+    "llvmlite",
+    "tiktoken",
+    "tqdm",
+    "more-itertools",
+    "requests",
+    "regex",
+    "certifi",
+    "charset_normalizer",
+    "idna",
+    "urllib3",
+    "filelock",
+    "typing-extensions",
+    "jinja2",
+    "MarkupSafe",
+    "fsspec",
+    "sympy",
+    "networkx",
+)
+
 INSTALL_STATE_KEY = "whisper_install"
 INSTALL_DISK_GB = 2.0
 INSTALL_TIMEOUT_SECONDS = 3600.0
@@ -92,7 +128,8 @@ def plan_install(settings: Settings) -> dict:
     uzerinden cozulur. media_root yoksa direct denenir (hata olursa
     pip ciktisi kullaniciya gosterilir).
     """
-    cmd = [
+    pkgs = [WHISPER_PACKAGE, *LEAN_DEPS]
+    base = [
         sys.executable,
         "-m",
         "pip",
@@ -100,8 +137,10 @@ def plan_install(settings: Settings) -> dict:
         "--no-input",
         "--disable-pip-version-check",
         "--no-warn-script-location",
-        WHISPER_PACKAGE,
+        BUILD_ISOLATION_OFF,
+        "--no-deps",
     ]
+    cmd = base + pkgs
     if platform_mod.system() == "Windows":
         return {
             "mode": "direct",
@@ -111,11 +150,7 @@ def plan_install(settings: Settings) -> dict:
         }
     target = target_dir(settings)
     if target is not None:
-        target_cmd = list(cmd[:-1]) + [
-            "--target",
-            str(target),
-            WHISPER_PACKAGE,
-        ]
+        target_cmd = base + ["--target", str(target), *pkgs]
         return {
             "mode": "target",
             "target": str(target),

@@ -1,4 +1,4 @@
-import { getJson } from './client'
+import { ApiError, getJson, sendJson } from './client'
 
 /** Medya kütüphanesi: kaynak videolar, klipler, stok özeti. */
 
@@ -205,4 +205,27 @@ export function fetchMedia(
 
 export function fetchClipDetail(renderId: number): Promise<ClipDetail> {
   return getJson<ClipDetail>(`/api/media/clips/${renderId}`)
+}
+
+/** Kaynak videoyu sistemden kaldır: dosyalar, satırlar ve bekleyen
+ * işler temizlenir; video kütüphaneden Hariç olarak kaybolur. */
+export interface VideoRemovalResult {
+  source_video_id: number
+  status: string
+  files_removed: number
+  jobs_cancelled: number
+}
+
+export function removeSourceVideo(
+  sourceVideoId: number,
+): Promise<VideoRemovalResult> {
+  return sendJson<VideoRemovalResult>(
+    `/api/media/videos/${sourceVideoId}`,
+    'DELETE',
+  ).then((body) => {
+    if (body === null) {
+      throw new ApiError(204, 'Kaldırma yanıtı boş döndü')
+    }
+    return body
+  })
 }

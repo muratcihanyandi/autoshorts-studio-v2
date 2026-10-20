@@ -58,6 +58,33 @@ async def media_library(
     )
 
 
+@router.delete("/media/videos/{source_video_id}")
+async def remove_source_video(
+    request: Request, source_video_id: int
+) -> dict:
+    """Kaynak videoyu sistemden kaldır: dosyalar, satırlar ve bekleyen
+    işler temizlenir; video hariç olarak kaybolur (kullanıcı isteği)."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı.",
+        )
+    from app.services.video_removal import (
+        VideoRemovalError,
+        remove_source_video,
+    )
+
+    try:
+        return await remove_source_video(
+            sessionmaker, request.app.state.settings, source_video_id
+        )
+    except VideoRemovalError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+
+
 @router.get("/media/clips/{render_id}")
 async def clip_detail(request: Request, render_id: int) -> dict:
     detail = await _service(request).clip_detail(render_id)

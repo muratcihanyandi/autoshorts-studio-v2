@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 
 import {
   fetchMedia,
+  removeSourceVideo,
   type LibraryClip,
   type LibrarySource,
 } from '../api/media'
@@ -85,13 +86,16 @@ function SelectedMoments({ source }: { source: LibrarySource }) {
 function SourceCard({
   source,
   featured = false,
+  onRemove,
 }: {
   source: LibrarySource
   featured?: boolean
+  onRemove: (source: LibrarySource) => void
 }) {
   const view = sourceView(source.tag)
   const thumb = youtubeThumb(source.youtube_video_id)
   const href = source.youtube_url ?? undefined
+  const [confirmRemove, setConfirmRemove] = useState(false)
   return (
     <article className={`source-card${featured ? ' source-card--featured' : ''}`}>
       <a
@@ -149,6 +153,36 @@ function SourceCard({
           <span>{source.selected_count} klip anı seçildi</span>
           {source.full_cut_ready && <span>Yatay tam kesit hazır</span>}
           {source.is_current && <span className="current-mark">Şu an motorda</span>}
+          <span className="source-remove">
+            {confirmRemove ? (
+              <>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  onClick={() => onRemove(source)}
+                  title="Videoyu dosyaları, klipleri ve kayıtlarıyla birlikte kalıcı olarak kaldırır."
+                >
+                  Kalıcı olarak kaldır
+                </button>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  onClick={() => setConfirmRemove(false)}
+                >
+                  Vazgeç
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn--ghost"
+                onClick={() => setConfirmRemove(true)}
+                title="Videoyu sistemden kaldır: dosyalar, klipler ve kayıtlar silinir."
+              >
+                Kaldır
+              </button>
+            )}
+          </span>
         </div>
       </div>
     </article>
@@ -215,12 +249,29 @@ function ClipCard({
 
 export function MediaLibraryScreen() {
   const [openClipId, setOpenClipId] = useState<number | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   const fetchCb = useCallback(
     () => fetchMedia(60, 0, false, false, true, true),
     [],
   )
   const library = usePolling(fetchCb, 10000)
+
+  const handleRemove = useCallback(
+    async (source: LibrarySource) => {
+      setRemoveError(null)
+      try {
+        await removeSourceVideo(source.id)
+      } catch (err) {
+        setRemoveError(
+          err instanceof Error ? err.message : 'Video kaldırılamadı.',
+        )
+        return
+      }
+      library.retry()
+    },
+    [library.retry],
+  )
 
   const data = library.state.status === 'ok' ? library.state.data : null
   const current =
@@ -238,6 +289,12 @@ export function MediaLibraryScreen() {
           </span>
         </div>
       </div>
+
+      {removeError && (
+        <p className="action-error" role="alert">
+          {removeError}
+        </p>
+      )}
 
       {library.state.status === 'loading' && (
         <LoadingState label="Kütüphane sorgulanıyor…" />
@@ -280,7 +337,7 @@ export function MediaLibraryScreen() {
                 <h2>Şu an motorda</h2>
                 <span className="live-dot">canlı</span>
               </div>
-              <SourceCard source={current} featured />
+              <SourceCard source={current} featured onRemove={handleRemove} />
             </section>
           )}
 
@@ -295,7 +352,11 @@ export function MediaLibraryScreen() {
             ) : previous.length > 0 ? (
               <div className="source-grid">
                 {previous.map((source) => (
-                  <SourceCard key={source.id} source={source} />
+                  <SourceCard
+                    key={source.id}
+                    source={source}
+                    onRemove={handleRemove}
+                  />
                 ))}
               </div>
             ) : (
