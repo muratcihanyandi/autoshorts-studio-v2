@@ -562,6 +562,62 @@ class TestJobWorker:
         engine.dispose()
         assert videos == 2
 
+    def test_claim_batch_serializes_processing_jobs(self, tmp_path):
+        """Ayni anda yalniz bir video isleme isi kosar (kullanici istegi
+        2026-10-19): isleme isi surerken ikinci slota yalnizca yayin/
+        sistem isleri girer, diger isleme islari sirada bekler."""
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                service = JobService(sessionmaker, settings)
+
+                async def stub(payload):
+                    return {}
+
+                worker = JobWorker(
+                    sessionmaker,
+                    settings,
+                    handlers={
+                        "media_process": stub,
+                        "hype_evaluate": stub,
+                        "publish_due": stub,
+                    },
+                )
+                media_job = await service.enqueue(
+                    "media_process", {"source_video_id": 1}
+                )
+                hype_job = await service.enqueue(
+                    "hype_evaluate", {"source_video_id": 1}
+                )
+                publish_job = await service.enqueue(
+                    "publish_due", {"channel_id": 1}
+                )
+                # Suruyen bir media_process isgal ediyor: slot dolu.
+                fake = asyncio.get_running_loop().create_future()
+                worker._running[999] = fake
+                worker._running_types[999] = "media_process"
+                try:
+                    await worker.claim_batch()
+                    # claim_batch'in actigi gercek gorevler dispose'tan
+                    # once tamamlansin: askida gorev + engine.dispose()
+                    # birlesimi kilitlenme yaratir (tam suite kosusunda
+                    # gorevlere yetisilemeyebilir). Zaman asimi kilitlenme
+                    # yerine acik basarisizlik verir.
+                    for job_id, task in list(worker._running.items()):
+                        if job_id != 999:
+                            await asyncio.wait_for(task, 10)
+                finally:
+                    fake.cancel()
+                statuses = {j.id: j.status for j in await service.list_jobs()}
+                return statuses, media_job.id, hype_job.id, publish_job.id
+            finally:
+                await engine.dispose()
+
+        statuses, media_id, hype_id, publish_id = asyncio.run(scenario())
+        assert statuses[media_id] == "queued"  # isleme sirasi bekler
+        assert statuses[hype_id] == "queued"
+        assert statuses[publish_id] != "queued"  # yayin isi akar
+
 
 class TestJobsApi:
     def test_list_cancel_retry_roundtrip(self, tmp_path):

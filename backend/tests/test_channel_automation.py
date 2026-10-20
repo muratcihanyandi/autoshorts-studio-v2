@@ -935,10 +935,14 @@ class TestWhisperFallback:
 
 
 class TestTerminalFailureAndResources:
-    def test_terminal_media_failure_sets_channel_error(self, tmp_path):
-        """Kalici medya hatasi kanali 'error' yapar; kontrollu yeni
-        deneme (yeni enqueue) yine de yurur — sistem durmaz."""
-        from app.services.automation_service import AutomationService
+    def test_terminal_media_failure_keeps_flow(self, tmp_path):
+        """Kalici medya hatasi kanali DURDURMAZ (kullanici istegi
+        2026-10-19): basarisiz videonun varligi 'failed' kalir, stok
+        beslemesi bu videoyu atlayip siradakini secer."""
+        from app.services.automation_service import (
+            AutomationService,
+            refill_channel_stock,
+        )
         from app.worker import JobWorker, build_handlers
 
         async def scenario():
@@ -947,14 +951,14 @@ class TestTerminalFailureAndResources:
                 channel_id = await _seed_channel(
                     sessionmaker, automation_state="running"
                 )
-                [video_id] = await _seed_planned_video(
-                    sessionmaker, channel_id
+                [video_a, video_b] = await _seed_planned_video(
+                    sessionmaker, channel_id, n=2
                 )
                 handlers = build_handlers(sessionmaker, settings)
                 worker = JobWorker(sessionmaker, settings, handlers=handlers)
                 job = await worker._jobs.enqueue(
                     "media_process",
-                    {"source_video_id": video_id},
+                    {"source_video_id": video_a},
                     max_attempts=1,
                 )
                 await worker._jobs.claim_next(worker._worker_id)
@@ -963,34 +967,34 @@ class TestTerminalFailureAndResources:
                     sessionmaker, settings
                 ).profile(channel_id)
                 state_after_failure = profile.automation_state
-
-                # Kontrollu yeniden deneme: kanal 'error'da ama 'stopped'
-                # degil — islemci yine de kosar ( Manuel VOD akisi gibi).
-                good_media = make_face_stream_video(tmp_path / "iyi.mp4")
-                job2 = await worker._jobs.enqueue(
-                    "media_process",
-                    {"source_video_id": video_id, "import_path": str(good_media)},
-                    max_attempts=1,
+                # Stok beslemesi basarisiz videoyu atlar, siradakiye gecer.
+                refill = await refill_channel_stock(
+                    sessionmaker, settings, channel_id
                 )
-                await worker._jobs.claim_next(worker._worker_id)
-                await worker.run_job(job2.id)
-                return state_after_failure, job.id, job2.id
+                return state_after_failure, refill, job.id, video_a, video_b
             finally:
                 await engine.dispose()
 
-        state, job1, job2 = _run(scenario())
-        assert state == "error"
+        state, refill, job_id, video_a, video_b = _run(scenario())
+        assert state == "running"  # kanal durmadi
+        assert refill["enqueued"] is True
+
         engine = sa.create_engine(f"sqlite:///{tmp_path}/chauto.db")
         with engine.connect() as conn:
             s1 = conn.execute(
-                sa.text("SELECT status FROM jobs WHERE id=:j"), {"j": job1}
+                sa.text("SELECT status FROM jobs WHERE id=:j"), {"j": job_id}
             ).scalar()
-            s2 = conn.execute(
-                sa.text("SELECT status FROM jobs WHERE id=:j"), {"j": job2}
+            failed_count = conn.execute(
+                sa.text(
+                    "SELECT count(*) FROM media_assets"
+                    " WHERE status = 'failed'"
+                )
             ).scalar()
         engine.dispose()
         assert s1 == "failed"
-        assert s2 == "succeeded"  # sistem durmadi
+        assert failed_count == 1  # video_a'nin varligi basarisiz kayitli
+        # Yeni is basarisiz OLMAYAN videoyu isaret etmeli.
+        assert refill["source_video_id"] == video_b
 
     def test_resource_gate_defers_claims(self, tmp_path, monkeypatch):
         """CPU/RAM hedefi asilinca yeni isler bekler (kilit degil)."""

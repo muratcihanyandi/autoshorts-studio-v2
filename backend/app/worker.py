@@ -50,6 +50,19 @@ JobHandlers = dict[str, Handler]
 # max_heavy_jobs ile sinirlanir (iki agir FFmpeg render ayni anda baslamaz).
 HEAVY_JOB_TYPES = ("media_process", "clip_render", "clip_render_full_cut")
 
+# Bir videonun hazirlanma zinciri (kullanici istegi 2026-10-19): ayni
+# anda yalniz bir video islenir. Yayin/sistem isleri (publish_due,
+# ops_summary, source_discover, publish_full_cut) bu kisittan muaf
+# kalir ki planlanan yayın saatleri uzun bir isleme tarafindan
+# bloklanmasin.
+PROCESSING_JOB_TYPES = (
+    "media_process",
+    "hype_evaluate",
+    "clip_render",
+    "clip_render_full_cut",
+    "metadata_generate",
+)
+
 WORKER_STATE_KEY = "worker_state"
 
 
@@ -417,34 +430,19 @@ class JobWorker:
             )
             await self._jobs.fail(job_id, f"{type(exc).__name__}: {exc}")
             if terminal and job is not None:
-                await self._on_terminal_failure(job, exc)
+                # Kullanici istegi (2026-10-19): kalici is hatasi kanali
+                # 'error'a dusurup tum uretimi durdurmaz. Basarisiz
+                # videonun varligi 'failed' kalir; stok beslemesi bu
+                # videolari atlar ve siradaki videoyla devam eder.
+                logger.error(
+                    "is kalici olarak basarisiz (kanal durmadi, video "
+                    "kuyruk disi birakildi): %s #%s: %s",
+                    job.job_type,
+                    job.id,
+                    exc,
+                )
         finally:
             beat.cancel()
-
-    async def _on_terminal_failure(self, job, exc: Exception) -> None:
-        """Kalici is hatasi: yatay medya isinde kanal 'error' durumuna
-        gecer (kullanici tekrar baslatabilir). Video DISLANMAZ — kayitli
-        isin kontrollu yeniden denemesi (yeni enqueue) her zaman mumkun
-        kalir; kanal 'error'da oldugu surece otomasyon ayni videoyu
-        tekrar tekrar secmez."""
-        if job.job_type != "media_process":
-            return
-        payload = job.payload or {}
-        source_video_id = payload.get("source_video_id")
-        if not isinstance(source_video_id, int):
-            return
-        try:
-            from app.services.automation_service import AutomationService
-
-            channel_id = await resolve_job_channel(
-                self._sessionmaker, job.job_type, payload
-            )
-            if channel_id is not None:
-                await AutomationService(
-                    self._sessionmaker, self._settings
-                ).mark_error(channel_id, f"{type(exc).__name__}: {exc}")
-        except Exception:  # noqa: BLE001 - hata raporlamasi best-effort
-            logger.exception("terminal is hatasi islenemedi")
 
     async def _heartbeat_loop(self, job_id: int) -> None:
         try:
@@ -496,7 +494,10 @@ class JobWorker:
 
     async def claim_batch(self) -> int:
         """Claim jobs up to the concurrency limit; heavy jobs are
-        additionally capped by max_heavy_jobs. Returns how many started."""
+        additionally capped by max_heavy_jobs and at most ONE video
+        processing job runs at a time (the rest waits its turn; publish
+        and system jobs may use the remaining slot). Returns how many
+        started."""
         started = 0
         while len(self._running) < self._effective.max_concurrent_jobs:
             running_heavy = sum(
@@ -504,12 +505,18 @@ class JobWorker:
                 for job_type in self._running_types.values()
                 if job_type in HEAVY_JOB_TYPES
             )
+            exclude: set[str] = set()
             if running_heavy >= self._effective.max_heavy_jobs:
-                job = await self._jobs.claim_next(
-                    self._worker_id, exclude_types=HEAVY_JOB_TYPES
-                )
-            else:
-                job = await self._jobs.claim_next(self._worker_id)
+                exclude |= set(HEAVY_JOB_TYPES)
+            if any(
+                job_type in PROCESSING_JOB_TYPES
+                for job_type in self._running_types.values()
+            ):
+                exclude |= set(PROCESSING_JOB_TYPES)
+            job = await self._jobs.claim_next(
+                self._worker_id,
+                exclude_types=sorted(exclude) if exclude else None,
+            )
             if job is None:
                 break
             task = asyncio.create_task(self.run_job(job.id))
@@ -739,11 +746,13 @@ class JobWorker:
         return added
 
     async def enqueue_content_jobs(self) -> int:
-        """Feed the M9 content stages: subtitle correction for assets
-        with an uncorrected transcript, metadata for rendered clips
-        without metadata — only for working channels. M13: horizontal
-        full cuts (candidate NULL, source_video set) get their metadata
-        job keyed by source_video_id."""
+        """Feed the content stages: metadata for rendered clips without
+        metadata — only for working channels. M13: horizontal full cuts
+        (candidate NULL, source_video set) get their metadata job keyed
+        by source_video_id. LLM subtitle correction was removed from the
+        engine (user request 2026-10-19): the provider kept failing real
+        requests, hype/metadata already fall back to the raw transcript,
+        and rendering never burned corrected subtitles."""
         interval = self._effective.planned_poll_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -754,27 +763,6 @@ class JobWorker:
         self._last_content_enqueue = now
         added = 0
         async with self._sessionmaker() as session:
-            asset_ids = (
-                (
-                    await session.execute(
-                        text(
-                            "SELECT t.media_asset_id FROM transcripts t"
-                            " JOIN media_assets ma ON ma.id = t.media_asset_id"
-                            " JOIN source_videos sv ON sv.id = ma.source_video_id"
-                            " JOIN source_channels sc"
-                            " ON sv.source_channel_id = sc.id"
-                            " JOIN publishing_profiles pp"
-                            " ON pp.channel_id = sc.channel_id"
-                            " WHERE pp.automation_state IN ('running','paused')"
-                            " AND NOT EXISTS ("
-                            " SELECT 1 FROM corrected_transcripts ct"
-                            " WHERE ct.media_asset_id = t.media_asset_id)"
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
             candidate_ids = (
                 (
                     await session.execute(
@@ -822,12 +810,6 @@ class JobWorker:
                 .scalars()
                 .all()
             )
-        for asset_id in asset_ids:
-            job = await self._jobs.enqueue(
-                "subtitle_correct", {"media_asset_id": asset_id}, priority=7
-            )
-            if job.status == "queued" and job.attempts == 0:
-                added += 1
         for candidate_id in candidate_ids:
             job = await self._jobs.enqueue(
                 "metadata_generate", {"clip_candidate_id": candidate_id}, priority=7

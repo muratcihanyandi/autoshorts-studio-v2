@@ -485,10 +485,52 @@ class TestGeneration:
                 await engine.dispose()
 
         added, added_again, jobs = _run(scenario())
-        assert added == 2  # altyazi duzeltme + metaveri
+        # LLM altyazi duzeltme motordan kaldirildi (kullanici istegi
+        # 2026-10-19): besleme yalnizca metaveri isini acar.
+        assert added == 1
         assert added_again == 0
         types = sorted(j[0] for j in jobs)
-        assert types == ["metadata_generate", "subtitle_correct"]
+        assert types == ["metadata_generate"]
+
+    def test_generate_falls_back_to_context_draft_when_llm_fails(
+        self, tmp_path
+    ):
+        """Saglayici tum denemelerde basarisizsa zincir kirilmaz: baglam
+        taslagi yazilir, saglayici 'fallback' olarak isaretlenir."""
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                await _add_provider(sessionmaker, settings)
+                _, candidate_id = await _seed(sessionmaker)
+                service = MetadataService(
+                    sessionmaker, LlmProviderService(sessionmaker, settings)
+                )
+
+                async def handler(request):
+                    return httpx.Response(500, json={"error": "down"})
+
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(handler)
+                ) as http:
+                    result = await service.generate(candidate_id, http=http)
+                return result
+            finally:
+                await engine.dispose()
+
+        result = _run(scenario())
+        assert result["revision"] == 1
+
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m9meta.db")
+        with engine.connect() as conn:
+            row = conn.execute(
+                sa.text(
+                    "SELECT title, provider_name, status FROM clip_metadata"
+                )
+            ).one()
+        engine.dispose()
+        assert row[0]  # baslik video basligindan duzenlendi
+        assert row[1] == "fallback"
+        assert row[2] == "draft"
 
 
 class TestTemplateApi:
@@ -711,7 +753,10 @@ class TestHookAndThumbnailText:
             == []
         )
 
-    def test_overlong_hook_rejected_nothing_persisted(self, tmp_path):
+    def test_overlong_hook_falls_back_to_draft(self, tmp_path):
+        """Gecersiz LLM onerisi (asiri uzun kanca) zinciri KIRMAZ
+        (kullanici istegi 2026-10-19): saglayici 'fallback' taslagi
+        yazar; kullanici istediginde duzeltip yeniden uretir."""
         async def scenario():
             sessionmaker, settings, engine, db = _env(tmp_path)
             try:
@@ -735,24 +780,23 @@ class TestHookAndThumbnailText:
                 async with httpx.AsyncClient(
                     transport=httpx.MockTransport(handler)
                 ) as http:
-                    try:
-                        await service.generate(candidate_id, http=http)
-                        error = None
-                    except MetadataError as exc:
-                        error = str(exc)
-                return error
+                    result = await service.generate(candidate_id, http=http)
+                return result
             finally:
                 await engine.dispose()
 
-        error = _run(scenario())
-        assert error is not None
+        result = _run(scenario())
+        assert result["revision"] == 1
         engine = sa.create_engine(f"sqlite:///{tmp_path}/m9meta.db")
         with engine.connect() as conn:
-            count = conn.execute(
-                sa.text("SELECT COUNT(*) FROM clip_metadata")
-            ).scalar()
+            row = conn.execute(
+                sa.text(
+                    "SELECT provider_name, status FROM clip_metadata"
+                )
+            ).one()
         engine.dispose()
-        assert count == 0
+        assert row[0] == "fallback"
+        assert row[1] == "draft"
 
 
 class TestFullCutMetadata:

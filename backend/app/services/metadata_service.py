@@ -15,6 +15,7 @@ revision chain, one per source video (code-guarded).
 """
 from __future__ import annotations
 
+import logging
 import re
 
 import httpx
@@ -38,6 +39,8 @@ from app.models import (
 from app.services.channel_service import record_event
 from app.services.llm_service import LlmProviderService, LlmServiceError
 from app.services.media_transcript import transcript_text_in_range
+
+logger = logging.getLogger(__name__)
 
 MAX_TITLE_CHARS = 100
 MAX_DESCRIPTION_CHARS = 5000
@@ -409,9 +412,19 @@ class MetadataService:
                     system_prompt=system_prompt,
                 )
             except LlmServiceError as exc:
-                raise MetadataError(str(exc)) from exc
-            proposal = MetadataProposal.model_validate(result.structured)
-            provider_name = result.provider_name
+                # Saglayici basarisizsa zincir kirilmasin (kullanici
+                # istegi 2026-10-19): baglamdan duzenlenen taslak yazilir
+                # ve saglayici 'fallback' olarak isaretlenir; kullanici
+                # istediginde duzeltip yeniden uretebilir.
+                provider_name = "fallback"
+                logger.warning(
+                    "metaveri LLM cagrisi basarisiz, baglam taslagi "
+                    "yaziliyor: %s",
+                    exc,
+                )
+            else:
+                proposal = MetadataProposal.model_validate(result.structured)
+                provider_name = result.provider_name
 
         composed = self._compose(proposal, context)
         if composed["problems"]:
@@ -518,9 +531,19 @@ class MetadataService:
                     system_prompt=system_prompt,
                 )
             except LlmServiceError as exc:
-                raise MetadataError(str(exc)) from exc
-            proposal = MetadataProposal.model_validate(result.structured)
-            provider_name = result.provider_name
+                # Saglayici basarisizsa zincir kirilmasin (kullanici
+                # istegi 2026-10-19): baglamdan duzenlenen taslak yazilir
+                # ve saglayici 'fallback' olarak isaretlenir; kullanici
+                # istediginde duzeltip yeniden uretebilir.
+                provider_name = "fallback"
+                logger.warning(
+                    "metaveri LLM cagrisi basarisiz, baglam taslagi "
+                    "yaziliyor: %s",
+                    exc,
+                )
+            else:
+                proposal = MetadataProposal.model_validate(result.structured)
+                provider_name = result.provider_name
 
         composed = self._compose(proposal, context)
         if composed["problems"]:

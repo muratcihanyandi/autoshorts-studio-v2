@@ -981,6 +981,35 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Flow hardening session (2026-10-19/20, user request: "LLM subtitle
+  correction'u kaldıralım, her şey aksın, videolar sırayla
+  işlensin"): four engine changes, one deploy.
+  (1) **LLM subtitle correction removed from the engine** — the
+  content feed no longer enqueues `subtitle_correct` jobs (the user's
+  provider failed 17/22 real requests with invalid_response; the
+  "Dene" ping succeeds but real 20-segment JSON requests do not).
+  Safe because hype selection and metadata generation already fall
+  back to the raw transcript and rendering never burned corrected
+  subtitles; the job handler stays available for manual use.
+  (2) **Metadata LLM fallback** — `generate`/`generate_full_cut` now
+  write a context-composed DRAFT (`provider_name='fallback'`) when
+  every provider fails or returns schema-invalid output, instead of
+  raising MetadataError; clips stay approvable/editable in the UI.
+  (3) **Strict per-video serialization** — `claim_batch` excludes
+  PROCESSING_JOB_TYPES (media_process, hype_evaluate, clip_render,
+  clip_render_full_cut, metadata_generate) while one is running, so at
+  most ONE video is prepared at a time; publish/system jobs keep the
+  second concurrency slot so scheduled publishing is never blocked by
+  a long render.
+  (4) **Terminal media failures no longer halt the channel** —
+  `_on_terminal_failure`'s channel-to-'error' flip was removed; the
+  failed asset keeps `status='failed'`, and the stock refill query now
+  skips videos with failed assets, so the engine moves on to the next
+  video and the channel keeps running (error state could previously
+  only be cleared by hand after any 3-attempt pipeline failure).
+  Verified: affected suites 68/68, then full backend suite (feed test
+  now metadata-only; new tests: metadata LLM fallback, overlong-hook
+  fallback, claim-batch serialization, terminal-failure-keeps-flow).
 - Live follow-up (2026-10-19, "sistem yine durdu"): after the DB reset
   the user connected sources and the engine started processing a
   1.8 GB multi-hour VOD from the main Rraenee channel; the run failed

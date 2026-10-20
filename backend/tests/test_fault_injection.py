@@ -214,20 +214,25 @@ class TestLlmOutage:
                 async with httpx.AsyncClient(
                     transport=httpx.MockTransport(handler)
                 ) as http:
-                    try:
-                        await service.generate(candidate_id, http=http)
-                        outage_error = None
-                    except Exception as exc:  # noqa: BLE001
-                        outage_error = str(exc)
+                    # Kesinti sirasinda zincir kirilmaz (kullanici istegi
+                    # 2026-10-19): 'fallback' saglayicili baglam taslagi
+                    # yazilir, hata firlatilmaz.
+                    outage_result = await service.generate(
+                        candidate_id, http=http
+                    )
                     state["down"] = False  # servis duzeldi
-                    recovered = await service.generate(candidate_id, http=http)
-                return outage_error, recovered
+                    recovered = await service.generate(
+                        candidate_id, http=http, regenerate=True
+                    )
+                return outage_result, recovered
             finally:
                 await engine.dispose()
 
-        outage_error, recovered = _run(scenario())
-        assert outage_error is not None  # kesinti kayda gecti
-        assert recovered["revision"] == 1  # duzelince retry basarili
+        outage_result, recovered = _run(scenario())
+        # Kesinti kayda gecti: taslak revizyon 1 olarak dustu.
+        assert outage_result["revision"] == 1
+        # Duzelince yeniden uretim gercek LLM onerisiyle revizyon acar.
+        assert recovered["revision"] == 2
 
 
 def _make_candidate(video_id: int, start=1.0, end=4.0, score=0.9):

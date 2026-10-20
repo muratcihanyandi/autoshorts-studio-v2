@@ -425,7 +425,10 @@ class TestSubtitleCorrection:
         assert status == "succeeded"
         assert corrected == 1
 
-    def test_worker_feed_enqueues_uncorrected_assets(self, tmp_path):
+    def test_worker_feed_never_enqueues_subtitle_correction(self, tmp_path):
+        """LLM altyazi duzeltme motordan kaldirildi (kullanici istegi
+        2026-10-19): duzeltilmemis transkript olsa bile icerik beslemesi
+        altyazi isi acmaz — hype/metaveri ham transkripte duser."""
         from app.worker import JobWorker
 
         async def scenario():
@@ -443,6 +446,6 @@ class TestSubtitleCorrection:
                 await engine.dispose()
 
         added, added_again, jobs = _run(scenario())
-        assert added == 1
+        assert added == 0
         assert added_again == 0
-        assert jobs == [("subtitle_correct", {"media_asset_id": 1})]
+        assert jobs == []

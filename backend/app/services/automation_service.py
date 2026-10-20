@@ -27,6 +27,7 @@ from app.models import (
     Character,
     ClipCandidate,
     Job,
+    MediaAsset,
     PublishedVideo,
     PublishingProfile,
     RenderedClip,
@@ -629,6 +630,16 @@ async def refill_channel_stock(
                 SourceChannel.channel_id == channel_id,
                 SourceChannel.permission_status == "authorized",
                 SourceVideo.status == "planned",
+                # Kalici basarisiz videolar tekrar tekrar secilmesin:
+                # 'failed' varligi olan video kuyrukta atlanir, motor
+                # siradaki videoyla devam eder (kullanici istegi
+                # 2026-10-19 — kanal durdurulmaz).
+                ~sa.exists(
+                    sa.select(MediaAsset.id).where(
+                        MediaAsset.source_video_id == SourceVideo.id,
+                        MediaAsset.status == "failed",
+                    )
+                ),
             )
             .order_by(SourceVideo.id)
         )
