@@ -249,7 +249,9 @@ class JobService:
             rows = (
                 (
                     await session.execute(
-                        select(Job).where(Job.status == "running")
+                        select(Job).where(
+                            Job.status.in_(("running", "cancelling"))
+                        )
                     )
                 )
                 .scalars()
@@ -259,7 +261,13 @@ class JobService:
                 beat = _as_utc(job.heartbeat_at) or _as_utc(job.started_at)
                 if beat is not None and beat >= threshold:
                     continue
-                if job.attempts >= job.max_attempts:
+                if job.status == "cancelling":
+                    # Isaretlenmis ama sonucu yazacak islem cikmadi:
+                    # iptal olarak netlestir (olu 'cancelling' kuyruk
+                    # beslemesini 'running' kadar tikar).
+                    job.status = "cancelled"
+                    job.finished_at = _utcnow()
+                elif job.attempts >= job.max_attempts:
                     job.status = "failed"
                     job.last_error = (
                         (job.last_error or "")

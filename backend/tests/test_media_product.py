@@ -281,6 +281,93 @@ def test_remove_source_video_clears_files_rows_and_jobs(tmp_path):
     assert not (media_root / "thumbnails" / "preview_1.jpg").exists()
 
 
+def test_delete_source_cleans_files_and_cancels_jobs(tmp_path):
+    """Kaynak kanal silinince (2026-10-21): FK cascade satırları düşürür,
+    diskteki dosyalar silinir, bekleyen işler iptal edilir ve koşan iş
+    'cancelling' ile sonuca oturur — yetim dosya / hayalet iş kalmaz."""
+    media_root = tmp_path / "media"
+    app = _make_app(tmp_path, media_root=str(media_root))
+    _seed_product(app.state.test_db_path, media_root)
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.begin() as conn:
+            candidate_id = conn.execute(
+                sa.text("SELECT id FROM clip_candidates")
+            ).scalar_one()
+            asset_id = conn.execute(
+                sa.text(
+                    "SELECT id FROM media_assets WHERE source_video_id = 2"
+                )
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (job_type, payload, status, priority,"
+                    " attempts, max_attempts) VALUES"
+                    " ('clip_render', :p, 'queued', 5, 0, 3)"
+                ),
+                {"p": f'{{"clip_candidate_id": {candidate_id}}}'},
+            )
+            queued_job = conn.execute(
+                sa.text("SELECT last_insert_rowid()")
+            ).scalar()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (job_type, payload, status, priority,"
+                    " attempts, max_attempts) VALUES"
+                    " ('media_process', :p, 'running', 8, 1, 3)"
+                ),
+                {"p": '{"source_video_id": 2}'},
+            )
+            running_job = conn.execute(
+                sa.text("SELECT last_insert_rowid()")
+            ).scalar()
+    finally:
+        engine.dispose()
+
+    with TestClient(app) as client:
+        response = client.delete("/api/sources/1")
+        assert response.status_code == 204, response.text
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.connect() as conn:
+            source_count = conn.execute(
+                sa.text("SELECT count(*) FROM source_channels")
+            ).scalar()
+            video_count = conn.execute(
+                sa.text("SELECT count(*) FROM source_videos")
+            ).scalar()
+            asset_count = conn.execute(
+                sa.text("SELECT count(*) FROM media_assets")
+            ).scalar()
+            render_count = conn.execute(
+                sa.text("SELECT count(*) FROM rendered_clips")
+            ).scalar()
+            published_count = conn.execute(
+                sa.text("SELECT count(*) FROM published_videos")
+            ).scalar()
+            queued_status = conn.execute(
+                sa.text("SELECT status FROM jobs WHERE id = :id"),
+                {"id": queued_job},
+            ).scalar()
+            running_status = conn.execute(
+                sa.text("SELECT status FROM jobs WHERE id = :id"),
+                {"id": running_job},
+            ).scalar()
+    finally:
+        engine.dispose()
+    assert source_count == 0
+    assert video_count == 0  # cascade
+    assert asset_count == 0
+    assert render_count == 0
+    assert published_count == 0
+    assert queued_status == "cancelled"
+    assert running_status == "cancelling"
+    assert not (media_root / "edited" / "1.mp4").exists()
+    assert not (media_root / "thumbnails" / "preview_1.jpg").exists()
+
+
 def test_download_stage_carries_percent_detail(tmp_path):
     """İndirme sırasında download adımı canlı yüzde detayı taşır
     (app_meta.download_progress -> '%63')."""

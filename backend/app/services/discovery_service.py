@@ -7,6 +7,7 @@ or downstream jobs.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -22,6 +23,24 @@ from app.services.youtube_client import (
     YouTubeDataClient,
     YouTubeQuotaExceeded,
 )
+
+# Ayni kanalda iki kesif ayni anda yurumesin (API "Kesfet" cagrisi +
+# worker saatligi yarisi): dedupe okumasi commit-oncesi yarista cift
+# insert denemesi uretip butun turu UniqueViolation ile dusuruyordu
+# (2026-10-20 canli gozlem). Surec ici kilit; tek uvicorn sureci var.
+# Kilit event loop'a baglidir: testler her asyncio.run'da yeni loop
+# actigindan loop degistiyse kilit tazelenir (uretimde tek loop, davranis
+# ayni).
+_DISCOVERY_LOCKS: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Lock]] = {}
+
+
+def _channel_lock(channel_id: int) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    entry = _DISCOVERY_LOCKS.get(channel_id)
+    if entry is None or entry[0] is not loop:
+        entry = (loop, asyncio.Lock())
+        _DISCOVERY_LOCKS[channel_id] = entry
+    return entry[1]
 
 
 def _parse_published(value: str | None) -> datetime | None:
@@ -56,6 +75,14 @@ class DiscoveryService:
         return list(result.scalars().all())
 
     async def discover_for_channel(self, channel_id: int) -> dict[str, Any]:
+        """Kanal kilidiyle serialize edilmis kesif girisi (bkz.
+        _DISCOVERY_LOCKS)."""
+        async with _channel_lock(channel_id):
+            return await self._discover_for_channel_locked(channel_id)
+
+    async def _discover_for_channel_locked(
+        self, channel_id: int
+    ) -> dict[str, Any]:
         """Poll every authorized youtube source of the channel; non-youtube
         sources are skipped with a per-source platform note (their VODs
         are imported manually, M13)."""

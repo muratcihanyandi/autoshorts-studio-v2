@@ -236,6 +236,58 @@ class TestJobService:
         assert fresh_status in ("queued", "running")
         assert exhausted_status == "failed"
 
+    def test_recover_stale_finalizes_dead_cancelling(self, tmp_path):
+        """Ölü 'cancelling' işi iptal olarak netleşir; kalp atışı taze
+        olan dokunulmaz (kaynak kaldırma koşan işi 'cancelling' işaretler,
+        süreç ölürse besleme tıkanmasın)."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                service = JobService(sessionmaker, settings)
+                dead = await service.enqueue("dead", max_attempts=3)
+                await service.claim_next("ghost")
+                await service.cancel(dead.id)  # running -> cancelling
+
+                alive = await service.enqueue("alive", max_attempts=3)
+                await service.claim_next("w")
+                await service.cancel(alive.id)
+                await service.heartbeat(alive.id)
+                return dead.id, alive.id
+            finally:
+                await engine.dispose()
+
+        dead_id, alive_id = asyncio.run(scenario())
+        ghost_engine = sa.create_engine(f"sqlite:///{tmp_path / 'jobs.db'}")
+        try:
+            with ghost_engine.begin() as conn:
+                # Ölü işçinin kalp atışı çoktan durmuştu.
+                conn.execute(
+                    sa.text(
+                        "UPDATE jobs SET heartbeat_at = '2020-01-01 00:00:00'"
+                        " WHERE id = :id"
+                    ),
+                    {"id": dead_id},
+                )
+        finally:
+            ghost_engine.dispose()
+
+        async def recover():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                return await JobService(sessionmaker, settings).recover_stale()
+            finally:
+                await engine.dispose()
+
+        recovered = asyncio.run(recover())
+        assert recovered == 1
+        assert (
+            _sync_one(tmp_path, "jobs", dead_id, "status") == "cancelled"
+        )
+        assert (
+            _sync_one(tmp_path, "jobs", alive_id, "status") == "cancelling"
+        )
+
 
 class TestJobWorker:
     def test_run_job_success_and_failure_paths(self, tmp_path):
@@ -317,6 +369,84 @@ class TestJobWorker:
         first, second = asyncio.run(scenario())
         assert first == 2  # eşzamanlılık sınırı kadar iş başlar
         assert second == 0  # slotlar doluyken yeni iş alınmaz
+
+    def test_maybe_recover_stale_reaps_ghost_periodically(self, tmp_path):
+        """Poll döngüsündeki periyodik toparlama hayalet 'running' işi
+        dakikalar içinde kuyruğa alır (2026-10-21: startup-only toparlama
+        10 saat tıkmıştı); eşik penceresi içindeki ikinci çağrı atlanır."""
+        import time
+
+        def _age_heartbeat(db_path: str, job_id: int) -> None:
+            engine = sa.create_engine(f"sqlite:///{db_path}")
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        sa.text(
+                            "UPDATE jobs SET heartbeat_at ="
+                            " '2020-01-01 00:00:00' WHERE id = :id"
+                        ),
+                        {"id": job_id},
+                    )
+            finally:
+                engine.dispose()
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                async def noop(payload):
+                    return None
+
+                worker = JobWorker(
+                    sessionmaker, settings, handlers={"noop": noop}
+                )
+                service = worker._jobs
+
+                ghost = await service.enqueue(
+                    "media_process", {"source_video_id": 5}
+                )
+                await service.claim_next("dead-worker")
+                _age_heartbeat(db, ghost.id)
+                # Pencere acik (61 sn once son tur):
+                worker._last_stale_recover = time.monotonic() - 61
+                recovered1 = await worker._maybe_recover_stale()
+                status1 = _sync_one(tmp_path, "jobs", ghost.id, "status")
+
+                # Hayalet yeniden alinip yine olse: esik penceresi
+                # icinde ikinci tur koşmaz, is 'running' kalir.
+                await service.claim_next("dead-worker")
+                _age_heartbeat(db, ghost.id)
+                recovered2 = await worker._maybe_recover_stale()
+                status2 = _sync_one(tmp_path, "jobs", ghost.id, "status")
+
+                # Pencere tekrar acilinca toplar.
+                worker._last_stale_recover = time.monotonic() - 61
+                recovered3 = await worker._maybe_recover_stale()
+                status3 = _sync_one(tmp_path, "jobs", ghost.id, "status")
+                return (
+                    recovered1,
+                    status1,
+                    recovered2,
+                    status2,
+                    recovered3,
+                    status3,
+                )
+            finally:
+                await engine.dispose()
+
+        (
+            recovered1,
+            status1,
+            recovered2,
+            status2,
+            recovered3,
+            status3,
+        ) = asyncio.run(scenario())
+        assert recovered1 == 1
+        assert status1 == "queued"
+        assert recovered2 == 0
+        assert status2 == "running"
+        assert recovered3 == 1
+        assert status3 == "queued"
 
     def test_enqueue_poll_jobs_per_authorized_channel(self, tmp_path):
         async def scenario():

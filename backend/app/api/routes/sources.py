@@ -110,6 +110,17 @@ async def update_source(
 @router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_source(request: Request, source_id: int) -> None:
     sources_service, _ = _services(request)
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is not None:
+        # Kaynak silinince FK cascade satirlari dusurur; dosyalar ve
+        # videolarina bagli isler bu adimdan gecmezse yetim/hayalet
+        # kaliyor (2026-10-21 canli olay). Satir temizligi cascade'a,
+        # disk + kuyruk temizligi burada yapilir.
+        from app.services.video_removal import remove_source_videos
+
+        await remove_source_videos(
+            sessionmaker, request.app.state.settings, source_id
+        )
     if not await sources_service.delete_source(source_id):
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
 

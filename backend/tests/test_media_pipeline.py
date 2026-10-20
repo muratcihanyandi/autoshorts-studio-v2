@@ -476,14 +476,15 @@ class TestYtDlpAdapter:
         assert parse_progress_line(b"[Merger] Merging formats") is None
 
     def test_fetch_reports_progress_to_callback(self, tmp_path):
-        """Sahte runner ilerleme yüzdelerini callback'e taşır."""
+        """Sahte runner yüzdeleri callback'e olduğu gibi taşır; monotonluk
+        ve dosya ayrımı gerçek alt süreç okuyucusunun görevidir."""
         from app.services.media_download import YtDlpAdapter
 
         async def fake_runner(cmd, on_progress=None):
             if on_progress is not None:
                 await on_progress(10.0)
                 await on_progress(42.5)
-                await on_progress(42.0)  # geri gitme: tekrar bildirilmez
+                await on_progress(42.0)
             output = tmp_path / "downloads" / "7.mp4"
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(b"X" * 8)
@@ -502,7 +503,70 @@ class TestYtDlpAdapter:
 
         result = asyncio.run(scenario())
         assert result.file_bytes == 8
-        assert seen == [10.0, 42.5]
+        assert seen == [10.0, 42.5, 42.0]
+
+    def test_parse_destination_and_size_lines(self):
+        """Hedef dosya ve toplam boyut ayrıştırma: yüzdenin hangi dosyaya
+        ait olduğunu ayırmak için (küçük akış yüzdesi kilit üretir)."""
+        from app.services.media_download import (
+            parse_destination_line,
+            parse_size_bytes,
+        )
+
+        assert parse_destination_line(
+            b"[download] Destination: /data/media/downloads/264.f299.mp4"
+        ) == "/data/media/downloads/264.f299.mp4"
+        assert parse_destination_line(
+            "[download] Destination: /tmp/264.tr.vtt"
+        ) == "/tmp/264.tr.vtt"
+        assert (
+            parse_destination_line(b"[download]  63.4% of ~1.23GiB") is None
+        )
+        assert parse_size_bytes(
+            b"[download]  63.4% of ~1.23GiB at 1.50MiB/s"
+        ) == pytest.approx(1.23 * 1024**3)
+        assert parse_size_bytes(
+            "[download] 100% of 3.41MiB in 00:00:01"
+        ) == pytest.approx(3.41 * 1024**2)
+        assert parse_size_bytes(
+            b"[download]  10.0% of ??? at unknown speed"
+        ) is None
+
+    def test_subprocess_progress_skips_small_files_and_resets(self, tmp_path):
+        """Gerçek alt süreç satır akışı (2026-10-21 canli hata): küçük
+        akışın (ses/altyazı) %100'ü monoton korumayı kilitlemez; büyük
+        dosya başlayınca yüzde sıfırdan ilerler, geri giden satır tekrar
+        bildirilmez."""
+        import sys
+
+        from app.services.media_download import YtDlpAdapter
+
+        lines = "\n".join(
+            [
+                "[download] Destination: /d/7.f251.m4a",
+                "[download] 100% of 3.41MiB in 00:00:01",
+                "[download] Destination: /d/7.f299.mp4",
+                "[download]  12.3% of ~1.23GiB at 1.50MiB/s ETA 01:12",
+                "[download]  50.0% of ~1.23GiB at 1.50MiB/s ETA 00:44",
+                "[download]  49.9% of ~1.23GiB at 1.50MiB/s ETA 00:45",
+                "[download] 100% of ~1.23GiB at 1.50MiB/s",
+            ]
+        )
+        cmd = [sys.executable, "-c", f"print({lines!r})"]
+        seen = []
+
+        async def on_progress(percent):
+            seen.append(percent)
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings(), runner=None)
+            return await adapter._run_subprocess(cmd, on_progress=on_progress)
+
+        code = asyncio.run(scenario())
+        assert code == 0
+        # Küçük ses akışının %100'ü iletilmez; video akışı sıfırdan
+        # başlar, 49.9 geri gidişi tekrar bildirilmez.
+        assert seen == [12.3, 50.0, 100.0]
 
     def test_missing_binary_reports_turkish_error(self, tmp_path, monkeypatch):
         from app.services.media_download import (

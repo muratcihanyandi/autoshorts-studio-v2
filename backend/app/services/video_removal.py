@@ -68,6 +68,120 @@ def _remove_file(path: str | None, media_root: str | None) -> bool:
     return False
 
 
+async def _video_cleanup_targets(
+    session: AsyncSession, source_video_ids: list[int]
+) -> tuple[list[MediaAsset], list[RenderedClip], set[int], set[int]]:
+    """Videoların varlık/render/aday kimliklerini toplar: dosya silme ve
+    iş eşleştirmesi için tek ortak okuma."""
+    assets = (
+        (
+            await session.execute(
+                sa.select(MediaAsset).where(
+                    MediaAsset.source_video_id.in_(source_video_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    renders = (
+        (
+            await session.execute(
+                sa.select(RenderedClip).where(
+                    RenderedClip.source_video_id.in_(source_video_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    candidate_ids = set(
+        (
+            await session.execute(
+                sa.select(ClipCandidate.id).where(
+                    ClipCandidate.source_video_id.in_(source_video_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    asset_ids = {asset.id for asset in assets}
+    return list(assets), list(renders), candidate_ids, asset_ids
+
+
+def _remove_video_files(
+    assets: list[MediaAsset],
+    renders: list[RenderedClip],
+    media_root: str | None,
+) -> int:
+    """İndirme + yan altyazı + render çıktısı + kapak dosyalarını sil."""
+    removed = 0
+    for asset in assets:
+        removed += _remove_file(asset.file_path, media_root)
+        if asset.file_path:
+            base = Path(asset.file_path)
+            for suffix in (".vtt", ".srt"):
+                removed += _remove_file(
+                    str(base.with_suffix(suffix)), media_root
+                )
+    for render in renders:
+        removed += _remove_file(render.file_path, media_root)
+        removed += _remove_file(render.thumbnail_path, media_root)
+    return removed
+
+
+async def _cancel_video_jobs(
+    session: AsyncSession,
+    source_video_ids: list[int],
+    candidate_ids: set[int],
+    asset_ids: set[int],
+) -> dict[str, int]:
+    """Videoya bağlanabilen etkin işleri iptal eder.
+
+    Siradakiler aninda 'cancelled' olur; kosanlar 'cancelling' isareti
+    alir ve worker sonucu yazarken iptale oturur (succeed/fail ikisi de
+    isareti onurlandirir). Ayni oturumda toplu guncelleme: ayri servis
+    oturumu SQLite'ta kilitlenir."""
+    active = (
+        (
+            await session.execute(
+                sa.select(Job).where(
+                    Job.status.in_(("queued", "running", "cancelling")),
+                    Job.job_type.in_(VIDEO_JOB_TYPES),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cancel_now: list[int] = []
+    marking: list[int] = []
+    for job in active:
+        payload = job.payload or {}
+        if not (
+            payload.get("source_video_id") in source_video_ids
+            or payload.get("clip_candidate_id") in candidate_ids
+            or payload.get("media_asset_id") in asset_ids
+        ):
+            continue
+        if job.status == "queued":
+            cancel_now.append(job.id)
+        else:
+            marking.append(job.id)
+    if cancel_now:
+        await session.execute(
+            sa.update(Job)
+            .where(Job.id.in_(cancel_now))
+            .values(status="cancelled")
+        )
+    if marking:
+        await session.execute(
+            sa.update(Job).where(Job.id.in_(marking)).values(status="cancelling")
+        )
+    return {"cancelled": len(cancel_now), "cancelling": len(marking)}
+
+
 async def remove_source_video(
     sessionmaker: async_sessionmaker[AsyncSession],
     settings: Settings,
@@ -87,83 +201,19 @@ async def remove_source_video(
             channel_id = source.channel_id
 
         # 1) Dosyalar: indirme + yan altyazilar + render ciktilari.
-        files_removed = 0
-        assets = (
-            (
-                await session.execute(
-                    sa.select(MediaAsset).where(
-                        MediaAsset.source_video_id == source_video_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        assets, renders, candidate_ids, asset_ids = await _video_cleanup_targets(
+            session, [source_video_id]
         )
-        for asset in assets:
-            files_removed += _remove_file(asset.file_path, settings.media_root)
-            if asset.file_path:
-                base = Path(asset.file_path)
-                for suffix in (".vtt", ".srt"):
-                    files_removed += _remove_file(
-                        str(base.with_suffix(suffix)), settings.media_root
-                    )
-        renders = (
-            (
-                await session.execute(
-                    sa.select(RenderedClip).where(
-                        RenderedClip.source_video_id == source_video_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        files_removed = _remove_video_files(
+            assets, renders, settings.media_root
         )
-        for render in renders:
-            files_removed += _remove_file(render.file_path, settings.media_root)
-            files_removed += _remove_file(render.thumbnail_path, settings.media_root)
 
-        # 2) Sirada bekleyen ilgili isler iptal edilir (ayni oturumda
-        # toplu guncelleme: ayri servis oturumu SQLite'ta kilitlenir).
-        candidate_ids = set(
-            (
-                await session.execute(
-                    sa.select(ClipCandidate.id).where(
-                        ClipCandidate.source_video_id == source_video_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        # 2) Sirada bekleyen ilgili isler iptal edilir; kosanlar
+        #    'cancelling' isareti alir (worker sonucu yazarken oturur).
+        cancel = await _cancel_video_jobs(
+            session, [source_video_id], candidate_ids, asset_ids
         )
-        asset_ids = {asset.id for asset in assets}
-        queued = (
-            (
-                await session.execute(
-                    sa.select(Job).where(
-                        Job.status == "queued",
-                        Job.job_type.in_(VIDEO_JOB_TYPES),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        cancel_ids = []
-        for job in queued:
-            payload = job.payload or {}
-            if (
-                payload.get("source_video_id") == source_video_id
-                or payload.get("clip_candidate_id") in candidate_ids
-                or payload.get("media_asset_id") in asset_ids
-            ):
-                cancel_ids.append(job.id)
-        if cancel_ids:
-            await session.execute(
-                sa.update(Job)
-                .where(Job.id.in_(cancel_ids))
-                .values(status="cancelled")
-            )
-        jobs_cancelled = len(cancel_ids)
+        jobs_cancelled = cancel["cancelled"] + cancel["cancelling"]
 
         # 3) Satirlar: transkript, inceleme, varlik, metaveri, render,
         #    aday ve planlama karari. Video 'excluded' olarak kalir
@@ -233,4 +283,50 @@ async def remove_source_video(
         "status": "excluded",
         "files_removed": files_removed,
         "jobs_cancelled": jobs_cancelled,
+    }
+
+
+async def remove_source_videos(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    source_channel_id: int,
+) -> dict[str, Any]:
+    """Kaynak kanal silinmeden önce tüm videolarının disk ve kuyruk
+    temizliğini yapar (2026-10-21 canlı olay: FK cascade satırları
+    düşürür ama dosyalar yetim kalır, koşan işler hayalet'e döner).
+
+    Satır temizliği bilinçli olarak burada yapılmaz: kaynak satırı
+    silindiğinde cascade zaten tüm ağacı düşürür."""
+    async with sessionmaker() as session:
+        video_ids = list(
+            (
+                await session.execute(
+                    sa.select(SourceVideo.id).where(
+                        SourceVideo.source_channel_id == source_channel_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not video_ids:
+            return {
+                "videos": 0,
+                "files_removed": 0,
+                "jobs_cancelled": 0,
+            }
+        assets, renders, candidate_ids, asset_ids = await _video_cleanup_targets(
+            session, video_ids
+        )
+        files_removed = _remove_video_files(
+            assets, renders, settings.media_root
+        )
+        cancel = await _cancel_video_jobs(
+            session, video_ids, candidate_ids, asset_ids
+        )
+        await session.commit()
+    return {
+        "videos": len(video_ids),
+        "files_removed": files_removed,
+        "jobs_cancelled": cancel["cancelled"] + cancel["cancelling"],
     }

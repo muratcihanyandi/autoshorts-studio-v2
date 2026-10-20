@@ -30,6 +30,24 @@ Runner = Callable[..., Awaitable[Any]]
 # yt-dlp --newline ilerleme satiri: "[download]  63.4% of ~1.23GiB at ..."
 _PROGRESS_LINE = re.compile(rb"\[download\]\s+(\d+(?:\.\d+)?)%")
 
+# Dosya baslangic satiri: "[download] Destination: /yol/264.f299.mp4"
+_DESTINATION_LINE = re.compile(rb"\[download\] Destination:\s*(.+)")
+
+# Ilerleme satirindaki toplam boyut: "of ~1.23GiB" / "of 3.41MiB"
+_SIZE_IN_LINE = re.compile(
+    rb"of\s+~?\s*([\d.]+)\s*(KiB|MiB|GiB|TiB|KB|MB|GB|TB)"
+)
+_UNIT_BYTES = {
+    "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4,
+    "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4,
+}
+
+# Bu esigin altindaki akislar (altyazi, kisa ses akisi) yuzdeyi takip
+# etmez: hizla %100'e ulasip monoton korumayi kilitliyorlar, ana video
+# dosyasi indirilirken UI yanlisca %100 kaliyordu (2026-10-21 canli
+# gozlem). 20 MB ~2 saatlik bir ses akisini da kapsar.
+_SMALL_FILE_BYTES = 20 * 1024 * 1024
+
 DOWNLOAD_TIMEOUT_SECONDS = 14400.0
 
 
@@ -39,6 +57,28 @@ def parse_progress_line(line: bytes | str) -> float | None:
         line = line.encode("utf-8", "replace")
     match = _PROGRESS_LINE.search(line)
     return float(match.group(1)) if match else None
+
+
+def parse_destination_line(line: bytes | str) -> str | None:
+    """yt-dlp 'Destination:' satirindan hedef dosya yolunu cikarir;
+    baska satirsa None. Yuzdenin hangi dosyaya ait oldugunu ayirir."""
+    if isinstance(line, str):
+        line = line.encode("utf-8", "replace")
+    match = _DESTINATION_LINE.search(line)
+    if match is None:
+        return None
+    return match.group(1).decode("utf-8", "replace").strip()
+
+
+def parse_size_bytes(line: bytes | str) -> float | None:
+    """Ilerleme satirindaki toplam boyutu bayt cinsinden cikarir;
+    boyut bilinmiyorsa None (bilinmeyen takip edilir, atlanmaz)."""
+    if isinstance(line, str):
+        line = line.encode("utf-8", "replace")
+    match = _SIZE_IN_LINE.search(line)
+    if match is None:
+        return None
+    return float(match.group(1)) * _UNIT_BYTES[match.group(2).decode()]
 
 
 class MediaDownloadError(Exception):
@@ -160,6 +200,8 @@ class YtDlpAdapter:
             assert proc.stdout is not None and proc.stderr is not None
             stderr_task = asyncio.create_task(proc.stderr.read())
             last_percent = -1.0
+            current_dest: str | None = None
+            tracked_dest: str | None = None
             try:
                 while True:
                     line = await proc.stdout.readline()
@@ -167,8 +209,22 @@ class YtDlpAdapter:
                         break
                     if on_progress is None:
                         continue
+                    dest = parse_destination_line(line)
+                    if dest is not None:
+                        current_dest = dest
+                        continue
                     percent = parse_progress_line(line)
-                    if percent is not None and percent > last_percent:
+                    if percent is None:
+                        continue
+                    size = parse_size_bytes(line)
+                    if size is not None and size < _SMALL_FILE_BYTES:
+                        continue
+                    # Buyuk dosya degisince yuzde bastan: onceki akisin
+                    # (ornek ses akisinin) %100'u yeni dosyayi kilitlemesin.
+                    if current_dest != tracked_dest:
+                        tracked_dest = current_dest
+                        last_percent = -1.0
+                    if percent > last_percent:
                         last_percent = percent
                         await on_progress(percent)
                 return await stderr_task
@@ -186,6 +242,10 @@ class YtDlpAdapter:
             raise MediaDownloadError(
                 "Indirme zaman asimina ugradi (4 saat)."
             ) from None
+        # Borular EOF'a ulasti ama cikis kodu henuz yazilmamis olabilir
+        # (hizli cikan sureclerde returncode None kaliyordu); reaper
+        # calismadan once kesin sonuc bekle.
+        await proc.wait()
         if proc.returncode != 0:
             tail = stderr.decode("utf-8", "replace").strip()[-500:]
             raise MediaDownloadError(f"yt-dlp basarisiz: {tail}")
@@ -210,18 +270,9 @@ class YtDlpAdapter:
         dest_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(dest_dir / f"{source_video_id}.%(ext)s")
         cmd = self.build_command(youtube_video_id, dest_dir, output_path)
-        # Yuzde monoton ilerler: yt-dlp birllesme/akis sonrasi geri
-        # sarabilir; UI'da geri gitme gosterilmez.
-        last_percent = -1.0
-
-        async def guarded(percent: float) -> None:
-            nonlocal last_percent
-            if percent <= last_percent or on_progress is None:
-                return
-            last_percent = percent
-            await on_progress(percent)
-
-        await runner(cmd, on_progress=guarded if on_progress else None)
+        # Monotonluk ve dosya ayrimi alt surec okuyucusunda yapilir;
+        # sahte runner'lar yuzdeyi dogrudan iletir.
+        await runner(cmd, on_progress=on_progress)
         # yt-dlp uzantiyi kendisi secer: en yeni video dosyasini bul.
         candidates = sorted(
             (

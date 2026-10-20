@@ -390,6 +390,8 @@ class JobWorker:
         self._last_hype_enqueue = 0.0
         self._last_publish_enqueue = 0.0
         self._last_media_cleanup = 0.0
+        self._last_stale_recover = 0.0
+        self._last_heartbeat_warning = 0.0
         self._last_summary_day = ""
         self._last_tmp_cleanup = 0.0
         self._last_state_write = 0.0
@@ -447,7 +449,16 @@ class JobWorker:
     async def _heartbeat_loop(self, job_id: int) -> None:
         try:
             while True:
-                await self._jobs.heartbeat(job_id)
+                try:
+                    await self._jobs.heartbeat(job_id)
+                except Exception:  # noqa: BLE001 - gecici DB hatasi kalp atisini oldurmesin
+                    now = time.monotonic()
+                    if now - self._last_heartbeat_warning > 60:
+                        self._last_heartbeat_warning = now
+                        logger.warning(
+                            "is #%s kalp atisi yazilamadi, tekrar denenecek",
+                            job_id,
+                        )
                 await asyncio.sleep(self._heartbeat_seconds)
         except asyncio.CancelledError:
             pass
@@ -924,6 +935,25 @@ class JobWorker:
         self._last_media_cleanup = now
         await self.cleanup_media_once()
 
+    async def _maybe_recover_stale(self) -> None:
+        """Sessiz kalan 'running' isleri dongu icinde de toparla.
+
+        Startup'taki tek seferlik toparlama, uzun omurlu worker'da
+        olum/iptal aralarinda 'running' kalan hayalet isleri goremuyor;
+        hayalet is kuyruk beslemesini saatlerce tikayabiliyor (2026-10-21
+        canli olay), bu yuzden dakikada bir tekrarlanir."""
+        now = time.monotonic()
+        if now - self._last_stale_recover < 60:
+            return 0
+        self._last_stale_recover = now
+        recovered = await self._jobs.recover_stale()
+        if recovered:
+            logger.warning(
+                "%s sessiz 'running' is geri kuyruga alindi (hayalet temizligi)",
+                recovered,
+            )
+        return recovered
+
     # --- worker saglik durumu (UI kaniti) ---
 
     async def write_worker_state(self) -> None:
@@ -983,6 +1013,7 @@ class JobWorker:
                     await self.enqueue_summary_jobs()
                     await self._maybe_cleanup_tmp()
                     await self._maybe_cleanup_media()
+                    await self._maybe_recover_stale()
                     await self.write_worker_state()
                     if self._resource_ok():
                         await self.claim_batch()
