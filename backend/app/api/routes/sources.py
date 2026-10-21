@@ -12,6 +12,7 @@ from app.schemas_sources import (
     SourceOut,
     SourceUpdate,
     SourceVideoOut,
+    SourceVideoBulkStatusIn,
     SourceVideoStatusIn,
     SourceVideosOut,
     SourcesOut,
@@ -176,6 +177,39 @@ async def set_video_status(
             status_code=exc.status_code, detail=str(exc)
         ) from exc
     return SourceVideoOut.model_validate(video)
+
+
+@router.post("/sources/videos/status")
+async def set_videos_status_bulk(
+    request: Request, data: SourceVideoBulkStatusIn
+) -> dict:
+    """Toplu sınıflandırma düzeltmesi (2026-10-21 kalıcı çözüm): özellikle
+    hariç kalan videoları işleme geri almak için. Tek bir videonun hatası
+    (ör. işlenmiş video) grubu durdurmaz; sonuç liste olarak döner."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı; video yönetimi kapalı.",
+        )
+    sources_service = SourceService(sessionmaker)
+    results = []
+    for video_id in dict.fromkeys(data.ids):
+        try:
+            video = await sources_service.set_video_status(
+                video_id, data.status
+            )
+            results.append({"id": video_id, "status": video.status})
+        except SourceServiceError as exc:
+            results.append(
+                {"id": video_id, "error": str(exc)}
+            )
+    return {
+        "requested": len(set(data.ids)),
+        "updated": sum(1 for r in results if "status" in r),
+        "errors": sum(1 for r in results if "error" in r),
+        "results": results,
+    }
 
 
 @router.post("/channels/{channel_id}/discover", response_model=DiscoverResult)

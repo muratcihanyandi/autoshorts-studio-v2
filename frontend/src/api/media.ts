@@ -193,6 +193,7 @@ export function fetchMedia(
   activeOnly: boolean = true,
   engineSelectedOnly: boolean = false,
   readyOnly: boolean = false,
+  excludedOnly: boolean = false,
 ): Promise<MediaLibrary> {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -200,9 +201,35 @@ export function fetchMedia(
     active_only: String(activeOnly),
     engine_selected_only: String(engineSelectedOnly),
     ready_only: String(readyOnly),
+    excluded_only: String(excludedOnly),
   })
   if (includeExcluded) params.set('include_excluded', 'true')
   return getJson<MediaLibrary>(`/api/media?${params.toString()}`)
+}
+
+/** Toplu video durumu: hariç kalanları işleme geri al (Görev: kalıcı
+ * çözüm 2026-10-21) ya da toplu hariç tut. */
+export interface BulkVideoStatusResult {
+  requested: number
+  updated: number
+  errors: number
+  results: { id: number; status?: string; error?: string }[]
+}
+
+export function bulkVideoStatus(
+  ids: number[],
+  status: 'planned' | 'excluded',
+): Promise<BulkVideoStatusResult> {
+  return sendJson<BulkVideoStatusResult>(
+    '/api/sources/videos/status',
+    'POST',
+    { ids, status },
+  ).then((body) => {
+    if (body === null) {
+      throw new ApiError(204, 'Toplu durum yanıtı boş döndü')
+    }
+    return body
+  })
 }
 
 export function fetchClipDetail(renderId: number): Promise<ClipDetail> {

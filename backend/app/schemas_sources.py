@@ -138,6 +138,15 @@ class SourceVideoStatusIn(BaseModel):
     status: Literal["planned", "excluded"]
 
 
+class SourceVideoBulkStatusIn(BaseModel):
+    """Toplu sınıflandırma düzeltmesi (2026-10-21 kalıcı çözüm):
+    kütüphane sıfırlandıktan ya da videolar hariç kaldıktan sonra
+    kullanıcıyı tek tek tıklamadan kurtarır."""
+
+    ids: list[int] = Field(min_length=1, max_length=200)
+    status: Literal["planned", "excluded"]
+
+
 class PlanningResult(BaseModel):
     planned: int
     skipped: int

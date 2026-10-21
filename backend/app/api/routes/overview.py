@@ -164,6 +164,32 @@ async def _real_totals(request: Request) -> tuple[int, dict, list[dict]]:
         }, []
 
 
+async def _planned_videos(request: Request, database: str) -> int:
+    """Üretim sırasındaki videolar (status='planned', yetkili kaynaklar).
+    Overview'in 'işlenecek video yok' uyarısı bu sayıya bakar — 0 olup
+    motor çalışıyorsa kütüphane boşalmış ya da her şey hariç kalmış
+    demektir (2026-10-21 canlı olay)."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return 0
+    try:
+        async with sessionmaker() as session:
+            count = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM source_videos sv"
+                        " JOIN source_channels sc"
+                        " ON sv.source_channel_id = sc.id"
+                        " WHERE sv.status = 'planned'"
+                        " AND sc.permission_status = 'authorized'"
+                    )
+                )
+            ).scalar()
+        return int(count or 0)
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return 0
+
+
 async def _worker_health(request: Request) -> dict:
     """Worker liveness from the app_meta heartbeat written by the
     worker loop (enabled + running + last tick)."""
@@ -213,6 +239,7 @@ async def overview(request: Request) -> dict:
     llm_providers_configured = await _llm_providers_configured(request, database)
     job_counts = await _job_counts(request, database)
     sources_monitored = await _sources_monitored(request, database)
+    planned_videos = await _planned_videos(request, database)
     stock_clips, today_published, channel_rows = await _real_totals(request)
     worker = await _worker_health(request)
 
@@ -237,6 +264,7 @@ async def overview(request: Request) -> dict:
         "llm_providers": {"configured": llm_providers_configured},
         "jobs": {"active": jobs_active, "queued": jobs_queued},
         "stock": {"clips": stock_clips},
+        "production": {"planned_videos": planned_videos},
         "today_published": today_published,
         "channel_rows": channel_rows,
         "worker": worker,

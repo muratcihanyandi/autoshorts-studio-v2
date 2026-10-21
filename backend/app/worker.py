@@ -1055,11 +1055,13 @@ class JobWorker:
         await self.cleanup_tmp_once()
 
     async def cleanup_media_once(self) -> dict:
-        """Retention dolumu gelen yayın dosyalarını ve dikey yönlü
-        kaynakların kalan yatay dosyalarını temizle."""
+        """Retention dolumu gelen yayın dosyalarını, dikey yönlü
+        kaynakların kalan yatay dosyalarını ve sistem dışından
+        silinmiş (dosyası ölü) videoları temizle."""
         from app.services.media_cleanup import (
             cleanup_published_media,
             cleanup_vertical_source_files,
+            sweep_lost_source_files,
         )
 
         try:
@@ -1075,6 +1077,17 @@ class JobWorker:
         except Exception:  # noqa: BLE001 - temizlik best-effort
             vertical = {"cleaned": 0}
         result["vertical_cleaned"] = vertical.get("cleaned", 0)
+        # 2026-10-21 canlı olayın kalıcı çözümü: USB'den/dosya
+        # yöneticisinden silinen videolar saatlik turla kendiliğinden
+        # temizlenir; iş kuyruğu zombilerle kirlenip motor boşta
+        # kalmaz. Hata tek turu durdurmaz.
+        try:
+            swept = await sweep_lost_source_files(
+                self._sessionmaker, self._effective
+            )
+        except Exception:  # noqa: BLE001 - temizlik best-effort
+            swept = {"swept": 0}
+        result["lost_swept"] = swept.get("swept", 0)
         return result
 
     async def _maybe_cleanup_media(self) -> None:

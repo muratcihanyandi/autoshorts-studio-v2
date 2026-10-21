@@ -56,6 +56,7 @@ async def media_library(
     active_only: bool = Query(True),
     engine_selected_only: bool = Query(False),
     ready_only: bool = Query(False),
+    excluded_only: bool = Query(False),
 ) -> dict:
     return await _service(request).media_library(
         limit=limit,
@@ -64,6 +65,7 @@ async def media_library(
         active_only=active_only,
         engine_selected_only=engine_selected_only,
         ready_only=ready_only,
+        excluded_only=excluded_only,
     )
 
 

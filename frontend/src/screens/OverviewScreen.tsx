@@ -161,6 +161,17 @@ export function OverviewScreen() {
 
   const rows = overview.state.status === 'ok' ? overview.state.data.channel_rows ?? [] : []
   const worker = overview.state.status === 'ok' ? overview.state.data.worker : undefined
+  // Kalıcı çözüm (2026-10-21): motor çalışıyor ama elde iş yoksa
+  // (aktif+kuyruk 0, üretim sırası boş, stok boş) bunu ekranda söyle —
+  // aksi halde "çalışıyor ama işlem yok" gizli kalıyordu.
+  const data = overview.state.status === 'ok' ? overview.state.data : null
+  const productionEmpty =
+    data !== null &&
+    (data.worker?.running ?? false) &&
+    data.jobs.active === 0 &&
+    data.jobs.queued === 0 &&
+    (data.production?.planned_videos ?? 0) === 0 &&
+    data.stock.clips === 0
 
   return (
     <>
@@ -187,6 +198,15 @@ export function OverviewScreen() {
       {overview.state.status === 'ok' && (
         <>
           {overview.state.stale && <StaleNote onRetry={overview.retry} />}
+
+          {productionEmpty && (
+            <div className="action-error" role="alert">
+              Motor çalışıyor ama işlenecek video yok: üretim sırası ve hazır
+              stok boş. Kaynak kanallarda yeni videoları bekliyor — ya da
+              videolar 'Hariç' durumuna düştü. Medya Kütüphanesi → Hariç
+              tutulanlar bölümünden geri alabilirsin.
+            </div>
+          )}
 
           {worker && (
             <div className={`worker-banner${worker.running ? '' : ' off'}`}>

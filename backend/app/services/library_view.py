@@ -75,6 +75,7 @@ class LibraryViewService:
         active_only: bool = False,
         engine_selected_only: bool = False,
         ready_only: bool = False,
+        excluded_only: bool = False,
     ) -> dict[str, Any]:
         async with self._sessionmaker() as session:
             # Kuralin reddettigi (Hariç) videolar varsayilan listede
@@ -82,12 +83,19 @@ class LibraryViewService:
             # active_only: yalnizca sisteme girmis videolar (asset'i olan,
             # onaylanmis veya su an islenen) — kesif havuzundaki hic
             # dokunulmamis satirlar listeyi doldurmaz.
-            # engine_selected_only: ürün görünümü; yalnızca motorun klip
+            # engine_selected_only: Ürün görünümü; yalnızca motorun klip
             # seçtiği videolar ve o an işlenen tek kaynak görünür.
+            # excluded_only: hariç paneli (2026-10-21 kalıcı çözüm) —
+            # yalnızca dışlanan videolar; toplu geri alma listesi.
+            if excluded_only:
+                visible: list[Any] = [SourceVideo.status == "excluded"]
+            else:
+                visible = (
+                    []
+                    if include_excluded
+                    else [SourceVideo.status != "excluded"]
+                )
             active_video_ids = await self._active_pipeline_video_ids(session)
-            visible: list[Any] = (
-                [] if include_excluded else [SourceVideo.status != "excluded"]
-            )
             if active_only:
                 visible.append(
                     sa.or_(

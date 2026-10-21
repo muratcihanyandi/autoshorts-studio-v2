@@ -173,13 +173,76 @@ const detailPayload = {
   note: 'Gizli yüklendi; planlanan yayın diliminde herkese açılacak.',
 }
 
+const excludedPayload = {
+  sources: [
+    {
+      id: 20,
+      title: 'Hariç kalan video',
+      youtube_video_id: 'yt-20',
+      youtube_url: null,
+      source_channel_title: 'Kaynak Kanal',
+      source_channel_youtube_id: 'UCsrc',
+      reaction_source: false,
+      filter_rules: {},
+      trim_start_seconds: 0,
+      trim_end_seconds: 0,
+      duration_seconds: 300,
+      tag: null,
+      asset_stage: null,
+      asset_stage_label: null,
+      asset_status: null,
+      file_bytes: 0,
+      origin: null,
+      stages: [],
+      selected_candidates: [],
+      selected_count: 0,
+      full_cut_ready: false,
+      is_current: false,
+      channel_id: 4,
+      channel_name: 'Kanal A',
+      ribbon_color: '#123456',
+      published_at: null,
+      updated_at: null,
+    },
+  ],
+  sources_total: 1,
+  current_source_id: null,
+  clips: [],
+  clips_total: 0,
+  summary: {
+    sources_total: 1,
+    entered: 0,
+    queued_pool: 0,
+    processed: 0,
+    failed: 0,
+    shorts_ready: 0,
+    full_cuts_ready: 0,
+  },
+}
+
 function mockFetch() {
   const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, _init?: RequestInit) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      const body = url.includes('/api/media/clips/9')
-        ? detailPayload
-        : libraryPayload
+      if (
+        url.includes('/api/sources/videos/status') &&
+        init?.method === 'POST'
+      ) {
+        return new Response(
+          JSON.stringify({
+            requested: 1,
+            updated: 1,
+            errors: 0,
+            results: [{ id: 20, status: 'planned' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      const body = url.includes('excluded_only=true')
+        ? excludedPayload
+        : url.includes('/api/media/clips/9')
+          ? detailPayload
+          : libraryPayload
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -283,7 +346,33 @@ describe('MediaLibraryScreen', () => {
       await screen.findByText('Motor henüz klip seçmedi'),
     ).toBeInTheDocument()
   })
-})
+
+  it('lists excluded videos and bulk-reincludes them', async () => {
+    const fetchMock = mockFetch()
+    render(<MediaLibraryScreen />)
+
+    // Hariç paneli: göster -> liste -> toplu geri al.
+    fireEvent.click(await screen.findByRole('button', { name: 'Göster' }))
+    expect(
+      await screen.findByText('Hariç kalan video'),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Tümünü İşleme Al' }),
+    )
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/api/sources/videos/status') &&
+          (c[1] as RequestInit | undefined)?.method === 'POST',
+      )
+      expect(post).toBeDefined()
+      expect(JSON.parse(String((post![1] as RequestInit).body))).toEqual({
+        ids: [20],
+        status: 'planned',
+      })
+    })
+    expect(await screen.findByText('1 video işleme alındı.')).toBeInTheDocument()
+  })
 
   it('removes a source video through the card action', async () => {
     const fetchMock = mockFetch()
@@ -346,3 +435,4 @@ describe('MediaLibraryScreen', () => {
       expect(deleteCalls()).toHaveLength(1)
     })
   })
+})

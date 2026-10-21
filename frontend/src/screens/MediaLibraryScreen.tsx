@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 
 import {
   bulkClipAction,
+  bulkVideoStatus,
   clipDownloadUrl,
   fetchMedia,
   removeClip,
@@ -331,15 +332,25 @@ export function MediaLibraryScreen() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkResult, setBulkResult] = useState<BulkClipActionResult | null>(null)
+  const [showExcluded, setShowExcluded] = useState(false)
+  const [reincludeBusy, setReincludeBusy] = useState(false)
+  const [reincludeNote, setReincludeNote] = useState<string | null>(null)
 
   const fetchCb = useCallback(
     () => fetchMedia(60, 0, false, false, true, true),
     [],
   )
   const library = usePolling(fetchCb, 10000)
+  const excludedCb = useCallback(
+    () => fetchMedia(100, 0, false, false, false, false, true),
+    [],
+  )
+  const excludedList = usePolling(excludedCb, 30000)
 
   const data = library.state.status === 'ok' ? library.state.data : null
   const retryLibrary = library.retry
+  const excludedData =
+    excludedList.state.status === 'ok' ? excludedList.state.data : null
   const current =
     data?.sources.find((source) => source.id === data.current_source_id) ?? null
   const previous = data?.sources.filter((source) => source.id !== current?.id) ?? []
@@ -392,6 +403,29 @@ export function MediaLibraryScreen() {
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
+    }
+  }
+
+  /** Hariç videoları üretime geri al (kalıcı çözüm 2026-10-21):
+   * kütüphane boşaldığında kullanıcının kendini kurtarma yolu. */
+  const reincludeAll = async (ids: number[]) => {
+    setReincludeBusy(true)
+    setReincludeNote(null)
+    try {
+      const result = await bulkVideoStatus(ids, 'planned')
+      setReincludeNote(
+        `${result.updated} video işleme alındı` +
+          (result.errors > 0 ? `, ${result.errors} atlandı` : '') +
+          '.',
+      )
+      retryLibrary()
+      excludedList.retry()
+    } catch (err) {
+      setRemoveError(
+        err instanceof Error ? err.message : 'Geri alma başarısız oldu.',
+      )
+    } finally {
+      setReincludeBusy(false)
     }
   }
 
@@ -659,6 +693,82 @@ export function MediaLibraryScreen() {
                   />
                 ))}
               </div>
+            )}
+          </section>
+
+          <div className="panel-gap" />
+
+          <section className="ink-panel" aria-label="Hariç tutulan videolar">
+            <div className="panel-head-row">
+              <h2>Hariç tutulanlar</h2>
+              <span className="panel-count nums">
+                {excludedList.state.status === 'ok'
+                  ? `${excludedList.state.data.sources_total} video`
+                  : '…'}
+              </span>
+              <button
+                type="button"
+                className="btn--ghost"
+                onClick={() => {
+                  setShowExcluded((open) => !open)
+                  setReincludeNote(null)
+                }}
+              >
+                {showExcluded ? 'Gizle' : 'Göster'}
+              </button>
+            </div>
+
+            {!showExcluded ? (
+              <p className="product-note">
+                Kural dışı kalan, kaldırılan ya da dosyaları silindiği için
+                temizlenen videolar. Gerekirse işleme geri alınabilir.
+              </p>
+            ) : excludedData === null ? (
+              <p className="product-note">Hariç listesi okunuyor…</p>
+            ) : excludedData.sources.length === 0 ? (
+              <p className="product-note">Hariç tutulan video yok.</p>
+            ) : (
+              <>
+                <div className="excluded-actions">
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    disabled={reincludeBusy}
+                    onClick={() =>
+                      void reincludeAll(excludedData.sources.map((s) => s.id))
+                    }
+                    title="Listedeki tüm hariç videoları üretime geri alır."
+                  >
+                    {reincludeBusy
+                      ? 'Geri alınıyor…'
+                      : 'Tümünü İşleme Al'}
+                  </button>
+                  {reincludeNote && (
+                    <span className="bulk-result" role="status">
+                      {reincludeNote}
+                    </span>
+                  )}
+                </div>
+                <ul className="excluded-list">
+                  {excludedData.sources.map((source) => (
+                    <li key={source.id} className="excluded-row">
+                      <span className="excluded-title" title={source.title}>
+                        {source.title}
+                      </span>
+                      <small>{source.source_channel_title ?? 'Kaynak'}</small>
+                      <button
+                        type="button"
+                        className="btn--ghost"
+                        disabled={reincludeBusy}
+                        onClick={() => void reincludeAll([source.id])}
+                        title="Bu videoyu üretime geri alır."
+                      >
+                        İşleme Al
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </section>
         </>

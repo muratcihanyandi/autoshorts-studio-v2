@@ -23,6 +23,10 @@ export interface Overview {
   llm_providers: { configured: number }
   jobs: { active: number; queued: number }
   stock: { clips: number }
+  /** Üretim havuzu: işlenmeyi bekleyen (planned) video sayısı —
+   * motor çalışıyor ama sıra boşsa "işlenecek video yok" uyarısı
+   * bunu okur (2026-10-21 kalıcı çözüm). */
+  production?: { planned_videos: number }
   today_published: TodayPublished
   channel_rows?: ChannelRow[]
   worker?: WorkerHealth

@@ -14,21 +14,12 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** Eight-task product update (2026-10-21, user request):
-(1) five selectable burn-in caption styles including the yellow
-Shorts look; (2) free caption positioning anywhere on the 1080x1920
-frame via percent sliders with the Shorts default (bottom-center,
-78% height); (3) Settings screen redesigned into four category tabs
-(Bağlantılar / Üretim / Altyazı / Sistem, impeccable skill); (4) media
-library bulk actions (multi-select + download / make public / make
-private / remove); (5) fixed left rail (sticky, content scrolls
-alone); (6) live "Onaylanmis metaveri yok" publishing error root-caused
-and fixed (upload feed no longer enqueues clips whose metadata has not
-been generated); (7) known-gaps report delivered in chat; (8)
-duplicate-title diagnosis (mirror source channels Craftest + 2kan
-re-upload the same RRaenee content) with global title dedupe added to
-discovery. Backend 471/471, frontend 36/36, tsc/build/lint/secret scan
-clean.
+**Current task:** "Motor çalışıyor ama işlem yok" kalıcı çözümü
+(2026-10-21, ikinci tur): lost-file hourly sweep + Overview "işlenecek
+video yok" uyarısı + Hariç panelinde toplu geri alma. Backend 476/476,
+frontend 37/37, tsc/build/lint/secret scan clean. (Aynı günün ilk
+turunda sekiz görevlik ürün güncellemesi teslim edildi — bkz. Handoff
+Notes.)
 
 **Last updated:** 2026-10-21
 
@@ -839,40 +830,35 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-21 (eight-task update: caption styles + free
-positioning, settings redesign, bulk clip actions, fixed rail,
-metadata-less upload feed fix, title dedupe) on the dev machine
+Verified 2026-10-21 (kalıcı çözüm turu: lost-file sweep, Overview
+production uyarısı, Hariç paneli + toplu geri alma) on the dev machine
 (Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
 stated directories; pytest output redirected to a file (known
 dev-env quirk — piped runs hang).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
-  - Passed: **471**, Failed: 0, Skipped: 0 in 89 s (new:
-    test_clip_actions 5 — bulk visibility flips with stamp
-    semantics, skip for unuploaded, bulk delete, validation;
-    test_subtitle_style rewritten for the preset + \pos contract
-    (12); test_discovery +1 mirror-dedupe test with live title
-    pairs and the series guard; test_jobs +1 metadata-less
-    upload-feed guard; conftest YouTube mock gained a mirror
-    playlist UUkaynak2).
+  - Passed: **476**, Failed: 0, Skipped: 0 in 93 s (new:
+    test_lost_file_sweep 5 — dead-asset video removed via the UI
+    removal path while living/public assets stay, intentional empty
+    path not swept, batch limit respected, bulk re-include partial
+    success, overview planned_videos field).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 1 warning (starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 36 passed, 0 failed
-  (SettingsScreen 8 — tabs, five styles, sliders, save payloads;
-  MediaLibraryScreen 3; CalendarScreen 4; CharactersScreen 7;
-  AutomationScreen 3; App 7; LogsScreen 1; GuideScreen… totals per
-  run).
+- Frontend — `cd frontend && npx vitest run`: 37 passed, 0 failed
+  (MediaLibraryScreen 6 — +excluded panel bulk re-include; the two
+  removal tests that had sat OUTSIDE the describe block (cleanup-less
+  runs) moved inside; SettingsScreen 8; CalendarScreen 4;
+  CharactersScreen 7; AutomationScreen 3; App 7; LogsScreen 1).
 - Frontend types — `npx tsc -b`: clean. Production build —
   `npm run build`: succeeded. Lint — `npm run lint` (oxlint):
-  0 errors, 8 warnings (pre-existing React Compiler advisories —
-  setState-in-effect / purity patterns in older screens).
-- Secret scan — `python tools/scan_secrets.py`: clean (synthetic
-  test tokens carry `# secret-scan-ok` markers).
+  0 errors, 8 warnings (pre-existing React Compiler advisories).
+- Secret scan — `python tools/scan_secrets.py`: clean.
 
-Previous full-suite record (2026-10-19, three-task update: calendar +
-source output orientation + flexible clip duration): backend 410/410,
-frontend 30/30 — superseded by the totals above.
+Previous full-suite record (2026-10-21 first pass, eight-task update:
+caption styles + free positioning, settings redesign, bulk clip
+actions, fixed rail, metadata-less upload feed fix, title dedupe):
+backend 471/471, frontend 36/36 — superseded by the totals above.
 
 Previous full-suite record (2026-10-19, product surface session:
 signup/login + selected-only media library + clip detail/player):
@@ -986,6 +972,36 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- "Motor çalışıyor ama işlem yok" kalıcı çözümü (2026-10-21, canlı
+  olayın ikinci turu — kullanıcı tüm videoları sildi/kaldırdı, 177
+  kayıt 'excluded' birikti, üretim sırası boşaldı ve motor idle
+  kaldığında ekranda sebep görünmüyordu). Üç katmanlı kalıcı çözüm:
+  (1) **Kayıp dosya süpürmesi** — `media_cleanup.sweep_lost_source_files`
+  (worker'ın saatlik `cleanup_media_once` turuna bağlı): `file_path`'i
+  dolu ama diskte olmayan asset'leri bulur; yayında olmayan
+  videoları UI'daki "Kaldır" ile aynı `remove_source_video` yoluyla
+  düzgünce temizler (işler iptal, satırlar düşer, video 'excluded'
+  kalır — keşif aynı videoyu geri getirmez, dosyayı silen kullanıcının
+  niyeti), tur başına en fazla 20 video (`LOST_SWEEP_BATCH`), public
+  kayıtlı videolar muaftır, retention/dikey temizliğinin bilinçli
+  boşalttığı `''` yollar süpürme sayılmaz; `media.lost_file_sweep`
+  audit. (2) **Görünürlük** — `GET /api/overview` yeni
+  `production.planned_videos`; Overview'da worker çalışıyor + aktif/
+  kuyruk 0 + planned 0 + stok 0 iken "Motor çalışıyor ama işlenecek
+  video yok" uyarı kartı. (3) **Kendini kurtarma yolu** —
+  `POST /api/sources/videos/status` (bulk, 1–200 id) hariç videoları
+  toplu 'planned'a çeker (processed guard'lı, kısmi başarı raporu);
+  kütüphanede yeni "Hariç tutulanlar" paneli (excluded_only kütüphane
+  parametresi) liste + tekil "İşleme Al" + "Tümünü İşleme Al".
+  Canlı onarım (aynı gün): 177 hariç kayıt elle silindi, keşif+planlama
+  tetiklendi (10 yeni video planned, 5 mirror çifti dedupe'le elendi),
+  media_process'in başladığı doğrulandı. Verified: backend 476/476
+  (test_lost_file_sweep 5: ölü-asset temizliği/yaşayan ve public
+  dokunulmaz/bilinçli boş path/batch sınırı, bulk status kısmi başarı,
+  overview planned alanı), frontend 37/37 (+hariç paneli geri alma
+  akışı; MediaLibrary test dosyasındaki describe-dışı testler —
+  cleanup'sız koşuyorlardı — describe içine alındı), tsc/build/lint/
+  secret scan clean.
 - Eight-task product update (2026-10-21, user request "Şimdi bir kaç
   görevimiz var"): all eight tasks delivered in one pass; verified
   backend **471/471**, frontend **36/36**, `tsc -b` clean,
