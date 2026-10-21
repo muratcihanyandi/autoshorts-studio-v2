@@ -119,8 +119,9 @@ class TestRealRender:
             ],
             start=1.0,
             end=4.0,
-            layout=layout,
-            style=SubtitleStyle(font_size=72, position="bottom"),
+            style=SubtitleStyle(
+                font_size=72, pos_x_percent=50, pos_y_percent=85
+            ),
         )
         assert "selam arkadaslar" in ass_text
         srt = tmp_path / "subs.ass"

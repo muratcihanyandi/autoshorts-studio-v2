@@ -859,7 +859,14 @@ class JobWorker:
         publish_clip / publish_full_cut isleri acar. Yukleme GIZLIDIR;
         herkese acilma yine planlanan saatte publish_due ile yapilir.
         Manuel onay akisi bozulmaz: otomatik onayi kapali kanalda yalniz
-        onaylanmis metaveri yuklenir."""
+        onaylanmis metaveri yuklenir.
+
+        Metaveri VARLIGI her durumda zorunludur: otomatik onay acikken
+        taslak metaveri yuklenmeye elverisli olur ama metaverisi hic
+        uretilmemis klip yuklemeye sokulamaz ("Onaylanmis metaveri yok"
+        canli hatasi, 2026-10-21). Otomatik onay karari kanal bazinda
+        Python'da cozulur: SQLite'ta ->> boolean'i 1, PostgreSQL'de
+        'true' metni dondurur — tek SQL iki ortamda da eslesmezdi."""
         interval = self._effective.planned_poll_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -868,65 +875,84 @@ class JobWorker:
         ):
             return 0
         self._last_upload_enqueue = now
-        added = 0
+        from app.models import PublishingProfile
+
         async with self._sessionmaker() as session:
-            candidate_ids = (
+            profiles = (
+                (
+                    await session.execute(
+                        sa.select(
+                            PublishingProfile.channel_id,
+                            PublishingProfile.settings,
+                        ).where(
+                            PublishingProfile.automation_state.in_(
+                                ("running", "paused")
+                            )
+                        )
+                    )
+                )
+                .all()
+            )
+        working = {channel_id for channel_id, _ in profiles}
+        auto_channels = {
+            channel_id
+            for channel_id, settings in profiles
+            if (settings or {}).get("auto_approve_metadata")
+        }
+        async with self._sessionmaker() as session:
+            vertical_rows = (
                 (
                     await session.execute(
                         text(
-                            "SELECT rc.clip_candidate_id FROM rendered_clips rc"
+                            "SELECT rc.clip_candidate_id, sc.channel_id,"
+                            " EXISTS(SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.clip_candidate_id"
+                            " = rc.clip_candidate_id"
+                            " AND cm.status = 'approved') AS approved"
+                            " FROM rendered_clips rc"
                             " JOIN clip_candidates cc"
                             " ON cc.id = rc.clip_candidate_id"
                             " JOIN source_videos sv"
                             " ON sv.id = cc.source_video_id"
                             " JOIN source_channels sc"
                             " ON sv.source_channel_id = sc.id"
-                            " JOIN publishing_profiles pp"
-                            " ON pp.channel_id = sc.channel_id"
                             " WHERE rc.status = 'rendered'"
                             " AND rc.clip_candidate_id IS NOT NULL"
                             " AND rc.orientation = 'vertical'"
-                            " AND pp.automation_state IN ('running','paused')"
-                            " AND ("
-                            " pp.settings->>'auto_approve_metadata' = 'true'"
-                            " OR EXISTS ("
+                            " AND EXISTS ("
                             " SELECT 1 FROM clip_metadata cm"
                             " WHERE cm.clip_candidate_id"
-                            " = rc.clip_candidate_id"
-                            " AND cm.status = 'approved')"
-                            " )"
+                            " = rc.clip_candidate_id)"
                             " AND NOT EXISTS ("
                             " SELECT 1 FROM published_videos pv"
-                            " WHERE pv.clip_candidate_id = rc.clip_candidate_id)"
+                            " WHERE pv.clip_candidate_id"
+                            " = rc.clip_candidate_id)"
                         )
                     )
                 )
-                .scalars()
                 .all()
             )
-            fullcut_video_ids = (
+            fullcut_rows = (
                 (
                     await session.execute(
                         text(
-                            "SELECT rc.source_video_id FROM rendered_clips rc"
+                            "SELECT rc.source_video_id, sc.channel_id,"
+                            " EXISTS(SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.source_video_id = rc.source_video_id"
+                            " AND cm.clip_candidate_id IS NULL"
+                            " AND cm.status = 'approved') AS approved"
+                            " FROM rendered_clips rc"
                             " JOIN source_videos sv"
                             " ON sv.id = rc.source_video_id"
                             " JOIN source_channels sc"
                             " ON sv.source_channel_id = sc.id"
-                            " JOIN publishing_profiles pp"
-                            " ON pp.channel_id = sc.channel_id"
                             " WHERE rc.status = 'rendered'"
                             " AND rc.clip_candidate_id IS NULL"
                             " AND rc.orientation = 'horizontal'"
-                            " AND pp.automation_state IN ('running','paused')"
-                            " AND ("
-                            " pp.settings->>'auto_approve_metadata' = 'true'"
-                            " OR EXISTS ("
+                            " AND EXISTS ("
                             " SELECT 1 FROM clip_metadata cm"
                             " WHERE cm.source_video_id = rc.source_video_id"
-                            " AND cm.clip_candidate_id IS NULL"
-                            " AND cm.status = 'approved')"
-                            " )"
+                            " AND cm.clip_candidate_id IS NULL)"
                             " AND NOT EXISTS ("
                             " SELECT 1 FROM published_videos pv"
                             " WHERE pv.source_video_id = rc.source_video_id"
@@ -934,16 +960,24 @@ class JobWorker:
                         )
                     )
                 )
-                .scalars()
                 .all()
             )
-        for candidate_id in candidate_ids:
+        added = 0
+        for candidate_id, channel_id, approved in vertical_rows:
+            if channel_id not in working:
+                continue
+            if not approved and channel_id not in auto_channels:
+                continue
             job = await self._jobs.enqueue(
                 "publish_clip", {"clip_candidate_id": candidate_id}, priority=6
             )
             if job.status == "queued" and job.attempts == 0:
                 added += 1
-        for video_id in fullcut_video_ids:
+        for video_id, channel_id, approved in fullcut_rows:
+            if channel_id not in working:
+                continue
+            if not approved and channel_id not in auto_channels:
+                continue
             job = await self._jobs.enqueue(
                 "publish_full_cut", {"source_video_id": video_id}, priority=6
             )

@@ -31,7 +31,9 @@ const settingsPayload = {
   whisper_language: { value: 'tr', source: 'environment' },
   burn_subtitles: { value: true, source: 'environment' },
   subtitle_font_size: { value: 64, source: 'environment' },
-  subtitle_position: { value: 'middle', source: 'environment' },
+  subtitle_style_preset: { value: 'klasik', source: 'environment' },
+  subtitle_pos_x_percent: { value: 50, source: 'environment' },
+  subtitle_pos_y_percent: { value: 78, source: 'environment' },
   media_root: { value: '/data/media', source: 'environment' },
 }
 
@@ -106,6 +108,10 @@ function stubFetch() {
   })
 }
 
+async function openTab(label: string) {
+  fireEvent.click(await screen.findByRole('tab', { name: label }))
+}
+
 describe('SettingsScreen', () => {
   beforeEach(() => {
     cleanup()
@@ -134,8 +140,11 @@ describe('SettingsScreen', () => {
     expect(
       screen.getByRole('button', { name: 'Ayarları Kaydet' }),
     ).toBeInTheDocument()
-    // Sistem paneli kalır.
-    expect(await screen.findByText('Sistem')).toBeInTheDocument()
+    // Kategori sekmeleri dördü de durur.
+    expect(screen.getByRole('tab', { name: 'Bağlantılar' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Üretim' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Altyazı' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Sistem' })).toBeInTheDocument()
   })
 
   it('sends only changed plain fields and filled secrets on save', async () => {
@@ -192,6 +201,8 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SettingsScreen />)
 
+    await openTab('Üretim')
+
     // Görev 3: klip süresi alt/üst sınırı siteden ayarlanabilir.
     expect(
       await screen.findByLabelText(/Klip Süresi Alt Sınır \(sn\)/i),
@@ -215,6 +226,8 @@ describe('SettingsScreen', () => {
     const fetchMock = stubFetch()
     vi.stubGlobal('fetch', fetchMock)
     render(<SettingsScreen />)
+
+    await openTab('Üretim')
 
     // Whisper kurulu değil: düğme görünür.
     const button = await screen.findByRole('button', {
@@ -243,19 +256,43 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', stubFetch())
     render(<SettingsScreen />)
 
+    await openTab('Altyazı')
+
     expect(await screen.findByText('Altyazı (Dikey Klipler)')).toBeInTheDocument()
     // Önizleme temsilî kadranı ve örnek altyazı metnini taşır.
     expect(
       screen.getByRole('img', { name: /altyazı önizlemesi/i }),
     ).toBeInTheDocument()
-    expect(screen.getByText('İşte günün en heyecanlı anı — kaçırmayın!')).toBeInTheDocument()
+    expect(screen.getByText('İşte günün en heyecanlı anı!')).toBeInTheDocument()
 
     // Kapalı yapınca örnek metin kalkar, kapalı notu gelir.
     fireEvent.click(screen.getByLabelText('Dikey kliplere altyazı göm'))
     expect(
-      screen.queryByText('İşte günün en heyecanlı anı — kaçırmayın!'),
+      screen.queryByText('İşte günün en heyecanlı anı!'),
     ).not.toBeInTheDocument()
     expect(screen.getByText('Altyazı kapalı')).toBeInTheDocument()
+  })
+
+  it('offers five subtitle styles including the yellow Shorts look', async () => {
+    vi.stubGlobal('fetch', stubFetch())
+    render(<SettingsScreen />)
+
+    await openTab('Altyazı')
+
+    expect(await screen.findByText('Altyazı (Dikey Klipler)')).toBeInTheDocument()
+    // Görev 1: beş stil seçeneği kartta sunulur.
+    for (const label of [
+      'Klasik Beyaz',
+      'Shorts Sarı',
+      'Anton',
+      'Kutulu',
+      'Noto Sans',
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(
+      screen.getByRole('radio', { name: /Shorts Sarı/i }),
+    ).toBeInTheDocument()
   })
 
   it('saves only the changed subtitle settings', async () => {
@@ -263,16 +300,18 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SettingsScreen />)
 
+    await openTab('Altyazı')
     await screen.findByText('Altyazı (Dikey Klipler)')
-    fireEvent.change(screen.getByLabelText(/Konum/i), {
-      target: { value: 'bottom' },
+
+    // Görev 2: dikey konum slider'ı; Görev 1: stil seçimi.
+    fireEvent.change(screen.getByLabelText(/Dikey Konum/i), {
+      target: { value: '40' },
     })
     fireEvent.change(screen.getByLabelText(/Yazı Boyutu/i), {
       target: { value: '88' },
     })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Altyazı Ayarlarını Kaydet' }),
-    )
+    fireEvent.click(screen.getByRole('radio', { name: /Shorts Sarı/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ayarları Kaydet' }))
 
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
@@ -280,9 +319,20 @@ describe('SettingsScreen', () => {
       )
       expect(put).toBeDefined()
       expect(JSON.parse(String(put![1]!.body))).toEqual({
-        subtitle_position: 'bottom',
+        subtitle_pos_y_percent: 40,
         subtitle_font_size: 88,
+        subtitle_style_preset: 'shorts_sari',
       })
     })
+  })
+
+  it('shows the system info on its own tab', async () => {
+    vi.stubGlobal('fetch', stubFetch())
+    render(<SettingsScreen />)
+
+    await openTab('Sistem')
+
+    expect(await screen.findByRole('heading', { name: 'Sistem' })).toBeInTheDocument()
+    expect(screen.getByText('Bağlı (PostgreSQL)')).toBeInTheDocument()
   })
 })

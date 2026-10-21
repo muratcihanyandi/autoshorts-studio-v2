@@ -10,7 +10,9 @@ import {
 import { usePolling } from '../hooks/usePolling'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 import { ApiError } from '../api/client'
-import { SubtitlePreview } from '../components/SubtitlePreview'
+import {
+  SubtitlePreview,
+} from '../components/SubtitlePreview'
 import { WhisperInstallControl } from '../components/WhisperInstallControl'
 
 const PHASE_LABEL: Record<string, string> = {
@@ -45,91 +47,112 @@ type NumberKey =
   | 'download_rate_limit_kbps'
   | 'planned_poll_interval_minutes'
 
+type TabKey = 'connection' | 'production' | 'subtitle' | 'system'
 
+const TABS: { key: TabKey; label: string; hint: string }[] = [
+  { key: 'connection', label: 'Bağlantılar', hint: 'Google ve YouTube erişimi' },
+  { key: 'production', label: 'Üretim', hint: 'Motor, limitler ve transkripsiyon' },
+  { key: 'subtitle', label: 'Altyazı', hint: 'Klip görünümü ve konumu' },
+  { key: 'system', label: 'Sistem', hint: 'Sürüm ve çalışma ortamı' },
+]
 
 const NUMBER_FIELDS: {
   key: NumberKey
   label: string
   help: string
   min?: number
+  group: 'engine' | 'clip'
 }[] = [
   {
     key: 'cpu_target_percent',
     label: 'CPU Hedefi (%)',
     help: 'Üzerine çıkılırsa worker yeni iş almaz, bekler. 0 = kapalı.',
     min: 0,
+    group: 'engine',
   },
   {
     key: 'ram_target_percent',
     label: 'RAM Hedefi (%)',
     help: 'Üzerine çıkılırsa yeni işler bekler. 0 = kapalı.',
     min: 0,
+    group: 'engine',
   },
   {
     key: 'ffmpeg_threads',
     label: 'FFmpeg İş Parçacığı',
     help: 'Render komutlarına -threads N olarak geçer. 0 = otomatik.',
     min: 0,
+    group: 'engine',
   },
   {
     key: 'max_heavy_jobs',
     label: 'Eşzamanlı Ağır İş',
     help: 'Aynı anda en fazla kaç indirme/render koşar (varsayılan 1).',
     min: 1,
+    group: 'engine',
   },
   {
     key: 'max_concurrent_jobs',
     label: 'Eşzamanlı İş (Toplam)',
     help: "Worker'ın aynı anda aldığı toplam iş sayısı.",
     min: 1,
+    group: 'engine',
   },
   {
     key: 'retry_max_attempts',
     label: 'Yeniden Deneme Sayısı',
     help: 'Bir işin toplam deneme hakkı.',
     min: 1,
+    group: 'engine',
   },
   {
     key: 'retry_backoff_seconds',
     label: 'Yeniden Deneme Beklemesi (sn)',
     help: 'Başarısız iş bu süre sonunda tekrar kuyruğa girer.',
     min: 0,
-  },
-  {
-    key: 'horizontal_stock_target_default',
-    label: 'Yatay Stok Hedefi (Varsayılan)',
-    help: 'Yeni kanal profillerine başlangıç değeri (genellikle 3).',
-    min: 1,
-  },
-  {
-    key: 'shorts_per_video',
-    label: 'Video Başına Shorts',
-    help: 'Bir yatay videodan çıkarılacak en fazla Shorts sayısı.',
-    min: 1,
-  },
-  {
-    key: 'clip_min_seconds',
-    label: 'Klip Süresi Alt Sınır (sn)',
-    help: 'Motorun seçebileceği en kısa klip süresi.',
-    min: 5,
-  },
-  {
-    key: 'clip_max_seconds',
-    label: 'Klip Süresi Üst Sınır (sn)',
-    help: 'En uzun klip süresi (Shorts sınırı 180 sn). Süre esnek: an 1-2 dakika sürüyorsa klip de o kadar uzun seçilir.',
-    min: 20,
-  },
-  {
-    key: 'download_rate_limit_kbps',
-    label: 'İndirme Hız Limiti (KB/s)',
-    help: 'yt-dlp --limit-rate olarak uygulanır. 0 = limitsiz.',
-    min: 0,
+    group: 'engine',
   },
   {
     key: 'planned_poll_interval_minutes',
     label: 'Üretim Döngüsü (dk)',
     help: 'Stok kontrolü ve render beslemesinin çalışma aralığı.',
     min: 1,
+    group: 'engine',
+  },
+  {
+    key: 'horizontal_stock_target_default',
+    label: 'Yatay Stok Hedefi (Varsayılan)',
+    help: 'Yeni kanal profillerine başlangıç değeri (genellikle 3).',
+    min: 1,
+    group: 'clip',
+  },
+  {
+    key: 'shorts_per_video',
+    label: 'Video Başına Shorts',
+    help: 'Bir yatay videodan çıkarılacak en fazla Shorts sayısı.',
+    min: 1,
+    group: 'clip',
+  },
+  {
+    key: 'clip_min_seconds',
+    label: 'Klip Süresi Alt Sınır (sn)',
+    help: 'Motorun seçebileceği en kısa klip süresi.',
+    min: 5,
+    group: 'clip',
+  },
+  {
+    key: 'clip_max_seconds',
+    label: 'Klip Süresi Üst Sınır (sn)',
+    help: 'En uzun klip süresi (Shorts sınırı 180 sn). Süre esnek: an 1-2 dakika sürüyorsa klip de o kadar uzun seçilir.',
+    min: 20,
+    group: 'clip',
+  },
+  {
+    key: 'download_rate_limit_kbps',
+    label: 'İndirme Hız Limiti (KB/s)',
+    help: 'yt-dlp --limit-rate olarak uygulanır. 0 = limitsiz.',
+    min: 0,
+    group: 'clip',
   },
 ]
 
@@ -187,6 +210,19 @@ const SECRET_FIELDS: {
   },
 ]
 
+const DEFAULT_POS_X = 50
+const DEFAULT_POS_Y = 78
+
+/** Görev 1: beş seçilebilir stil — anahtarlar backend
+ * subtitle_style.SUBTITLE_STYLES ile aynı sözleşme. */
+const SUBTITLE_STYLE_OPTIONS = [
+  { key: 'klasik', label: 'Klasik Beyaz' },
+  { key: 'shorts_sari', label: 'Shorts Sarı' },
+  { key: 'anton', label: 'Anton' },
+  { key: 'kutu', label: 'Kutulu' },
+  { key: 'noto', label: 'Noto Sans' },
+]
+
 interface FormState {
   plain: Record<PlainKey, string>
   secrets: Record<SecretKey, string>
@@ -198,7 +234,9 @@ interface FormState {
   whisperLanguage: string
   subtitleBurn: boolean
   subtitleFontSize: string
-  subtitlePosition: string
+  subtitleStyleKey: string
+  subtitlePosX: string
+  subtitlePosY: string
 }
 
 function initForm(view: SettingsView): FormState {
@@ -226,7 +264,9 @@ function initForm(view: SettingsView): FormState {
     whisperLanguage: view.whisper_language.value,
     subtitleBurn: view.burn_subtitles.value,
     subtitleFontSize: String(view.subtitle_font_size.value),
-    subtitlePosition: view.subtitle_position.value || 'middle',
+    subtitleStyleKey: view.subtitle_style_preset.value || 'klasik',
+    subtitlePosX: String(view.subtitle_pos_x_percent.value ?? DEFAULT_POS_X),
+    subtitlePosY: String(view.subtitle_pos_y_percent.value ?? DEFAULT_POS_Y),
   }
 }
 
@@ -236,6 +276,7 @@ export function SettingsScreen() {
 
   const [view, setView] = useState<SettingsView | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
+  const [tab, setTab] = useState<TabKey>('connection')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<
     { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { kind: 'error'; message: string }
@@ -321,8 +362,22 @@ export function SettingsScreen() {
     ) {
       patch.subtitle_font_size = subtitleSize
     }
-    if (form.subtitlePosition !== view.subtitle_position.value) {
-      patch.subtitle_position = form.subtitlePosition
+    if (form.subtitleStyleKey !== view.subtitle_style_preset.value) {
+      patch.subtitle_style_preset = form.subtitleStyleKey
+    }
+    const posX = Number(form.subtitlePosX)
+    if (
+      Number.isFinite(posX) &&
+      posX !== view.subtitle_pos_x_percent.value
+    ) {
+      patch.subtitle_pos_x_percent = posX
+    }
+    const posY = Number(form.subtitlePosY)
+    if (
+      Number.isFinite(posY) &&
+      posY !== view.subtitle_pos_y_percent.value
+    ) {
+      patch.subtitle_pos_y_percent = posY
     }
 
     if (Object.keys(patch).length === 0) {
@@ -355,48 +410,141 @@ export function SettingsScreen() {
     }
   }
 
+  const activeTab = TABS.find((t) => t.key === tab) ?? TABS[0]
+
   return (
     <>
       <div className="screen-head">
-        <h1>Ayarlar</h1>
-        <span className="screen-sub">Stüdyo yapılandırması ve sistem bilgisi</span>
+        <div>
+          <h1>Ayarlar</h1>
+          <span className="screen-sub">{activeTab.hint}</span>
+        </div>
       </div>
 
       {state.status === 'ok' && state.stale && <StaleNote onRetry={retry} />}
 
       <div className="stack">
-        <section className="plate settings-form">
-          <h2 className="panel-title">YouTube &amp; Google Bağlantısı</h2>
-          {loadError && (
-            <div className="action-error" role="alert">
-              Ayarlar okunamadı: {loadError}. Veritabanı hazır olduğunda bu
-              ekran yapılandırma formuna döner.
-            </div>
-          )}
-          {!view && !loadError && (
-            <p className="plate-note">Ayarlar okunuyor…</p>
-          )}
-          {view && form && (
-            <>
-              <p className="plate-note">
-                Bu ekrandan kaydedilen değerler veritabanında saklanır ve
-                ortam değişkenlerinin önüne geçer. Gizli değerler bir kez
-                kaydedildikten sonra geri okunmaz — yalnızca son dört
-                karakteri gösterilir.
-              </p>
-              <div className="settings-grid">
-                {PLAIN_FIELDS.map(({ key, label, help, multiline }) => (
-                  <div
-                    className={multiline ? 'field field--wide' : 'field'}
-                    key={key}
-                  >
-                    <label htmlFor={`set-${key}`}>
-                      {label}
+        <div className="settings-tabs" role="tablist" aria-label="Ayar kategorileri">
+          {TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              className={`settings-tab${tab === key ? ' settings-tab--active' : ''}`}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'connection' && (
+          <section className="plate settings-form" aria-label="Bağlantı ayarları">
+            <h2 className="panel-title">YouTube &amp; Google Bağlantısı</h2>
+            {loadError && (
+              <div className="action-error" role="alert">
+                Ayarlar okunamadı: {loadError}. Veritabanı hazır olduğunda bu
+                ekran yapılandırma formuna döner.
+              </div>
+            )}
+            {!view && !loadError && (
+              <p className="plate-note">Ayarlar okunuyor…</p>
+            )}
+            {view && form && (
+              <>
+                <p className="plate-note">
+                  Bu ekrandan kaydedilen değerler veritabanında saklanır ve
+                  ortam değişkenlerinin önüne geçer. Gizli değerler bir kez
+                  kaydedildikten sonra geri okunmaz — yalnızca son dört
+                  karakteri gösterilir.
+                </p>
+                <div className="settings-grid">
+                  {PLAIN_FIELDS.filter((f) => f.key !== 'metadata_system_prompt').map(({ key, label, help }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
+                      <input
+                        id={`set-${key}`}
+                        value={form.plain[key]}
+                        onChange={(e) => setPlain(key, e.target.value)}
+                        autoComplete="off"
+                      />
+                      {help && <span className="field-help">{help}</span>}
+                    </div>
+                  ))}
+                  <div className="field">
+                    <label htmlFor="set-quota">
+                      Günlük Kota Birimi
                       <span className="source-badge">
-                        {SOURCE_LABEL[view[key].source]}
+                        {SOURCE_LABEL[view.daily_quota_units.source]}
                       </span>
                     </label>
-                    {multiline ? (
+                    <input
+                      id="set-quota"
+                      className="nums"
+                      type="number"
+                      min={1}
+                      value={form.quota}
+                      onChange={(e) => setQuota(e.target.value)}
+                    />
+                    <span className="field-help">
+                      YouTube Data API için günlük birim bütçesi (varsayılan
+                      10000).
+                    </span>
+                  </div>
+                  {SECRET_FIELDS.map(({ key, label, help, warning }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {view[key].configured
+                            ? `ayarlı · ••••${view[key].hint}`
+                            : SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
+                      <div className="secret-row">
+                        <input
+                          id={`set-${key}`}
+                          type="password"
+                          placeholder={
+                            view[key].configured
+                              ? 'Değiştirmek için yeni değeri yazın'
+                              : 'Henüz ayarlanmadı'
+                          }
+                          value={form.secrets[key]}
+                          onChange={(e) => setSecret(key, e.target.value)}
+                          autoComplete="new-password"
+                        />
+                        {view[key].source === 'database' && (
+                          <button
+                            type="button"
+                            className="btn--ghost"
+                            onClick={() => void clearSecret(key)}
+                          >
+                            Sıfırla
+                          </button>
+                        )}
+                      </div>
+                      {help && <span className="field-help">{help}</span>}
+                      {warning && <span className="field-warn">{warning}</span>}
+                    </div>
+                  ))}
+                  {PLAIN_FIELDS.filter((f) => f.key === 'metadata_system_prompt').map(({ key, label, help, multiline }) => (
+                    <div
+                      className={multiline ? 'field field--wide' : 'field'}
+                      key={key}
+                    >
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
                       <textarea
                         id={`set-${key}`}
                         rows={4}
@@ -404,434 +552,491 @@ export function SettingsScreen() {
                         onChange={(e) => setPlain(key, e.target.value)}
                         autoComplete="off"
                       />
-                    ) : (
-                      <input
-                        id={`set-${key}`}
-                        value={form.plain[key]}
-                        onChange={(e) => setPlain(key, e.target.value)}
-                        autoComplete="off"
-                      />
-                    )}
-                    {help && <span className="field-help">{help}</span>}
-                  </div>
-                ))}
-                <div className="field">
-                  <label htmlFor="set-quota">
-                    Günlük Kota Birimi
-                    <span className="source-badge">
-                      {SOURCE_LABEL[view.daily_quota_units.source]}
-                    </span>
-                  </label>
-                  <input
-                    id="set-quota"
-                    className="nums"
-                    type="number"
-                    min={1}
-                    value={form.quota}
-                    onChange={(e) => setQuota(e.target.value)}
-                  />
-                  <span className="field-help">
-                    YouTube Data API için günlük birim bütçesi (varsayılan
-                    10000).
-                  </span>
-                </div>
-                {SECRET_FIELDS.map(({ key, label, help, warning }) => (
-                  <div className="field" key={key}>
-                    <label htmlFor={`set-${key}`}>
-                      {label}
-                      <span className="source-badge">
-                        {view[key].configured
-                          ? `ayarlı · ••••${view[key].hint}`
-                          : SOURCE_LABEL[view[key].source]}
-                      </span>
-                    </label>
-                    <div className="secret-row">
-                      <input
-                        id={`set-${key}`}
-                        type="password"
-                        placeholder={
-                          view[key].configured
-                            ? 'Değiştirmek için yeni değeri yazın'
-                            : 'Henüz ayarlanmadı'
-                        }
-                        value={form.secrets[key]}
-                        onChange={(e) => setSecret(key, e.target.value)}
-                        autoComplete="new-password"
-                      />
-                      {view[key].source === 'database' && (
-                        <button
-                          type="button"
-                          className="btn--ghost"
-                          onClick={() => void clearSecret(key)}
-                        >
-                          Sıfırla
-                        </button>
-                      )}
+                      {help && <span className="field-help">{help}</span>}
                     </div>
-                    {help && <span className="field-help">{help}</span>}
-                    {warning && <span className="field-warn">{warning}</span>}
-                  </div>
-                ))}
-              </div>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={saveState.kind === 'saving'}
-                  onClick={() => void save()}
-                >
-                  {saveState.kind === 'saving' ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
-                </button>
-                {saveState.kind === 'saved' && (
-                  <span className="save-ok" role="status">
-                    Kaydedildi.
-                  </span>
-                )}
-                {saveState.kind === 'error' && (
-                  <span className="save-error" role="alert">
-                    {saveState.message}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </section>
+                  ))}
+                </div>
+                <SaveBar saveState={saveState} onSave={() => void save()} />
+              </>
+            )}
+          </section>
+        )}
 
-        <section className="plate settings-form">
-          <h2 className="panel-title">Kaynak Limitleri ve Üretim</h2>
-          {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
-          {view && form && (
-            <>
-              <p className="plate-note">
-                Bu değerler otomasyon motorunu doğrudan yönetir: worker her
-                döngüde yeniden okur, yeniden başlatma gerekmez. Pi'nin
-                8 GB RAM sınırı için varsayılanlar muhafazakârdır.
-              </p>
-              <div className="settings-grid">
-                {NUMBER_FIELDS.map(({ key, label, help, min }) => (
-                  <div className="field" key={key}>
-                    <label htmlFor={`set-${key}`}>
-                      {label}
-                      <span className="source-badge">
-                        {SOURCE_LABEL[view[key].source]}
-                      </span>
-                    </label>
-                    <input
-                      id={`set-${key}`}
-                      className="nums"
-                      type="number"
-                      min={min ?? 0}
-                      value={form.numbers[key]}
-                      onChange={(e) => setNumber(key, e.target.value)}
-                    />
-                    <span className="field-help">{help}</span>
-                  </div>
-                ))}
-                <div className="field">
-                  <label htmlFor="set-retention">
-                    Yayınlanan videoların temizliği
-                    <span className="source-badge">
-                      {SOURCE_LABEL[view.media_retention_days.source]}
-                    </span>
-                  </label>
-                  <select
-                    id="set-retention"
-                    value={form.retention}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, retention: e.target.value } : f))
-                    }
-                  >
-                    <option value="0">Yayınladıktan hemen sonra</option>
-                    <option value="1">1 gün sonra</option>
-                    <option value="3">3 gün sonra</option>
-                    <option value="7">7 gün sonra</option>
-                    <option value="14">14 gün sonra</option>
-                    <option value="30">30 gün sonra</option>
-                    <option value="-1">Hiçbir zaman</option>
-                  </select>
-                  <span className="field-help">
-                    Video YouTube'da herkese açık yapıldıktan sonra yerel
-                    dosyası diskten silinir; kayıt ve denetim izi kalır.
-                    Varsayılan: yayınladıktan hemen sonra.
-                  </span>
-                </div>
-                <div className="field">
-                  <label htmlFor="set-method">
-                    Transkripsiyon Yöntemi
-                    <span className="source-badge">
-                      {SOURCE_LABEL[view.transcription_method.source]}
-                    </span>
-                  </label>
-                  <select
-                    id="set-method"
-                    value={form.method}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, method: e.target.value } : f))
-                    }
-                  >
-                    <option value="sidecar">
-                      Yalnızca mevcut altyazı (hafif)
-                    </option>
-                    <option value="whisper">
-                      Eksik altyazıda Whisper (yerel, ağır)
-                    </option>
-                  </select>
-                  <span className="field-help">
-                    Whisper eksik altyazıda konuşma tanımayı devreye sokar;
-                    kurulumu aşağıdaki düğmeyle yapabilirsiniz. Varsayılan
-                    hafif mod yalnızca mevcut altyazıyı kullanır.
-                  </span>
-                  <WhisperInstallControl />
-                </div>
-                {form.method === 'whisper' && (
-                  <>
-                    <div className="field">
-                      <label htmlFor="set-whisper-model">
-                        Whisper Modeli
-                        <span className="source-badge">
-                          {SOURCE_LABEL[view.whisper_model.source]}
-                        </span>
-                      </label>
-                      <select
-                        id="set-whisper-model"
-                        value={form.whisperModel}
-                        onChange={(e) =>
-                          setForm((f) =>
-                            f ? { ...f, whisperModel: e.target.value } : f,
-                          )
-                        }
-                      >
-                        <option value="tiny">tiny (en hızlı)</option>
-                        <option value="base">base</option>
-                        <option value="small">small</option>
-                      </select>
-                      <span className="field-help">
-                        Pi 5 için tiny önerilir; büyük modeller RAM'i zorlar.
-                      </span>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="set-whisper-lang">
-                        Whisper Dili
-                        <span className="source-badge">
-                          {SOURCE_LABEL[view.whisper_language.source]}
-                        </span>
-                      </label>
-                      <input
-                        id="set-whisper-lang"
-                        value={form.whisperLanguage}
-                        onChange={(e) =>
-                          setForm((f) =>
-                            f ? { ...f, whisperLanguage: e.target.value } : f,
-                          )
-                        }
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="field field--wide">
-                  <label>Medya Dizinini (Konteyner İçi)</label>
-                  <input value={view.media_root.value} readOnly disabled />
-                  <span className="field-help">
-                    Compose ortam değişkeniyle belirlenir; kalıcı disk
-                    birimine bağlıdır. Değiştirmek için dağıtım dosyasını
-                    güncelleyin.
-                  </span>
-                </div>
-              </div>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={saveState.kind === 'saving'}
-                  onClick={() => void save()}
-                >
-                  {saveState.kind === 'saving' ? 'Kaydediliyor…' : 'Limitleri Kaydet'}
-                </button>
-                {saveState.kind === 'saved' && (
-                  <span className="save-ok" role="status">
-                    Kaydedildi.
-                  </span>
-                )}
-                {saveState.kind === 'error' && (
-                  <span className="save-error" role="alert">
-                    {saveState.message}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className="plate settings-form">
-          <h2 className="panel-title">Altyazı (Dikey Klipler)</h2>
-          {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
-          {view && form && (
-            <>
-              <p className="plate-note">
-                Reels klipleri çıkarılırken transkriptten altyazı gömülür.
-                Ayarları değiştirdikçe yanındaki önizleme güncellenir;
-                kaydedince bir sonraki render'dan itibaren uygulanır.
-              </p>
-              <div className="subtitle-settings">
+        {tab === 'production' && (
+          <section className="plate settings-form" aria-label="Üretim ayarları">
+            <h2 className="panel-title">Üretim ve Limitler</h2>
+            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {view && form && (
+              <>
+                <p className="plate-note">
+                  Bu değerler otomasyon motorunu doğrudan yönetir: worker her
+                  döngüde yeniden okur, yeniden başlatma gerekmez. Pi'nin
+                  8 GB RAM sınırı için varsayılanlar muhafazakârdır.
+                </p>
+                <h3 className="settings-group-title">Motor ve İş Limitleri</h3>
                 <div className="settings-grid">
-                  <div className="field">
-                    <label htmlFor="set-subtitle-burn">
-                      Altyazı Gömme
-                      <span className="source-badge">
-                        {SOURCE_LABEL[view.burn_subtitles.source]}
-                      </span>
-                    </label>
-                    <label className="check-row">
+                  {NUMBER_FIELDS.filter((f) => f.group === 'engine').map(({ key, label, help, min }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
                       <input
-                        id="set-subtitle-burn"
-                        type="checkbox"
-                        checked={form.subtitleBurn}
-                        onChange={(e) =>
-                          setForm((f) =>
-                            f ? { ...f, subtitleBurn: e.target.checked } : f,
-                          )
-                        }
+                        id={`set-${key}`}
+                        className="nums"
+                        type="number"
+                        min={min ?? 0}
+                        value={form.numbers[key]}
+                        onChange={(e) => setNumber(key, e.target.value)}
                       />
-                      <span>Dikey kliplere altyazı göm</span>
-                    </label>
-                    <span className="field-help">
-                      Transkripti olmayan videolar (mevcut altyazı da
-                      Whisper da yoksa) altyazısız çıkar; akış durmaz.
-                    </span>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="set-subtitle-size">
-                      Yazı Boyutu
-                      <span className="source-badge">
-                        {SOURCE_LABEL[view.subtitle_font_size.source]}
-                      </span>
-                    </label>
-                    <div className="range-row">
-                      <input
-                        id="set-subtitle-size"
-                        type="range"
-                        min={24}
-                        max={140}
-                        step={2}
-                        value={form.subtitleFontSize}
-                        onChange={(e) =>
-                          setForm((f) =>
-                            f ? { ...f, subtitleFontSize: e.target.value } : f,
-                          )
-                        }
-                      />
-                      <span className="nums">{form.subtitleFontSize}</span>
+                      <span className="field-help">{help}</span>
                     </div>
-                    <span className="field-help">
-                      1080x1920 çıktıda piksel cinsinden yazı yüksekliği
-                      (varsayılan 64).
-                    </span>
-                  </div>
+                  ))}
+                </div>
+                <h3 className="settings-group-title">Klip Üretimi</h3>
+                <div className="settings-grid">
+                  {NUMBER_FIELDS.filter((f) => f.group === 'clip').map(({ key, label, help, min }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
+                      <input
+                        id={`set-${key}`}
+                        className="nums"
+                        type="number"
+                        min={min ?? 0}
+                        value={form.numbers[key]}
+                        onChange={(e) => setNumber(key, e.target.value)}
+                      />
+                      <span className="field-help">{help}</span>
+                    </div>
+                  ))}
                   <div className="field">
-                    <label htmlFor="set-subtitle-pos">
-                      Konum
+                    <label htmlFor="set-retention">
+                      Yayınlanan videoların temizliği
                       <span className="source-badge">
-                        {SOURCE_LABEL[view.subtitle_position.source]}
+                        {SOURCE_LABEL[view.media_retention_days.source]}
                       </span>
                     </label>
                     <select
-                      id="set-subtitle-pos"
-                      value={form.subtitlePosition}
+                      id="set-retention"
+                      value={form.retention}
                       onChange={(e) =>
-                        setForm((f) =>
-                          f ? { ...f, subtitlePosition: e.target.value } : f,
-                        )
+                        setForm((f) => (f ? { ...f, retention: e.target.value } : f))
                       }
                     >
-                      <option value="top">Üst (bant içinde)</option>
-                      <option value="middle">Orta</option>
-                      <option value="bottom">Alt</option>
+                      <option value="0">Yayınladıktan hemen sonra</option>
+                      <option value="1">1 gün sonra</option>
+                      <option value="3">3 gün sonra</option>
+                      <option value="7">7 gün sonra</option>
+                      <option value="14">14 gün sonra</option>
+                      <option value="30">30 gün sonra</option>
+                      <option value="-1">Hiçbir zaman</option>
                     </select>
                     <span className="field-help">
-                      Altyazı daima video bölümünün alt bandında kalır;
-                      kamera bölümünün üstüne çıkmaz.
+                      Video YouTube'da herkese açık yapıldıktan sonra yerel
+                      dosyası diskten silinir; kayıt ve denetim izi kalır.
+                      Varsayılan: yayınladıktan hemen sonra.
                     </span>
                   </div>
                 </div>
-                <SubtitlePreview
-                  burn={form.subtitleBurn}
-                  fontSizePx={Number(form.subtitleFontSize) || 64}
-                  position={form.subtitlePosition}
-                />
-              </div>
-              <div className="settings-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={saveState.kind === 'saving'}
-                  onClick={() => void save()}
-                >
-                  {saveState.kind === 'saving'
-                    ? 'Kaydediliyor…'
-                    : 'Altyazı Ayarlarını Kaydet'}
-                </button>
-                {saveState.kind === 'saved' && (
-                  <span className="save-ok" role="status">
-                    Kaydedildi.
-                  </span>
-                )}
-                {saveState.kind === 'error' && (
-                  <span className="save-error" role="alert">
-                    {saveState.message}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-        </section>
-
-        {state.status === 'loading' && <LoadingState label="Bilgiler okunuyor…" />}
-        {state.status === 'error' && (
-          <ErrorState
-            title="Bilgiler alınamadı"
-            message={`Arka uca ulaşılamadı: ${state.message}.`}
-            onRetry={retry}
-          />
-        )}
-        {state.status === 'ok' && (
-          <section className="ink-panel" style={{ maxWidth: 720 }}>
-            <h2>Sistem</h2>
-            <table className="info-table">
-              <tbody>
-                <tr>
-                  <th>Sürüm</th>
-                  <td className="nums">v{state.data.version}</td>
-                </tr>
-                <tr>
-                  <th>Ortam</th>
-                  <td>{state.data.app_env}</td>
-                </tr>
-                <tr>
-                  <th>Durum</th>
-                  <td>{PHASE_LABEL[state.data.phase] ?? state.data.phase}</td>
-                </tr>
-                <tr>
-                  <th>Veritabanı</th>
-                  <td>
-                    {state.data.database === 'reachable'
-                      ? 'Bağlı (PostgreSQL)'
-                      : state.data.database === 'unreachable'
-                        ? 'Erişilemiyor'
-                        : 'Yapılandırılmadı'}
-                  </td>
-                </tr>
-                <tr>
-                  <th>Güncelleme</th>
-                  <td>
-                    main dalına push edildiğinde GHCR imajları otomatik
-                    derlenir; CasaOS’ta uygulamayı yeniden başlatmak yeterli.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                <h3 className="settings-group-title">Transkripsiyon</h3>
+                <div className="settings-grid">
+                  <div className="field">
+                    <label htmlFor="set-method">
+                      Transkripsiyon Yöntemi
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.transcription_method.source]}
+                      </span>
+                    </label>
+                    <select
+                      id="set-method"
+                      value={form.method}
+                      onChange={(e) =>
+                        setForm((f) => (f ? { ...f, method: e.target.value } : f))
+                      }
+                    >
+                      <option value="sidecar">
+                        Yalnızca mevcut altyazı (hafif)
+                      </option>
+                      <option value="whisper">
+                        Eksik altyazıda Whisper (yerel, ağır)
+                      </option>
+                    </select>
+                    <span className="field-help">
+                      Whisper eksik altyazıda konuşma tanımayı devreye sokar;
+                      kurulumu aşağıdaki düğmeyle yapabilirsiniz. Varsayılan
+                      hafif mod yalnızca mevcut altyazıyı kullanır.
+                    </span>
+                    <WhisperInstallControl />
+                  </div>
+                  {form.method === 'whisper' && (
+                    <>
+                      <div className="field">
+                        <label htmlFor="set-whisper-model">
+                          Whisper Modeli
+                          <span className="source-badge">
+                            {SOURCE_LABEL[view.whisper_model.source]}
+                          </span>
+                        </label>
+                        <select
+                          id="set-whisper-model"
+                          value={form.whisperModel}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, whisperModel: e.target.value } : f,
+                            )
+                          }
+                        >
+                          <option value="tiny">tiny (en hızlı)</option>
+                          <option value="base">base</option>
+                          <option value="small">small</option>
+                        </select>
+                        <span className="field-help">
+                          Pi 5 için tiny önerilir; büyük modeller RAM'i zorlar.
+                        </span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="set-whisper-lang">
+                          Whisper Dili
+                          <span className="source-badge">
+                            {SOURCE_LABEL[view.whisper_language.source]}
+                          </span>
+                        </label>
+                        <input
+                          id={`set-whisper-lang`}
+                          value={form.whisperLanguage}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, whisperLanguage: e.target.value } : f,
+                            )
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div className="field field--wide">
+                    <label>Medya Dizinini (Konteyner İçi)</label>
+                    <input value={view.media_root.value} readOnly disabled />
+                    <span className="field-help">
+                      Compose ortam değişkeniyle belirlenir; kalıcı disk
+                      birimine bağlıdır. Değiştirmek için dağıtım dosyasını
+                      güncelleyin.
+                    </span>
+                  </div>
+                </div>
+                <SaveBar saveState={saveState} onSave={() => void save()} />
+              </>
+            )}
           </section>
+        )}
+
+        {tab === 'subtitle' && (
+          <section className="plate settings-form" aria-label="Altyazı ayarları">
+            <h2 className="panel-title">Altyazı (Dikey Klipler)</h2>
+            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {view && form && (
+              <>
+                <p className="plate-note">
+                  Reels klipleri çıkarılırken transkriptten altyazı gömülür.
+                  Kaydettiğinde bir sonraki render'dan itibaren uygulanır.
+                </p>
+                <div className="subtitle-settings">
+                  <div className="settings-grid">
+                    <div className="field">
+                      <label htmlFor="set-subtitle-burn">
+                        Altyazı Gömme
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view.burn_subtitles.source]}
+                        </span>
+                      </label>
+                      <label className="check-row">
+                        <input
+                          id="set-subtitle-burn"
+                          type="checkbox"
+                          checked={form.subtitleBurn}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, subtitleBurn: e.target.checked } : f,
+                            )
+                          }
+                        />
+                        <span>Dikey kliplere altyazı göm</span>
+                      </label>
+                      <span className="field-help">
+                        Transkripti olmayan videolar (mevcut altyazı da
+                        Whisper da yoksa) altyazısız çıkar; akış durmaz.
+                      </span>
+                    </div>
+                    <div className="field field--wide">
+                      <span className="field-label">Yazı Stili</span>
+                      <div className="style-options" role="radiogroup" aria-label="Altyazı yazı stili">
+                        {SUBTITLE_STYLE_OPTIONS.map(({ key, label }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            role="radio"
+                            aria-checked={form.subtitleStyleKey === key}
+                            className={`style-option${form.subtitleStyleKey === key ? ' style-option--active' : ''}`}
+                            onClick={() =>
+                              setForm((f) =>
+                                f ? { ...f, subtitleStyleKey: key } : f,
+                              )
+                            }
+                          >
+                            <StyleSample styleKey={key} />
+                            <span className="style-option-label">{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <span className="field-help">
+                        Stil, altyazının klipte nasıl görüneceğini belirler;
+                        yanındaki önizleme seçimi anında yansıtır.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="set-subtitle-size">
+                        Yazı Boyutu
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view.subtitle_font_size.source]}
+                        </span>
+                      </label>
+                      <div className="range-row">
+                        <input
+                          id="set-subtitle-size"
+                          type="range"
+                          min={24}
+                          max={140}
+                          step={2}
+                          value={form.subtitleFontSize}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, subtitleFontSize: e.target.value } : f,
+                            )
+                          }
+                        />
+                        <span className="nums">{form.subtitleFontSize}</span>
+                      </div>
+                      <span className="field-help">
+                        1080x1920 çıktıda piksel cinsinden yazı yüksekliği
+                        (varsayılan 64).
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="set-subtitle-x">
+                        Yatay Konum
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view.subtitle_pos_x_percent.source]}
+                        </span>
+                      </label>
+                      <div className="range-row">
+                        <input
+                          id="set-subtitle-x"
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={form.subtitlePosX}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, subtitlePosX: e.target.value } : f,
+                            )
+                          }
+                        />
+                        <span className="nums">%{form.subtitlePosX}</span>
+                      </div>
+                      <span className="field-help">
+                        50 = tam ortada; altyazı çapası bu orana taşınır.
+                      </span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="set-subtitle-y">
+                        Dikey Konum
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view.subtitle_pos_y_percent.source]}
+                        </span>
+                      </label>
+                      <div className="range-row">
+                        <input
+                          id="set-subtitle-y"
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={form.subtitlePosY}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, subtitlePosY: e.target.value } : f,
+                            )
+                          }
+                        />
+                        <span className="nums">%{form.subtitlePosY}</span>
+                      </div>
+                      <span className="field-help">
+                        Varsayılan %78, Shorts'un altyazı standardı (alt-orta,
+                        kamera bölümünün altında).<br />
+                        <button
+                          type="button"
+                          className="btn--ghost"
+                          onClick={() =>
+                            setForm((f) =>
+                              f
+                                ? {
+                                    ...f,
+                                    subtitlePosX: String(DEFAULT_POS_X),
+                                    subtitlePosY: String(DEFAULT_POS_Y),
+                                  }
+                                : f,
+                            )
+                          }
+                        >
+                          Shorts varsayılanına dön
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                  <SubtitlePreview
+                    burn={form.subtitleBurn}
+                    fontSizePx={Number(form.subtitleFontSize) || 64}
+                    styleKey={form.subtitleStyleKey}
+                    posX={Number(form.subtitlePosX) || DEFAULT_POS_X}
+                    posY={Number(form.subtitlePosY) || DEFAULT_POS_Y}
+                  />
+                </div>
+                <SaveBar saveState={saveState} onSave={() => void save()} />
+              </>
+            )}
+          </section>
+        )}
+
+        {tab === 'system' && (
+          <>
+            {state.status === 'loading' && <LoadingState label="Bilgiler okunuyor…" />}
+            {state.status === 'error' && (
+              <ErrorState
+                title="Bilgiler alınamadı"
+                message={`Arka uca ulaşılamadı: ${state.message}.`}
+                onRetry={retry}
+              />
+            )}
+            {state.status === 'ok' && (
+              <section className="ink-panel" style={{ maxWidth: 720 }}>
+                <h2>Sistem</h2>
+                <table className="info-table">
+                  <tbody>
+                    <tr>
+                      <th>Sürüm</th>
+                      <td className="nums">v{state.data.version}</td>
+                    </tr>
+                    <tr>
+                      <th>Ortam</th>
+                      <td>{state.data.app_env}</td>
+                    </tr>
+                    <tr>
+                      <th>Durum</th>
+                      <td>{PHASE_LABEL[state.data.phase] ?? state.data.phase}</td>
+                    </tr>
+                    <tr>
+                      <th>Veritabanı</th>
+                      <td>
+                        {state.data.database === 'reachable'
+                          ? 'Bağlı (PostgreSQL)'
+                          : state.data.database === 'unreachable'
+                            ? 'Erişilemiyor'
+                            : 'Yapılandırılmadı'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Güncelleme</th>
+                      <td>
+                        main dalına push edildiğinde GHCR imajları otomatik
+                        derlenir; CasaOS’ta uygulamayı yeniden başlatmak yeterli.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            )}
+          </>
         )}
       </div>
     </>
+  )
+}
+
+function SaveBar({
+  saveState,
+  onSave,
+}: {
+  saveState: { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { kind: 'error'; message: string }
+  onSave: () => void
+}) {
+  return (
+    <div className="settings-actions">
+      <button
+        type="button"
+        className="btn"
+        disabled={saveState.kind === 'saving'}
+        onClick={onSave}
+      >
+        {saveState.kind === 'saving' ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
+      </button>
+      {saveState.kind === 'saved' && (
+        <span className="save-ok" role="status">
+          Kaydedildi.
+        </span>
+      )}
+      {saveState.kind === 'error' && (
+        <span className="save-error" role="alert">
+          {saveState.message}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Stil kartındaki mini örnek — SubtitlePreview ile aynı CSS karşılıkları. */
+function StyleSample({ styleKey }: { styleKey: string }) {
+  const configs: Record<string, React.CSSProperties> = {
+    klasik: {
+      color: '#fff',
+      fontFamily: "'Google Sans', 'Noto Sans', sans-serif",
+      textShadow: '0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000',
+    },
+    shorts_sari: {
+      color: '#ffee00',
+      fontFamily: "'Google Sans', 'Noto Sans', sans-serif",
+      fontWeight: 700,
+      textShadow: '0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000',
+    },
+    anton: {
+      color: '#fff',
+      fontFamily: "'Anton', sans-serif",
+      textShadow: '0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000',
+      letterSpacing: '0.02em',
+    },
+    kutu: {
+      color: '#fff',
+      fontFamily: "'Google Sans', 'Noto Sans', sans-serif",
+      fontWeight: 700,
+      background: 'rgba(0, 0, 0, 0.6)',
+      padding: '1px 7px',
+      borderRadius: 4,
+    },
+    noto: {
+      color: '#fff',
+      fontFamily: "'Noto Sans', sans-serif",
+      textShadow: '0 1px 0 #000',
+    },
+  }
+  return (
+    <span className="style-sample" aria-hidden="true" style={configs[styleKey]}>
+      Aa
+    </span>
   )
 }

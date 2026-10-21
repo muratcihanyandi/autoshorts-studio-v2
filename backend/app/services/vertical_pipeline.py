@@ -234,7 +234,6 @@ class VerticalPipelineService:
                 segments,
                 candidate.start_seconds,
                 candidate.end_seconds,
-                layout,
             )
             await render_vertical(
                 self._settings.ffmpeg_bin,
@@ -544,7 +543,6 @@ class VerticalPipelineService:
         segments: list[dict],
         start: float,
         end: float,
-        layout: VerticalLayout,
     ) -> Path | None:
         """Klip-goreli ASS dosyasini tmp agacina yaz; None = gomme yok.
 
@@ -558,7 +556,6 @@ class VerticalPipelineService:
             segments,
             start=start,
             end=end,
-            layout=layout,
             style=SubtitleStyle.from_settings(self._settings),
         )
         if not ass_text:

@@ -81,10 +81,13 @@ EDITABLE_FIELDS = (
     "whisper_model",
     "whisper_language",
     # Dikey klip altyazi gomme (ASS stili; onizleme ayni degerleri
-    # kullandigi icin render aninda etkili olur).
+    # kullandigi icin render aninda etkili olur). Gorev 1+2: 5 stil
+    # secenegi ve kadran uzerinde serbest konum kaydiricilari.
     "burn_subtitles",
     "subtitle_font_size",
-    "subtitle_position",
+    "subtitle_style_preset",
+    "subtitle_pos_x_percent",
+    "subtitle_pos_y_percent",
 )
 
 URL_FIELDS = ("oauth_redirect_base", "frontend_base_url")
@@ -107,6 +110,8 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "planned_poll_interval_minutes": (1, 1440),
     "media_retention_days": (-1, 3650),
     "subtitle_font_size": (24, 140),
+    "subtitle_pos_x_percent": (0, 100),
+    "subtitle_pos_y_percent": (0, 100),
 }
 
 FLOAT_FIELDS: dict[str, tuple[float, float]] = {
@@ -115,7 +120,13 @@ FLOAT_FIELDS: dict[str, tuple[float, float]] = {
 
 CHOICE_FIELDS: dict[str, tuple[str, ...]] = {
     "transcription_method": ("sidecar", "whisper"),
-    "subtitle_position": ("top", "middle", "bottom"),
+    "subtitle_style_preset": (
+        "klasik",
+        "shorts_sari",
+        "anton",
+        "kutu",
+        "noto",
+    ),
 }
 
 BOOL_FIELDS = ("burn_subtitles",)
@@ -277,7 +288,9 @@ class SettingsService:
                 source=self._source_of("burn_subtitles", overrides),
             ),
             subtitle_font_size=number("subtitle_font_size"),
-            subtitle_position=plain("subtitle_position"),
+            subtitle_style_preset=plain("subtitle_style_preset"),
+            subtitle_pos_x_percent=number("subtitle_pos_x_percent"),
+            subtitle_pos_y_percent=number("subtitle_pos_y_percent"),
             media_root=PlainSettingOut(
                 value=str(effective.media_root or ""),
                 source=SettingSource.environment,

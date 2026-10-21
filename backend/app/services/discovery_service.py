@@ -4,6 +4,12 @@ Duplicate prevention is structural: source_videos carries a unique
 (source_channel_id, youtube_video_id) constraint and discovery inserts
 only ids it has not seen, so repeated polling never duplicates records
 or downstream jobs.
+
+Gorev 8 (2026-10-21): the SAME CONTENT re-uploaded by a different
+mirrored source channel (different YouTube video id, slightly
+different title format) is additionally caught by global title
+dedupe (source_dedupe) — the new row lands as 'excluded' so it is
+never downloaded or clipped twice.
 """
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.models import SourceChannel, SourceVideo
 from app.services.channel_service import record_event
+from app.services.source_dedupe import find_duplicate_title, normalize_title
 from app.services.source_rules import evaluate_source_rules
 from app.services.youtube_client import (
     QuotaTracker,
@@ -89,12 +96,31 @@ class DiscoveryService:
         self._client.require_configured()
         new_videos = 0
         new_excluded = 0
+        duplicate_excluded = 0
         sources_checked = 0
         quota_blocked = False
         skipped_platforms: list[str] = []
 
         async with self._sessionmaker() as session:
             sources = await self._authorized_sources(session, channel_id)
+
+            # Gorev 8: ayni icerik farkli mirror kanaldan geldiginde
+            # (farkli video kimligi, benzer baslik) tekrar islenmesin.
+            # Karsilastirma tablosu: sistemin AKTIF (hariç olmayan)
+            # videolarinin normalize edilmis basliklari; bu tur icinde
+            # kesfedilen yeni aktif videolar da eklenir ki ayni turda
+            # iki kaynaktan gelen cift yakalansin.
+            active_title_rows = (
+                await session.execute(
+                    select(SourceVideo.id, SourceVideo.title).where(
+                        SourceVideo.status != "excluded"
+                    )
+                )
+            ).all()
+            known_titles: list[tuple[str, int]] = [
+                (normalize_title(title), video_id)
+                for video_id, title in active_title_rows
+            ]
 
             for source in sources:
                 # YouTube keşfi yalnızca youtube kaynaklarını yoklar;
@@ -132,20 +158,38 @@ class DiscoveryService:
                         title=video["title"],
                         published_at=published_at,
                     )
+                    duplicate_of = None
+                    if not exclusion:
+                        duplicate_of = find_duplicate_title(
+                            normalize_title(video["title"]), known_titles
+                        )
                     session.add(
                         SourceVideo(
                             source_channel_id=source.id,
                             youtube_video_id=video["video_id"],
                             title=video["title"],
                             published_at=published_at,
-                            status="excluded" if exclusion else "discovered",
+                            status=(
+                                "excluded"
+                                if exclusion or duplicate_of is not None
+                                else "discovered"
+                            ),
                         )
                     )
                     known_ids.add(video["video_id"])
                     if exclusion:
                         new_excluded += 1
+                    elif duplicate_of is not None:
+                        duplicate_excluded += 1
                     else:
                         new_videos += 1
+                        # Yeni aktif video ayni turdaki sonraki
+                        # kaynaklar icin karsilastirmaya girer; kimligi
+                        # henüz belli olmadığından geçici işaretle
+                        # (-1) tutulur — onemli olan eslesmenin kendisi.
+                        known_titles.append(
+                            (normalize_title(video["title"]), -1)
+                        )
 
             record_event(
                 session,
@@ -155,6 +199,7 @@ class DiscoveryService:
                     "sources_checked": sources_checked,
                     "new_videos": new_videos,
                     "new_excluded": new_excluded,
+                    "duplicate_excluded": duplicate_excluded,
                     "quota_blocked": quota_blocked,
                     "skipped_platforms": skipped_platforms,
                 },
@@ -165,6 +210,7 @@ class DiscoveryService:
             "sources_checked": sources_checked,
             "new_videos": new_videos,
             "new_excluded": new_excluded,
+            "duplicate_excluded": duplicate_excluded,
             "quota_blocked": quota_blocked,
             "skipped_platforms": skipped_platforms,
         }

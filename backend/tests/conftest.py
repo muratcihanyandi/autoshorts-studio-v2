@@ -126,14 +126,21 @@ def youtube_mock_handler(request) -> "httpx.Response":
     url = str(request.url)
     if "/channels" in url:
         YOUTUBE_MOCK_CALLS["channels"] += 1
+        # Kanal kimligini istekten coz: her kaynak kendi uploads
+        # listesini alir (mirror kaynak testleri icin).
+        channel_id = "UCkaynak1"
+        if "id=UCkaynak2" in url:
+            channel_id = "UCkaynak2"
         return httpx.Response(
             200,
             json={
                 "items": [
                     {
-                        "id": "UCkaynak1",
+                        "id": channel_id,
                         "contentDetails": {
-                            "relatedPlaylists": {"uploads": "UUkaynak1"}
+                            "relatedPlaylists": {
+                                "uploads": "UU" + channel_id[2:]
+                            }
                         },
                     }
                 ]
@@ -141,27 +148,44 @@ def youtube_mock_handler(request) -> "httpx.Response":
         )
     if "/playlistItems" in url:
         YOUTUBE_MOCK_CALLS["playlist_items"] += 1
-        return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "snippet": {
-                            "title": "Kaynak Video 1",
-                            "publishedAt": "2026-10-15T10:00:00Z",
-                            "resourceId": {"videoId": "vid-kaynak-1"},
-                        }
-                    },
-                    {
-                        "snippet": {
-                            "title": "Kaynak Video 2",
-                            "publishedAt": "2026-10-16T11:30:00Z",
-                            "resourceId": {"videoId": "vid-kaynak-2"},
-                        }
-                    },
-                ]
-            },
-        )
+        # UUkaynak2: ayni icerigin mirror kanali — birinci video ayni
+        # icerik farkli baslik bicimiyle (Gorev 8 dedupe senaryosu),
+        # ikincisi gercekten farkli bir video.
+        if "playlistId=UUkaynak2" in url:
+            items = [
+                {
+                    "snippet": {
+                        "title": "Kaynak Video 1 Tepki! @kaynakkanal",
+                        "publishedAt": "2026-10-15T12:00:00Z",
+                        "resourceId": {"videoId": "vid-mirror-1"},
+                    }
+                },
+                {
+                    "snippet": {
+                        "title": "Bambaşka Ayrı Bir Video",
+                        "publishedAt": "2026-10-17T09:00:00Z",
+                        "resourceId": {"videoId": "vid-mirror-2"},
+                    }
+                },
+            ]
+        else:
+            items = [
+                {
+                    "snippet": {
+                        "title": "Kaynak Video 1",
+                        "publishedAt": "2026-10-15T10:00:00Z",
+                        "resourceId": {"videoId": "vid-kaynak-1"},
+                    }
+                },
+                {
+                    "snippet": {
+                        "title": "Kaynak Video 2",
+                        "publishedAt": "2026-10-16T11:30:00Z",
+                        "resourceId": {"videoId": "vid-kaynak-2"},
+                    }
+                },
+            ]
+        return httpx.Response(200, json={"items": items})
     return httpx.Response(404, json={"error": "beklenmeyen adres"})
 
 

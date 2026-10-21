@@ -5,6 +5,10 @@
 }
 
 .rail {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   width: 216px;
   flex-shrink: 0;
   background: var(--ink-deep);
@@ -106,6 +110,11 @@
     flex-direction: column;
   }
   .rail {
+    /* Dar ekranda üst çubuk: sabit panel anlamı yatay yerleşimle
+       birlikte kaybolur, yerleşim eski haline döner. */
+    position: static;
+    height: auto;
+    overflow: visible;
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--ink-border);

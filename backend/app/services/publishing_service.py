@@ -244,7 +244,11 @@ class PublishingService:
             )
         metadata = context["metadata"]
         if metadata is None:
-            raise PublishingError("Onaylanmis metaveri yok; once M9 adimi.")
+            raise PublishingError(
+                "Klip metaverisi henuz uretilmedi; motor bir sonraki "
+                "uretim dongusunde hazirlar, klip birakinca kendisi "
+                "yuklenir."
+            )
         if metadata.status != "approved" and not context["auto_approve"]:
             raise PublishingError(
                 "Metaveri onay bekliyor; once onaylayin veya kanalda "

@@ -2,14 +2,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.config import Settings
 from app.services.library_view import LibraryViewService
 
 router = APIRouter(tags=["media-library"])
+
+
+class BulkClipActionIn(BaseModel):
+    """Toplu klip eylemi gövdesi (Görev 4)."""
+
+    action: Literal["delete", "public", "private"]
+    render_ids: list[int] = Field(min_length=1, max_length=50)
 
 
 def _service(request: Request) -> LibraryViewService:
@@ -111,6 +120,39 @@ async def remove_clip(request: Request, render_id: int) -> dict:
         ) from exc
 
 
+@router.post("/media/clips/bulk")
+async def bulk_clips(request: Request, payload: BulkClipActionIn) -> dict:
+    """Toplu klip eylemi (Görev 4, kullanıcı isteği 2026-10-21):
+    seçilen klipleri toplu kaldir / herkese aç / gizliye al.
+    İndirme tarayıcı tarafında stream uçları üzerinden yapılır."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı.",
+        )
+    from app.services.clip_actions import (
+        ClipActionError,
+        bulk_clip_action,
+    )
+    from app.services.settings_service import SettingsService
+
+    effective = await SettingsService(
+        sessionmaker, request.app.state.settings
+    ).effective_settings()
+    try:
+        return await bulk_clip_action(
+            sessionmaker,
+            effective,
+            payload.render_ids,
+            payload.action,
+        )
+    except ClipActionError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+
+
 @router.get("/media/clips/{render_id}")
 async def clip_detail(request: Request, render_id: int) -> dict:
     detail = await _service(request).clip_detail(render_id)
@@ -123,8 +165,14 @@ async def clip_detail(request: Request, render_id: int) -> dict:
 
 
 @router.get("/media/clips/{render_id}/stream")
-async def clip_stream(request: Request, render_id: int) -> FileResponse:
-    """Üretilmiş videoyu tarayıcıda oynat (Range destekli)."""
+async def clip_stream(
+    request: Request,
+    render_id: int,
+    download: bool = Query(False),
+) -> FileResponse:
+    """Üretilmiş videoyu tarayıcıda oynat (Range destekli).
+    ?download=true dosyayı kaydetmek üzere ek olarak gönderir
+    (toplu indirme, Görev 4)."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(
@@ -150,7 +198,7 @@ async def clip_stream(request: Request, render_id: int) -> FileResponse:
         path,
         media_type="video/mp4",
         filename=path.name,
-        content_disposition_type="inline",
+        content_disposition_type="attachment" if download else "inline",
         headers={"Cache-Control": "private, max-age=60"},
     )
 

@@ -45,6 +45,7 @@ def test_discover_records_new_videos_once(
         "sources_checked": 1,
         "new_videos": 2,
         "new_excluded": 0,
+        "duplicate_excluded": 0,
         "quota_blocked": False,
         "skipped_platforms": [],
     }
@@ -85,6 +86,7 @@ def test_unauthorized_source_not_polled(
         "sources_checked": 0,
         "new_videos": 0,
         "new_excluded": 0,
+        "duplicate_excluded": 0,
         "quota_blocked": False,
         "skipped_platforms": [],
     }
@@ -131,6 +133,72 @@ def test_quota_limit_respected(
     engine.dispose()
     assert units == 2
     assert "discovery.run" in events
+
+
+def test_discovery_excludes_duplicate_content_across_mirrors(
+    client_youtube: TestClient, mock_youtube: None
+) -> None:
+    """Görev 8 (canlı bulgu 2026-10-21): izlenen iki kaynak kanal aynı
+    içeriği yükler (mirror) — farklı YouTube video kimliği, biraz farklı
+    başlık biçimi. Aynı içerik ikinci kez işlenmez: satır 'excluded'
+    olarak kayıt olur, gerçekten farklı video normal keşfedilir."""
+
+    from app.services.source_dedupe import (
+        normalize_title,
+        titles_match,
+    )
+
+    # Birim sözleşme: canlıda görülen başlık çiftleri eşleşmeli.
+    assert titles_match(
+        normalize_title(
+            "RRaenee | DÜNYANIN EN BÜYÜK ELMAS SOYGUNU | Tepki | @bentropi ​"
+        ),
+        normalize_title(
+            "RRaenee | Dünyanın En Büyük Elmas Soygunu Tepki! @bentropi"
+        ),
+    )
+    assert titles_match(
+        normalize_title(
+            "RRaenee | 33 Kişi Yola Çıktı, Sadece 11'i Döndü"
+            " (Birbirlerini Avladılar) | Tepki | Mehmet Ali Güldal"
+        ),
+        normalize_title(
+            "RRaenee | 33 Kişi Yola Çıktı, Sadece 11'i Döndü Tepki!"
+            " @mehmetaliguldal"
+        ),
+    )
+    # Serinin farklı bölümleri farklı içeriktir (sayı koruması).
+    assert not titles_match(
+        normalize_title("Motosiklet Kazalarına Tepki! #12 @ZaferAKCAY"),
+        normalize_title(
+            "Motosiklet Kazalarına Tepki! #13 (Mimari Yapı Tartışması!)"
+            " @ZaferAKCAY"
+        ),
+    )
+
+    # Keşif: iki yetkili kaynak (UCkaynak1 + mirror UUkaynak2).
+    channel_id = _setup_authorized_source(client_youtube)
+    second_source = client_youtube.post(
+        f"/api/channels/{channel_id}/sources",
+        json={"youtube_channel_id": "UCkaynak2", "title": "Mirror Kaynak"},
+    ).json()["id"]
+    client_youtube.patch(
+        f"/api/sources/{second_source}", json={"permission_status": "authorized"}
+    )
+
+    response = client_youtube.post(f"/api/channels/{channel_id}/discover")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sources_checked"] == 2
+    assert body["new_videos"] == 3  # kaynak 1'in ikisi + mirror'un farklı videosu
+    assert body["duplicate_excluded"] == 1  # mirror'daki aynı içerik
+
+    videos = client_youtube.get(f"/api/channels/{channel_id}/videos").json()
+    by_id = {v["youtube_video_id"]: v["status"] for v in videos["videos"]}
+    assert by_id["vid-kaynak-1"] == "discovered"
+    assert by_id["vid-kaynak-2"] == "discovered"
+    assert by_id["vid-mirror-1"] == "excluded"  # aynı içerik, Hariç
+    assert by_id["vid-mirror-2"] == "discovered"  # gerçekten yeni video
 
 
 def test_discovery_run_audited(client_youtube: TestClient, mock_youtube: None) -> None:

@@ -118,17 +118,27 @@ class YouTubeUploadClient:
         """videos.update ile gorunurlugu herkese acik yap (zamanli
         yayin adimi: yukleme her zaman gizlidir, acilis plan saatinde
         burada gerceklesir)."""
+        await self.set_privacy(http, video_id, "public")
+
+    async def set_privacy(
+        self, http: httpx.AsyncClient, video_id: str, privacy: str
+    ) -> None:
+        """videos.update ile gorunurlugu degistir ('public'/'private').
+        Toplu kütüphane eylemlerinin gizliye alma kolu da buradan
+        gecer; degisiklik fetch_status ile ayri dogrulanir."""
+        if privacy not in ("public", "private"):
+            raise UploadError("Gecersiz gorunurluk degeri.")
         response = await http.put(
             f"{VIDEOS_URL}?part=status",
             headers=self._headers(),
             json={
                 "id": video_id,
-                "status": {"privacyStatus": "public"},
+                "status": {"privacyStatus": privacy},
             },
         )
         if response.status_code not in (200, 201):
             raise UploadError(
-                f"Video herkese acik yapilamadi (HTTP {response.status_code})."
+                f"Video gorunurlugu degistirilemedi (HTTP {response.status_code})."
             )
 
     async def delete_video(

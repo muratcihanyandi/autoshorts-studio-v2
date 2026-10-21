@@ -52,7 +52,9 @@ export interface SettingsView {
   whisper_language: PlainSetting
   burn_subtitles: BoolSetting
   subtitle_font_size: IntSetting
-  subtitle_position: PlainSetting
+  subtitle_style_preset: PlainSetting
+  subtitle_pos_x_percent: IntSetting
+  subtitle_pos_y_percent: IntSetting
   media_root: PlainSetting
 }
 
@@ -86,7 +88,9 @@ export type SettingsPatch = Partial<{
   whisper_language: string
   burn_subtitles: boolean
   subtitle_font_size: number
-  subtitle_position: string
+  subtitle_style_preset: string
+  subtitle_pos_x_percent: number
+  subtitle_pos_y_percent: number
 }>
 
 export function fetchSettings(): Promise<SettingsView> {

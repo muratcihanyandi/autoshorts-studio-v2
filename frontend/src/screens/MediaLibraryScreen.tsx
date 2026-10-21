@@ -1,9 +1,12 @@
 import { useCallback, useState } from 'react'
 
 import {
+  bulkClipAction,
+  clipDownloadUrl,
   fetchMedia,
   removeClip,
   removeSourceVideo,
+  type BulkClipActionResult,
   type LibraryClip,
   type LibrarySource,
 } from '../api/media'
@@ -195,27 +198,54 @@ function ClipCard({
   clip,
   onOpen,
   onRemove,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: {
   clip: LibraryClip
   onOpen: (clip: LibraryClip) => void
   onRemove: (clip: LibraryClip) => void
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (clip: LibraryClip) => void
 }) {
   const view = publishView(clip)
   const [confirmRemove, setConfirmRemove] = useState(false)
+
+  const activate = () => {
+    if (selectable) {
+      onToggleSelect?.(clip)
+    } else {
+      onOpen(clip)
+    }
+  }
+
   return (
     <div
-      className="clip-card"
+      className={`clip-card${selectable ? ' clip-card--selectable' : ''}${selected ? ' clip-card--selected' : ''}`}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(clip)}
+      onClick={activate}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          onOpen(clip)
+          activate()
         }
       }}
-      aria-label={`${clip.title} detayını aç`}
+      aria-label={
+        selectable
+          ? `${clip.title} ${selected ? 'seçimi kaldır' : 'seç'}`
+          : `${clip.title} detayını aç`
+      }
     >
+      {selectable && (
+        <span
+          className={`clip-check${selected ? ' clip-check--on' : ''}`}
+          aria-hidden="true"
+        >
+          {selected ? '✓' : ''}
+        </span>
+      )}
       <span className="clip-card-thumb">
         {clip.thumbnail_url ? (
           <img
@@ -296,12 +326,74 @@ function ClipCard({
 export function MediaLibraryScreen() {
   const [openClipId, setOpenClipId] = useState<number | null>(null)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkResult, setBulkResult] = useState<BulkClipActionResult | null>(null)
 
   const fetchCb = useCallback(
     () => fetchMedia(60, 0, false, false, true, true),
     [],
   )
   const library = usePolling(fetchCb, 10000)
+
+  const data = library.state.status === 'ok' ? library.state.data : null
+  const retryLibrary = library.retry
+  const current =
+    data?.sources.find((source) => source.id === data.current_source_id) ?? null
+  const previous = data?.sources.filter((source) => source.id !== current?.id) ?? []
+  const readyCount = data ? data.summary.shorts_ready + data.summary.full_cuts_ready : 0
+
+  const selectedSet = new Set(selectedIds)
+  const toggleSelect = useCallback((clip: LibraryClip) => {
+    setBulkResult(null)
+    setSelectedIds((ids) =>
+      ids.includes(clip.id)
+        ? ids.filter((id) => id !== clip.id)
+        : [...ids, clip.id],
+    )
+  }, [])
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds([])
+    setConfirmBulkDelete(false)
+    setBulkResult(null)
+  }
+
+  const runBulk = async (
+    action: 'delete' | 'public' | 'private',
+  ) => {
+    setBulkBusy(true)
+    setBulkResult(null)
+    try {
+      const result = await bulkClipAction(action, selectedIds)
+      setBulkResult(result)
+      if (action === 'delete') {
+        setSelectedIds([])
+        setConfirmBulkDelete(false)
+      }
+      retryLibrary()
+    } catch (err) {
+      setRemoveError(
+        err instanceof Error ? err.message : 'Toplu eylem başarısız oldu.',
+      )
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const downloadSelected = () => {
+    for (const id of selectedIds) {
+      const anchor = document.createElement('a')
+      anchor.href = clipDownloadUrl(id)
+      anchor.rel = 'noopener'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    }
+  }
 
   const handleRemove = useCallback(
     async (source: LibrarySource) => {
@@ -314,9 +406,9 @@ export function MediaLibraryScreen() {
         )
         return
       }
-      library.retry()
+      retryLibrary()
     },
-    [library.retry],
+    [retryLibrary],
   )
 
   const handleClipRemove = useCallback(
@@ -330,16 +422,10 @@ export function MediaLibraryScreen() {
         )
         return
       }
-      library.retry()
+      retryLibrary()
     },
-    [library.retry],
+    [retryLibrary],
   )
-
-  const data = library.state.status === 'ok' ? library.state.data : null
-  const current =
-    data?.sources.find((source) => source.id === data.current_source_id) ?? null
-  const previous = data?.sources.filter((source) => source.id !== current?.id) ?? []
-  const readyCount = data ? data.summary.shorts_ready + data.summary.full_cuts_ready : 0
 
   return (
     <>
@@ -436,7 +522,124 @@ export function MediaLibraryScreen() {
             <div className="panel-head-row">
               <h2>Hazır videolar</h2>
               <span className="panel-count">{data.clips.length} klip</span>
+              {data.clips.length > 0 && !selectMode && (
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  onClick={() => {
+                    setSelectMode(true)
+                    setSelectedIds([])
+                    setBulkResult(null)
+                  }}
+                >
+                  Toplu seç
+                </button>
+              )}
             </div>
+
+            {selectMode && (
+              <div className="bulk-bar" role="toolbar" aria-label="Toplu klip eylemleri">
+                <span className="bulk-count">
+                  <b className="nums">{selectedIds.length}</b> klip seçildi
+                </span>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  onClick={() =>
+                    setSelectedIds(
+                      selectedIds.length === data.clips.length
+                        ? []
+                        : data.clips.map((clip) => clip.id),
+                    )
+                  }
+                >
+                  {selectedIds.length === data.clips.length
+                    ? 'Temizle'
+                    : 'Tümünü seç'}
+                </button>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  disabled={selectedIds.length === 0 || bulkBusy}
+                  onClick={downloadSelected}
+                  title="Seçili klipleri bu bilgisayara indir."
+                >
+                  İndir
+                </button>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  disabled={selectedIds.length === 0 || bulkBusy}
+                  onClick={() => void runBulk('public')}
+                  title="Seçili klipleri YouTube'da herkese açık yapar."
+                >
+                  Herkese Aç
+                </button>
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  disabled={selectedIds.length === 0 || bulkBusy}
+                  onClick={() => void runBulk('private')}
+                  title="Seçili klipleri YouTube'da gizliye alır."
+                >
+                  Gizliye Al
+                </button>
+                {confirmBulkDelete ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn--danger"
+                      disabled={selectedIds.length === 0 || bulkBusy}
+                      onClick={() => void runBulk('delete')}
+                      title="Klipleri YouTube'tan ve yerelden kalıcı olarak kaldırır."
+                    >
+                      {bulkBusy
+                        ? 'Kaldırılıyor…'
+                        : `${selectedIds.length} klibi kalıcı olarak kaldır`}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn--ghost"
+                      onClick={() => setConfirmBulkDelete(false)}
+                    >
+                      Vazgeç
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    disabled={selectedIds.length === 0 || bulkBusy}
+                    onClick={() => setConfirmBulkDelete(true)}
+                    title="Klipleri kaldır: YouTube'taki videolar ve yerel dosyalar silinir."
+                  >
+                    Kaldır
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn--ghost"
+                  onClick={exitSelectMode}
+                >
+                  Bitti
+                </button>
+              </div>
+            )}
+
+            {bulkResult && (
+              <p className="bulk-result" role="status">
+                {bulkResult.ok} klip{' '}
+                {bulkResult.action === 'delete'
+                  ? 'kaldırıldı'
+                  : bulkResult.action === 'public'
+                    ? 'herkese açıldı'
+                    : 'gizliye alındı'}
+                {bulkResult.skipped > 0 && `, ${bulkResult.skipped} atlandı`}
+                {bulkResult.errors > 0 && `, ${bulkResult.errors} hata`}
+                .
+              </p>
+            )}
+
             {data.clips.length === 0 ? (
               <p className="product-note">
                 Hazır klip yok. Motor bir sonraki seçimi tamamladığında
@@ -450,6 +653,9 @@ export function MediaLibraryScreen() {
                     clip={clip}
                     onOpen={(selected) => setOpenClipId(selected.id)}
                     onRemove={handleClipRemove}
+                    selectable={selectMode}
+                    selected={selectedSet.has(clip.id)}
+                    onToggleSelect={toggleSelect}
                   />
                 ))}
               </div>

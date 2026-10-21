@@ -9,6 +9,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+# Gorev 1 (2026-10-21): secilebilir altyazi stillerinin fontlari
+# (Anton, Noto Sans). Depoya gonullu dosyalar — derleme deterministik,
+# ag bagimliligi yok. fc-cache root olarak bir kez kurulur.
+COPY backend/assets/fonts/ /usr/share/fonts/truetype/studio/
+RUN fc-cache -f
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

@@ -750,6 +750,124 @@ class TestJobWorker:
         assert added == 0
         assert types == []
 
+    def test_enqueue_upload_jobs_requires_metadata_even_auto_approve(
+        self, tmp_path
+    ):
+        """Otomatik onay açık kanalda metaverisi HENÜZ üretilmemiş klip
+        yükleme beslemesine girmez (canlı hata 2026-10-21: publish_clip
+        koşup "Onaylanmis metaveri yok" ile düşüyordu); taslak metaveri
+        olan klip girer."""
+
+        async def seed(sessionmaker):
+            from app.models import (
+                Channel,
+                ClipCandidate,
+                ClipMetadata,
+                PublishingProfile,
+                RenderedClip,
+                SourceChannel,
+                SourceVideo,
+            )
+
+            async with sessionmaker() as session:
+                session.add(Channel(id=1, name="Kanal 1"))
+                session.add(
+                    PublishingProfile(
+                        channel_id=1,
+                        automation_state="running",
+                        settings={"auto_approve_metadata": True},
+                    )
+                )
+                session.add(
+                    SourceChannel(
+                        channel_id=1,
+                        youtube_channel_id="UCx",
+                        title="Kaynak",
+                        permission_status="authorized",
+                    )
+                )
+                session.add(
+                    SourceVideo(
+                        id=1,
+                        source_channel_id=1,
+                        youtube_video_id="yt-1",
+                        title="Video",
+                        status="processed",
+                    )
+                )
+                await session.flush()
+                # 31: render hazır ama metaveri yok -> besleme ALMAZ.
+                session.add(
+                    ClipCandidate(
+                        id=31,
+                        source_video_id=1,
+                        start_seconds=0.0,
+                        end_seconds=30.0,
+                        duration_seconds=30.0,
+                        score=0.7,
+                        status="selected",
+                    )
+                )
+                session.add(
+                    RenderedClip(
+                        clip_candidate_id=31,
+                        orientation="vertical",
+                        status="rendered",
+                        file_path="/tmp/31.mp4",
+                    )
+                )
+                # 32: render hazır + taslak metaveri + otomatik onay -> ALIR.
+                session.add(
+                    ClipCandidate(
+                        id=32,
+                        source_video_id=1,
+                        start_seconds=60.0,
+                        end_seconds=90.0,
+                        duration_seconds=30.0,
+                        score=0.8,
+                        status="selected",
+                    )
+                )
+                session.add(
+                    RenderedClip(
+                        clip_candidate_id=32,
+                        orientation="vertical",
+                        status="rendered",
+                        file_path="/tmp/32.mp4",
+                    )
+                )
+                session.add(
+                    ClipMetadata(
+                        clip_candidate_id=32,
+                        source_video_id=1,
+                        title="Taslak",
+                        description="Aciklama",
+                        status="draft",
+                    )
+                )
+                await session.commit()
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                async def noop(payload):
+                    return None
+
+                worker = JobWorker(
+                    sessionmaker, settings, handlers={"noop": noop}
+                )
+                await seed(sessionmaker)
+                added = await worker.enqueue_upload_jobs()
+                queued = await worker._jobs.list_jobs(status="queued")
+                payloads = [j.payload for j in queued]
+                return added, payloads
+            finally:
+                await engine.dispose()
+
+        added, payloads = asyncio.run(scenario())
+        assert added == 1
+        assert payloads == [{"clip_candidate_id": 32}]
+
     def test_publish_handlers_use_effective_settings_for_cipher(
         self, tmp_path, monkeypatch
     ):

@@ -117,6 +117,9 @@ class DiscoverResult(BaseModel):
     sources_checked: int
     new_videos: int
     new_excluded: int
+    # Gorev 8: ayni icerik mirror kanaldan geldigi icin haric tutulan
+    # video sayisi (baslik dedupe, source_dedupe).
+    duplicate_excluded: int = 0
     quota_blocked: bool
     # YouTube dışı platformlar keşifte atlanır (manuel VOD içe aktarılır).
     skipped_platforms: list[str] = Field(default_factory=list)

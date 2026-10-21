@@ -14,18 +14,23 @@ deployment-polish record; ADR-005 addendum in `docs/DECISIONS.md`).
 stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
-**Current task:** Three-task product update (2026-10-19): (1) a working
-calendar — `GET /api/calendar` plus a month-grid CalendarScreen showing
-every planned and occurred publication with click-through metadata;
-(2) source output orientation (auto/vertical/horizontal) — vertical
-sources produce only Shorts, the horizontal file is deleted after
-processing, and refill now maintains a ready-clip stock; (3) flexible
-clip duration (site-editable, 20–180 s) with hype-aware boundaries
-that never cut the hype moment short. Backend 410/410, frontend 30/30,
-type check/build/lint and secret scan clean. Pi deployment pending
-(new image + migration 0014).
+**Current task:** Eight-task product update (2026-10-21, user request):
+(1) five selectable burn-in caption styles including the yellow
+Shorts look; (2) free caption positioning anywhere on the 1080x1920
+frame via percent sliders with the Shorts default (bottom-center,
+78% height); (3) Settings screen redesigned into four category tabs
+(Bağlantılar / Üretim / Altyazı / Sistem, impeccable skill); (4) media
+library bulk actions (multi-select + download / make public / make
+private / remove); (5) fixed left rail (sticky, content scrolls
+alone); (6) live "Onaylanmis metaveri yok" publishing error root-caused
+and fixed (upload feed no longer enqueues clips whose metadata has not
+been generated); (7) known-gaps report delivered in chat; (8)
+duplicate-title diagnosis (mirror source channels Craftest + 2kan
+re-upload the same RRaenee content) with global title dedupe added to
+discovery. Backend 471/471, frontend 36/36, tsc/build/lint/secret scan
+clean.
 
-**Last updated:** 2026-10-19
+**Last updated:** 2026-10-21
 
 **Primary coding agent:** GLM-5.3 via ZCode
 
@@ -834,40 +839,40 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-19 (three-task update: calendar + source output
-orientation + flexible clip duration) on the dev machine (Windows 11,
-Python 3.11.9 venv, Node 24.13.0). Commands run from the stated
-directories. NOTE: on this machine pytest must be run with file
-redirection, not through pipes — piped runs hang (known dev-env
-quirk); one foreground `-q` run stalled once at ~86% and was rerun
-cleanly (verbose rerun and a second `-q` run both completed in ~90 s,
-so the stall was environmental, not a test hang).
+Verified 2026-10-21 (eight-task update: caption styles + free
+positioning, settings redesign, bulk clip actions, fixed rail,
+metadata-less upload feed fix, title dedupe) on the dev machine
+(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
+stated directories; pytest output redirected to a file (known
+dev-env quirk — piped runs hang).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
-  (output redirected to a log file)
-  - Passed: **410**, Failed: 0, Skipped: 0 (2 new calendar-view tests,
-    5 new source-orientation tests; stock-refill tests in
-    test_channel_automation moved to ready-clip semantics with
-    `_seed_ready_clip`/`_publish_clip` fixtures).
-  - Found and fixed during verification: `SettingsService._view` was
-    constructing `SettingsOut` without the new clip-duration fields
-    (11 test_settings failures + 1 subtitle-correction failure with a
-    pydantic missing-field error); fixed by adding
-    `clip_min_seconds`/`clip_max_seconds` to `_view` and INT_FIELDS
-    bounds (5–120 / 20–180).
+  - Passed: **471**, Failed: 0, Skipped: 0 in 89 s (new:
+    test_clip_actions 5 — bulk visibility flips with stamp
+    semantics, skip for unuploaded, bulk delete, validation;
+    test_subtitle_style rewritten for the preset + \pos contract
+    (12); test_discovery +1 mirror-dedupe test with live title
+    pairs and the series guard; test_jobs +1 metadata-less
+    upload-feed guard; conftest YouTube mock gained a mirror
+    playlist UUkaynak2).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 1 warning (starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 30 passed, 0 failed
-  (CalendarScreen 4 — new, CharactersScreen 7 — +2 orientation tests,
-  SettingsScreen 5 — +1 clip-duration test, MediaLibraryScreen 3,
-  AutomationScreen 3, App 7, LogsScreen 1).
+- Frontend — `cd frontend && npx vitest run`: 36 passed, 0 failed
+  (SettingsScreen 8 — tabs, five styles, sliders, save payloads;
+  MediaLibraryScreen 3; CalendarScreen 4; CharactersScreen 7;
+  AutomationScreen 3; App 7; LogsScreen 1; GuideScreen… totals per
+  run).
 - Frontend types — `npx tsc -b`: clean. Production build —
-  `npm run build`: succeeded. Lint — `npm run lint` (oxlint): 0 errors,
-  8 React Compiler advisories (pre-existing purity/setState-in-effect
-  pattern shared by the older screens).
-- Secret scan — `python tools/scan_secrets.py`: clean (synthetic test
-  credentials carry justified `# secret-scan-ok` markers).
+  `npm run build`: succeeded. Lint — `npm run lint` (oxlint):
+  0 errors, 8 warnings (pre-existing React Compiler advisories —
+  setState-in-effect / purity patterns in older screens).
+- Secret scan — `python tools/scan_secrets.py`: clean (synthetic
+  test tokens carry `# secret-scan-ok` markers).
+
+Previous full-suite record (2026-10-19, three-task update: calendar +
+source output orientation + flexible clip duration): backend 410/410,
+frontend 30/30 — superseded by the totals above.
 
 Previous full-suite record (2026-10-19, product surface session:
 signup/login + selected-only media library + clip detail/player):
@@ -981,6 +986,93 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Eight-task product update (2026-10-21, user request "Şimdi bir kaç
+  görevimiz var"): all eight tasks delivered in one pass; verified
+  backend **471/471**, frontend **36/36**, `tsc -b` clean,
+  `npm run build` clean, oxlint 0 errors (8 pre-existing React
+  Compiler advisories), secret scan clean.
+  (1) **Caption styles (Görev 1)** — `subtitle_style.SUBTITLE_STYLES`
+  defines five presets: `klasik` (DejaVu Sans white/black outline,
+  default), `shorts_sari` (yellow #FFEE00 + black outline, bold — the
+  Shorts look), `anton` (Anton display face), `kutu` (BorderStyle=3
+  opaque box), `noto` (Noto Sans, thin outline). Fonts travel in the
+  image: `backend/assets/fonts/` (Anton-Regular.ttf downloaded from
+  Google Fonts OFL + NotoSans-Regular.ttf copied from the frontend
+  brand kit) copied to `/usr/share/fonts/truetype/studio/` with
+  fc-cache; DejaVu stays via the existing apt package. New settings:
+  `subtitle_style_preset` (choice), replacing `subtitle_position`.
+  (2) **Free caption position (Görev 2)** — new settings
+  `subtitle_pos_x_percent` / `subtitle_pos_y_percent` (0–100,
+  defaults 50/78 = the Shorts standard: bottom-center at ~78% frame
+  height); `build_ass` now anchors the caption (Alignment=2 bottom
+  center) at an exact pixel via `{\pos(x,y)}` on every Dialogue line,
+  so captions can sit anywhere on the 1080x1920 frame including over
+  the webcam section (the old band restriction is gone; the
+  `build_ass` layout parameter was removed and the pipeline caller
+  updated). SubtitlePreview replicates the math 1:1 with CSS
+  equivalents per style; the frontend self-hosts Anton for a faithful
+  preview.
+  (3) **Settings redesign (Görev 3, impeccable skill, Operate mode)**
+  — SettingsScreen is now four tabs (Bağlantılar / Üretim / Altyazı /
+  Sistem) with a single SaveBar per tab backed by one form state;
+  Üretim groups fields under "Motor ve İş Limitleri / Klip Üretimi /
+  Transkripsiyon"; the Altyazı tab carries the five style cards
+  (StyleSample renders each style's look), size + X/Y sliders, a
+  "Shorts varsayılanına dön" reset and the live preview.
+  (4) **Bulk clip actions (Görev 4)** — new
+  `app/services/clip_actions.py` + `POST /api/media/clips/bulk`
+  {action: delete|public|private, render_ids (1–50)}: deletes reuse
+  `remove_rendered_clip` (YouTube first, shared httpx client,
+  per-clip error reporting so one failure never stops the batch);
+  visibility flips reuse the OAuth token, call the new
+  `YouTubeUploadClient.set_privacy` (public/private), verify via
+  fetch_status and stamp the row — public stamps public_at/published_at
+  (same semantics as make_public), private CLEARS them so the clip
+  drops out of daily counts. Un-uploaded / unverified clips are
+  reported as skipped. `?download=true` on the stream endpoint switches
+  Content-Disposition to attachment; MediaLibraryScreen gained a
+  "Toplu seç" mode with a bulk toolbar (İndir / Herkese Aç / Gizliye
+  Al / Kaldır two-step confirm) and a result summary line.
+  (5) **Fixed rail (Görev 5)** — `.rail` is `position: sticky; top: 0;
+  height: 100vh; overflow-y: auto` so the left nav never scrolls with
+  the page (modals are position:fixed and unaffected); the <=900px
+  top-bar layout reverts to static.
+  (6) **"Onaylanmis metaveri yok" live error (Görev 6)** — root cause:
+  the worker's `enqueue_upload_jobs` feed treated
+  `auto_approve_metadata = true` channels as upload-ready WITHOUT
+  requiring a metadata row to exist, so a clip whose metadata_generate
+  job had not run yet (or failed) went straight to publish_clip and
+  failed. Fix: the feed now requires metadata EXISTENCE in both
+  branches (draft metadata is fine when auto-approve is on) — verified
+  by a new test (metadata-less clip + auto-approve → no publish job;
+  draft + auto-approve → job). While fixing, found a cross-DB landmine:
+  SQLite's `->>` returns JSON booleans as `1` while PostgreSQL returns
+  `'true'`, so the old `settings->>'auto_approve_metadata' = 'true'`
+  branch could never be tested on sqlite; the auto-approve decision
+  moved into Python (profile settings read via ORM). The publish error
+  message itself is now user-readable ("motor bir sonraki üretim
+  döngüsünde hazırlar").
+  (7) **Known-gaps report (Görev 7)** — delivered in chat to the user.
+  (8) **Duplicate content (Görev 8)** — live forensics on the Pi DB
+  (SSH) showed the SAME RRaenee reaction content re-uploaded by two
+  monitored mirror channels (Craftest UCRXsu9ORjM6F-LjBRDXF2lw and
+  2kan UCDsJphAxtcoBIRMM49jWYBg) with different YouTube video ids and
+  near-identical titles ("X | Tepki | @user" vs "X Tepki! @user") —
+  identity-based dedupe cannot see it, and both copies were processed
+  (confirmed x2 pairs on the live DB). Fix: new
+  `app/services/source_dedupe.py` (normalize_title: casefold + Turkish
+  fold + @handle stripping + punctuation squash; titles_match: exact
+  OR >=90% token coverage with >=3 tokens AND identical number tokens
+  so series #12 vs #13 stay distinct); discovery now checks every new
+  video against the global ACTIVE title set and lands duplicates as
+  'excluded' (counted in the new `duplicate_excluded` response field
+  + audit). Regression tests cover the live title pairs and the
+  series-episode guard. NOTE for the user: dedupe prevents FUTURE
+  duplicates; the already-processed pairs (e.g. ids 265+392, 266+393)
+  and the 2kan mirror source remain on the live DB — decide whether to
+  remove one side (the UI Kaldır flow or dropping the 2kan source).
+  DEPLOY NOTE: no migration; needs image pull + restart. No push was
+  made in this session (commit only).
 - Download percentage (2026-10-20, user request: "indiriliyor diyor
   ama % kaç göremiyorum"): yt-dlp now runs with `--newline` and the
   adapter parses `[download] xx.x%` lines from stdout

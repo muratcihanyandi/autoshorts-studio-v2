@@ -254,3 +254,39 @@ export function removeClip(renderId: number): Promise<ClipRemovalResult> {
     return body
   })
 }
+
+/** Toplu klip eylemi (Görev 4): kaldır / herkese aç / gizliye al. */
+export type BulkClipAction = 'delete' | 'public' | 'private'
+
+export interface BulkClipActionResult {
+  action: BulkClipAction
+  total: number
+  ok: number
+  skipped: number
+  errors: number
+  results: {
+    render_id: number
+    status: 'ok' | 'skipped' | 'error'
+    note?: string
+  }[]
+}
+
+export function bulkClipAction(
+  action: BulkClipAction,
+  renderIds: number[],
+): Promise<BulkClipActionResult> {
+  return sendJson<BulkClipActionResult>('/api/media/clips/bulk', 'POST', {
+    action,
+    render_ids: renderIds,
+  }).then((body) => {
+    if (body === null) {
+      throw new ApiError(204, 'Toplu eylem yanıtı boş döndü')
+    }
+    return body
+  })
+}
+
+/** Seçili klibi tarayıcıya indirme adresi (?download=true ekte gelir). */
+export function clipDownloadUrl(renderId: number): string {
+  return `/api/media/clips/${renderId}/stream?download=true`
+}

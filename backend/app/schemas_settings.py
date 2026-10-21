@@ -72,7 +72,9 @@ class SettingsOut(BaseModel):
     whisper_language: PlainSettingOut
     burn_subtitles: BoolSettingOut
     subtitle_font_size: IntSettingOut
-    subtitle_position: PlainSettingOut
+    subtitle_style_preset: PlainSettingOut
+    subtitle_pos_x_percent: IntSettingOut
+    subtitle_pos_y_percent: IntSettingOut
     media_root: PlainSettingOut
 
 
@@ -109,4 +111,6 @@ class SettingsUpdate(BaseModel):
     whisper_language: str | None = None
     burn_subtitles: bool | None = None
     subtitle_font_size: int | None = None
-    subtitle_position: str | None = None
+    subtitle_style_preset: str | None = None
+    subtitle_pos_x_percent: int | None = None
+    subtitle_pos_y_percent: int | None = None

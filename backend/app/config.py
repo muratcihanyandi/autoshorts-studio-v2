@@ -94,12 +94,18 @@ class Settings(BaseSettings):
     whisper_model: str = "tiny"
     whisper_language: str = "tr"
     # Dikey (Reels) kliplerine gomulecek altyazi. Stil ASS
-    # 1080x1920 piksel uzayindadir (subtitle_style); konum alt bant
-    # icindedir — webcam bolumu asla kapanmaz. Ayarlar ekranindaki
-    # onizleme ayni degerlerle cizilir.
+    # 1080x1920 piksel uzayindadir (subtitle_style); konum Gorev 2
+    # ile serbestlesti — altyazi cimbasi (alt kenar ortasi) yuzde
+    # kaydiricilariyla kadranin herhangi bir noktasina tasinabilir.
+    # Varsayilan Shorts standarti: alt-orta, ~%78 yukseklik. Ayarlar
+    # ekranindaki onizleme ayni degerlerle cizilir. Eski
+    # subtitle_position (top/middle/bottom) alani artik kullanilmaz;
+    # DB'de eski override kalsa da etkisizdir.
     burn_subtitles: bool = True
     subtitle_font_size: int = 64
-    subtitle_position: str = "middle"
+    subtitle_style_preset: str = "klasik"
+    subtitle_pos_x_percent: int = 50
+    subtitle_pos_y_percent: int = 78
     # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
     shorts_per_video: int = 3
 
