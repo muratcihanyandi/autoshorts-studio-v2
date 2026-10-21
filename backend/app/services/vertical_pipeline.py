@@ -12,6 +12,11 @@ detected region is validated against it (character_match.similarity);
 a low score falls back to a template search and, if that also fails,
 the existing 'review' path. Sources without a character or reference
 face behave exactly as before.
+
+Kullanici istegi (2026-10-21): dikey klipler transkriptle cikar —
+videoyu kesip altyazisini gommek. Segmentler klip-goreli zamana
+kaydirilip ASS olarak yazilir (subtitle_style) ve render'a verilir;
+transkript yoksa/ayar kapaliysa akis altyazisiz surer.
 """
 from __future__ import annotations
 
@@ -35,7 +40,9 @@ from app.models import (
 )
 from app.services.channel_service import record_event
 from app.services.character_match import search_region, similarity
+from app.services.media_transcript import load_segments
 from app.services.source_orientation import produces_full_cut
+from app.services.subtitle_style import SubtitleStyle, build_ass
 from app.services.vertical_render import (
     HORIZONTAL_H,
     HORIZONTAL_W,
@@ -213,6 +220,8 @@ class VerticalPipelineService:
             )
             source_w = inspection.width if inspection else 0
             source_h = inspection.height if inspection else 0
+            # Altyazi gomme icin en iyi transkript (duzeltilmis > ham).
+            segments = await load_segments(session, asset.id)
 
         try:
             layout = build_layout(source_w, source_h, resolved.region)
@@ -220,6 +229,13 @@ class VerticalPipelineService:
                 self._edited_dir() / f"{clip_candidate_id}.mp4"
             )
             expected = candidate.end_seconds - candidate.start_seconds
+            subtitle_path = await self._write_subtitle_ass(
+                clip_candidate_id,
+                segments,
+                candidate.start_seconds,
+                candidate.end_seconds,
+                layout,
+            )
             await render_vertical(
                 self._settings.ffmpeg_bin,
                 asset.file_path,
@@ -227,6 +243,7 @@ class VerticalPipelineService:
                 candidate.end_seconds,
                 layout,
                 out_path,
+                subtitle_path=subtitle_path,
                 threads=self._settings.ffmpeg_threads,
             )
             report = await validate_output(
@@ -280,6 +297,7 @@ class VerticalPipelineService:
                     "file_bytes": row.file_bytes,
                     "webcam_confidence": resolved.confidence,
                     "manual_region": resolved.manual,
+                    "subtitles_burned": subtitle_path is not None,
                 },
             )
             await session.commit()
@@ -519,6 +537,40 @@ class VerticalPipelineService:
                 "MEDIA_ROOT yapilandirilmamis; render hedefi yok."
             )
         return Path(self._settings.media_root) / "edited"
+
+    async def _write_subtitle_ass(
+        self,
+        clip_candidate_id: int,
+        segments: list[dict],
+        start: float,
+        end: float,
+        layout: VerticalLayout,
+    ) -> Path | None:
+        """Klip-goreli ASS dosyasini tmp agacina yaz; None = gomme yok.
+
+        Transkript yoksa, aralikta cue cikmiyorsa veya ayar kapaliysa
+        render altyazisiz surer — altyazi akisi ekleyici, asla
+        engelleyici degil. Dosya render'in ara girdisidir; kliple birlikte
+        saklanmasina gerek yoktur."""
+        if not segments or not self._settings.burn_subtitles:
+            return None
+        ass_text = build_ass(
+            segments,
+            start=start,
+            end=end,
+            layout=layout,
+            style=SubtitleStyle.from_settings(self._settings),
+        )
+        if not ass_text:
+            return None
+        out = (
+            Path(self._settings.media_root)
+            / "tmp"
+            / f"subtitles_{clip_candidate_id}.ass"
+        )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(out.write_text, ass_text, encoding="utf-8")
+        return out
 
     async def _ensure_render_row(self, clip_candidate_id: int) -> RenderedClip:
         async with self._sessionmaker() as session:

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.models import AppMeta
 from app.schemas_settings import (
+    BoolSettingOut,
     IntSettingOut,
     PlainSettingOut,
     SecretSettingOut,
@@ -79,6 +80,11 @@ EDITABLE_FIELDS = (
     "transcription_method",
     "whisper_model",
     "whisper_language",
+    # Dikey klip altyazi gomme (ASS stili; onizleme ayni degerleri
+    # kullandigi icin render aninda etkili olur).
+    "burn_subtitles",
+    "subtitle_font_size",
+    "subtitle_position",
 )
 
 URL_FIELDS = ("oauth_redirect_base", "frontend_base_url")
@@ -100,6 +106,7 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "download_rate_limit_kbps": (0, 10_000_000),
     "planned_poll_interval_minutes": (1, 1440),
     "media_retention_days": (-1, 3650),
+    "subtitle_font_size": (24, 140),
 }
 
 FLOAT_FIELDS: dict[str, tuple[float, float]] = {
@@ -108,7 +115,10 @@ FLOAT_FIELDS: dict[str, tuple[float, float]] = {
 
 CHOICE_FIELDS: dict[str, tuple[str, ...]] = {
     "transcription_method": ("sidecar", "whisper"),
+    "subtitle_position": ("top", "middle", "bottom"),
 }
+
+BOOL_FIELDS = ("burn_subtitles",)
 
 # Sadece okunur goruntelenen ortam alanlari (degistirilmesi calisan
 # dosya yollarini bozar); ayarlar ekraninda bilgi amaclidir.
@@ -262,6 +272,12 @@ class SettingsService:
             transcription_method=plain("transcription_method"),
             whisper_model=plain("whisper_model"),
             whisper_language=plain("whisper_language"),
+            burn_subtitles=BoolSettingOut(
+                value=bool(effective.burn_subtitles),
+                source=self._source_of("burn_subtitles", overrides),
+            ),
+            subtitle_font_size=number("subtitle_font_size"),
+            subtitle_position=plain("subtitle_position"),
             media_root=PlainSettingOut(
                 value=str(effective.media_root or ""),
                 source=SettingSource.environment,
@@ -290,6 +306,16 @@ class SettingsService:
                     if field in blob:
                         del blob[field]
                         cleared.append(field)
+                    continue
+                if field in BOOL_FIELDS:
+                    # bool, int'in alt sinifi oldugundan sayi dalindan
+                    # once; kapali (False) gecerli bir depo degeridir.
+                    if not isinstance(value, bool):
+                        raise SettingsServiceError(
+                            f"{field} true ya da false olmalı."
+                        )
+                    blob[field] = value
+                    changed.append(field)
                     continue
                 if field in INT_FIELDS or field in FLOAT_FIELDS:
                     _validate(field, value)

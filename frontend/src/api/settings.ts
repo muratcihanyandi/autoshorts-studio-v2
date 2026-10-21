@@ -18,6 +18,11 @@ export interface IntSetting {
   source: SettingSource
 }
 
+export interface BoolSetting {
+  value: boolean
+  source: SettingSource
+}
+
 export interface SettingsView {
   google_client_id: PlainSetting
   google_client_secret: SecretSetting
@@ -45,6 +50,9 @@ export interface SettingsView {
   transcription_method: PlainSetting
   whisper_model: PlainSetting
   whisper_language: PlainSetting
+  burn_subtitles: BoolSetting
+  subtitle_font_size: IntSetting
+  subtitle_position: PlainSetting
   media_root: PlainSetting
 }
 
@@ -76,6 +84,9 @@ export type SettingsPatch = Partial<{
   transcription_method: string
   whisper_model: string
   whisper_language: string
+  burn_subtitles: boolean
+  subtitle_font_size: number
+  subtitle_position: string
 }>
 
 export function fetchSettings(): Promise<SettingsView> {

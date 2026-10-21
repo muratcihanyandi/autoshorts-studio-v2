@@ -144,7 +144,7 @@ class TestWhisperInstallApi:
 
         monkeypatch.setattr(wi, "_spec_available", lambda: False)
 
-        async def fake_run(cmd):
+        async def fake_run(cmd, *, heartbeat=None):
             # 'pip' basarili: hedef dizine paketi 'kurar'.
             target = tmp_path / "media" / ".whisper" / "whisper"
             target.mkdir(parents=True, exist_ok=True)
@@ -180,7 +180,7 @@ class TestWhisperInstallApi:
 
         monkeypatch.setattr(wi, "_spec_available", lambda: False)
 
-        async def stuck_run(cmd):
+        async def stuck_run(cmd, *, heartbeat=None):
             await asyncio.sleep(30)
             return 1, "gec"
 
@@ -210,6 +210,151 @@ class TestWhisperInstallApi:
             response = client.post("/api/whisper/install")
             assert response.status_code == 503
             assert "disk" in response.json()["detail"].lower()
+
+
+class TestStaleReconcile:
+    """Olum 'running' kilidi: yeniden baslatma gorevi oldurur ama durumu
+    degil — canlilik (kalp atisi) kontrolu olmasa tekrar deneme 409 ile
+    sonsuza kadar reddedilirdi (canlidaki takilma buydu)."""
+
+    def _write_state(self, sessionmaker, state: dict) -> None:
+        import app.services.whisper_install as wi
+
+        asyncio.run(wi.write_state(sessionmaker, state))
+
+    def test_stale_running_reopened_and_retry_allowed(self, tmp_path, monkeypatch):
+        import app.services.whisper_install as wi
+
+        monkeypatch.setattr(wi, "_spec_available", lambda: False)
+        sessionmaker, settings, engine = _env(tmp_path)
+        try:
+            # Canlidaki durum boyle: 'running', yalniz eski started_at.
+            from datetime import UTC, datetime, timedelta
+
+            old = (
+                datetime.now(UTC) - timedelta(hours=2)
+            ).isoformat()
+            self._write_state(
+                sessionmaker,
+                {"state": "running", "mode": "target", "started_at": old},
+            )
+            state = asyncio.run(wi.reconcile_stale_state(sessionmaker))
+            assert state is not None
+            assert state["state"] == "failed"
+            assert "yarıda kesildi" in state["error"]
+            # Kalici: yeniden okuma da failed gormeli.
+            again = asyncio.run(wi.read_state(sessionmaker))
+            assert again is not None and again["state"] == "failed"
+        finally:
+            asyncio.run(engine.dispose())
+
+    def test_fresh_running_state_untouched(self, tmp_path):
+        import app.services.whisper_install as wi
+
+        sessionmaker, settings, engine = _env(tmp_path)
+        try:
+            from datetime import UTC, datetime
+
+            now = datetime.now(UTC).isoformat()
+            asyncio.run(
+                wi.write_state(
+                    sessionmaker,
+                    {
+                        "state": "running",
+                        "mode": "direct",
+                        "started_at": now,
+                        "updated_at": now,
+                    },
+                )
+            )
+            state = asyncio.run(wi.reconcile_stale_state(sessionmaker))
+            assert state is not None
+            assert state["state"] == "running"
+        finally:
+            asyncio.run(engine.dispose())
+
+    def test_api_recovers_stale_lock(self, tmp_path, monkeypatch):
+        """GET durumu acar, POST artik 409 degil 202 verir."""
+        import json
+
+        import app.services.whisper_install as wi
+
+        monkeypatch.setattr(wi, "_spec_available", lambda: False)
+
+        async def fake_run(cmd, *, heartbeat=None):
+            target = tmp_path / "media" / ".whisper" / "whisper"
+            target.mkdir(parents=True, exist_ok=True)
+            return 0, "ok"
+
+        monkeypatch.setattr(wi, "run_install", fake_run)
+        app = _make_app(
+            tmp_path, worker_enabled=False, media_root=str(tmp_path / "media")
+        )
+        from datetime import UTC, datetime, timedelta
+
+        old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        # Uygulamanin kendi DB'sine bayat 'running' yaz (senkron motor:
+        # app'in async oturumu baska donguye baglanmasin).
+        stale = json.dumps(
+            {"state": "running", "mode": "target", "started_at": old}
+        )
+        sync_engine = sa.create_engine(f"sqlite:///{tmp_path}/test.db")
+        with sync_engine.connect() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO app_meta (key, value) "
+                    "VALUES ('whisper_install', :v)"
+                ),
+                {"v": stale},
+            )
+            conn.commit()
+        sync_engine.dispose()
+        with TestClient(app) as client:
+            # Once eski tarayici sekmesindeki gibi: GET bayat 'running'
+            # dondurmustu; artik uzlastirip 'failed' acar.
+            body = client.get("/api/whisper").json()
+            assert (body.get("status") or {}).get("state") == "failed"
+            # Yeniden deneme kabul edilir (409 kilidi kalkti).
+            started = client.post("/api/whisper/install")
+            assert started.status_code == 202, started.text
+
+    def test_run_install_beats_while_pip_runs(self, tmp_path, monkeypatch):
+        """Uzayan pip sureci boyunca kalp atisi duzenli yazilir."""
+        import app.services.whisper_install as wi
+
+        monkeypatch.setattr(wi, "HEARTBEAT_SECONDS", 0.02)
+
+        class FakeProc:
+            returncode = 0
+
+            async def communicate(self):
+                await asyncio.sleep(0.12)
+                return b"pip ok", b""
+
+            def kill(self):
+                pass
+
+            async def wait(self):
+                return 0
+
+        async def fake_exec(*args, **kwargs):
+            return FakeProc()
+
+        monkeypatch.setattr(wi.asyncio, "create_subprocess_exec", fake_exec)
+        beats: list[int] = []
+
+        async def heartbeat():
+            beats.append(1)
+
+        async def scenario():
+            return await wi.run_install(
+                ["pip", "install"], heartbeat=heartbeat
+            )
+
+        returncode, tail = asyncio.run(scenario())
+        assert returncode == 0
+        assert tail == "pip ok"
+        assert len(beats) >= 2  # 0.12 sn / 0.02 sn aralik ~= 6 atis
 
 
 class TestTranscriberContract:

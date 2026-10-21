@@ -29,6 +29,9 @@ const settingsPayload = {
   transcription_method: { value: 'sidecar', source: 'environment' },
   whisper_model: { value: 'tiny', source: 'environment' },
   whisper_language: { value: 'tr', source: 'environment' },
+  burn_subtitles: { value: true, source: 'environment' },
+  subtitle_font_size: { value: 64, source: 'environment' },
+  subtitle_position: { value: 'middle', source: 'environment' },
   media_root: { value: '/data/media', source: 'environment' },
 }
 
@@ -234,5 +237,52 @@ describe('SettingsScreen', () => {
     expect(
       screen.queryByRole('button', { name: "Whisper'ı İndir ve Kur" }),
     ).not.toBeInTheDocument()
+  })
+
+  it('renders the subtitle section with a live preview', async () => {
+    vi.stubGlobal('fetch', stubFetch())
+    render(<SettingsScreen />)
+
+    expect(await screen.findByText('Altyazı (Dikey Klipler)')).toBeInTheDocument()
+    // Önizleme temsilî kadranı ve örnek altyazı metnini taşır.
+    expect(
+      screen.getByRole('img', { name: /altyazı önizlemesi/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('İşte günün en heyecanlı anı — kaçırmayın!')).toBeInTheDocument()
+
+    // Kapalı yapınca örnek metin kalkar, kapalı notu gelir.
+    fireEvent.click(screen.getByLabelText('Dikey kliplere altyazı göm'))
+    expect(
+      screen.queryByText('İşte günün en heyecanlı anı — kaçırmayın!'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Altyazı kapalı')).toBeInTheDocument()
+  })
+
+  it('saves only the changed subtitle settings', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SettingsScreen />)
+
+    await screen.findByText('Altyazı (Dikey Klipler)')
+    fireEvent.change(screen.getByLabelText(/Konum/i), {
+      target: { value: 'bottom' },
+    })
+    fireEvent.change(screen.getByLabelText(/Yazı Boyutu/i), {
+      target: { value: '88' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Altyazı Ayarlarını Kaydet' }),
+    )
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes('/api/settings') && c[1]?.method === 'PUT',
+      )
+      expect(put).toBeDefined()
+      expect(JSON.parse(String(put![1]!.body))).toEqual({
+        subtitle_position: 'bottom',
+        subtitle_font_size: 88,
+      })
+    })
   })
 })

@@ -87,11 +87,14 @@ class TestLayout:
 
     def test_filter_graph_contains_both_crops_and_subtitles(self, tmp_path):
         layout = build_layout(1280, 720, WEBCAM_REGION)
-        srt = tmp_path / "subs.srt"
-        srt.write_text("1\n00:00:00,000 --> 00:00:02,000\nmerhaba\n", encoding="utf-8")
-        graph = build_filter_graph(layout, srt)
+        ass = tmp_path / "subs.ass"
+        ass.write_text("[Script Info]\n", encoding="utf-8")
+        graph = build_filter_graph(layout, ass)
         assert "split=2" in graph and "vstack" in graph
         assert "subtitles=" in graph
+        # Stil ASS dosyanin icinde tasir (PlayRes 1080x1920); filtre
+        # grafigi force_style ile deger ezmez — onizleme sozu.
+        assert "force_style" not in graph
         graph_plain = build_filter_graph(layout, "")
         assert "subtitles=" not in graph_plain
 
@@ -104,12 +107,24 @@ class TestRealRender:
         )
 
     def test_render_and_validate(self, face_video, tmp_path):
+        """Gercek ffmpeg + gercek ASS: uretim yolunun kendisi
+        (build_ass -> subtitles filtresi -> libass)."""
+        from app.services.subtitle_style import SubtitleStyle, build_ass
+
         layout = build_layout(1280, 720, WEBCAM_REGION)
-        srt = tmp_path / "subs.srt"
-        srt.write_text(
-            "1\n00:00:00,000 --> 00:00:02,900\nselam arkadaslar\n",
-            encoding="utf-8",
+        ass_text = build_ass(
+            [
+                {"start": 1.2, "end": 3.9, "text": "selam arkadaslar"},
+                {"start": 0.0, "end": 0.5, "text": "klip disi"},
+            ],
+            start=1.0,
+            end=4.0,
+            layout=layout,
+            style=SubtitleStyle(font_size=72, position="bottom"),
         )
+        assert "selam arkadaslar" in ass_text
+        srt = tmp_path / "subs.ass"
+        srt.write_text(ass_text, encoding="utf-8")
         out = tmp_path / "edited" / "clip.mp4"
 
         async def scenario():

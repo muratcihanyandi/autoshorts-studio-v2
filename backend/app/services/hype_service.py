@@ -40,17 +40,18 @@ from app.models import (
     Channel,
     Character,
     ClipCandidate,
-    CorrectedTranscript,
     MediaAsset,
     MediaInspection,
     PublishingProfile,
     SourceChannel,
     SourceVideo,
-    Transcript,
 )
 from app.services.channel_service import record_event
 from app.services.llm_service import LlmProviderService, LlmServiceError
-from app.services.media_transcript import transcript_text_in_range
+from app.services.media_transcript import (
+    load_segments,
+    transcript_text_in_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -366,31 +367,9 @@ class HypeService:
     async def _segments_for(
         session: AsyncSession, media_asset_id: int
     ) -> list[dict]:
-        corrected = (
-            (
-                await session.execute(
-                    sa.select(CorrectedTranscript).where(
-                        CorrectedTranscript.media_asset_id == media_asset_id
-                    )
-                )
-            )
-            .scalars()
-            .one_or_none()
-        )
-        if corrected is not None:
-            return list(corrected.segments)
-        original = (
-            (
-                await session.execute(
-                    sa.select(Transcript).where(
-                        Transcript.media_asset_id == media_asset_id
-                    )
-                )
-            )
-            .scalars()
-            .one_or_none()
-        )
-        return list(original.segments) if original is not None else []
+        # Yukleme mantigi media_transcript.load_segments'ta; altyazi
+        # gomme ayni onceligi (duzeltilmis > ham) kullanir.
+        return await load_segments(session, media_asset_id)
 
     # --- LLM degerlendirmesi ---
 

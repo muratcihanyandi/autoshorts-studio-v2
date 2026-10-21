@@ -867,3 +867,133 @@ def test_missing_source_file_marks_render_failed_stops_feed(tmp_path):
     assert error is not None  # hata kullaniciya tasinir
     assert render_status == "failed"  # satir kayitli
     assert enqueued == 0  # besleme yeniden is acmaz
+
+
+class TestSubtitleBurn:
+    """Kullanici istegi (2026-10-21): klipler transkriptle cikar.
+
+    Segmentler duzeltilmis transkripti tercih eder, klip-goreli zamana
+    kaydirilip ASS olarak yazilir ve render'a verilir; transkript yoksa
+    veya ayar kapaliysa akis altyazisiz surer.
+    """
+
+    async def _seed_transcript(self, sessionmaker, media_path: str) -> None:
+        """Ham + duzeltilmis transkript: gomme duzeltilmisi secer."""
+        from app.models import CorrectedTranscript, MediaAsset, Transcript
+
+        async with sessionmaker() as session:
+            asset = (
+                (
+                    await session.execute(
+                        sa.select(MediaAsset).where(
+                            MediaAsset.file_path == media_path
+                        )
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            session.add(
+                Transcript(
+                    media_asset_id=asset.id,
+                    source="whisper",
+                    segment_count=2,
+                    segments=[
+                        {"start": 1.2, "end": 2.4, "text": "ham metin"},
+                        {"start": 2.4, "end": 3.9, "text": "ham devam"},
+                    ],
+                )
+            )
+            session.add(
+                CorrectedTranscript(
+                    media_asset_id=asset.id,
+                    segments=[
+                        {
+                            "start": 1.2,
+                            "end": 2.4,
+                            "text": "duzeltilmis metin burada",
+                        },
+                        {
+                            "start": 2.4,
+                            "end": 3.9,
+                            "text": "duzeltilmis devam",
+                        },
+                    ],
+                )
+            )
+            await session.commit()
+
+    def test_transcript_burned_into_clip(self, tmp_path, face_video):
+        from app.services.media_storage import ensure_media_tree
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        ensure_media_tree(tmp_path / "media")
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(tmp_path)
+            try:
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video)
+                )
+                await self._seed_transcript(sessionmaker, str(face_video))
+                service = VerticalPipelineService(sessionmaker, settings)
+                return await service.run(candidate_id)
+            finally:
+                await engine.dispose()
+
+        result = asyncio.run(scenario())
+        assert result.get("rendered") is True
+        # ASS dosyasi tmp agacinda ve duzeltilmis metni tasiyor.
+        ass_path = tmp_path / "media" / "tmp" / f"subtitles_{result['clip_candidate_id']}.ass"
+        assert ass_path.is_file()
+        content = ass_path.read_text(encoding="utf-8")
+        assert "duzeltilmis metin burada" in content
+        assert "ham metin" not in content
+        # Kayit: altyazi bilgisidir (dosya yolu degil).
+        events = _sync_rows(
+            tmp_path,
+            "SELECT detail FROM audit_events WHERE event_type='render.done'",
+        )
+        import json
+
+        raw = events[0].detail
+        detail = json.loads(raw) if isinstance(raw, str) else raw
+        assert detail["subtitles_burned"] is True
+
+    def test_burn_disabled_renders_without_subtitles(
+        self, tmp_path, face_video
+    ):
+        from app.services.media_storage import ensure_media_tree
+        from app.services.vertical_pipeline import VerticalPipelineService
+
+        ensure_media_tree(tmp_path / "media")
+
+        async def scenario():
+            sessionmaker, settings, engine = _vertical_env(
+                tmp_path, burn_subtitles=False
+            )
+            try:
+                _, candidate_id = await _seed_chain(
+                    sessionmaker, str(face_video)
+                )
+                await self._seed_transcript(sessionmaker, str(face_video))
+                service = VerticalPipelineService(sessionmaker, settings)
+                return await service.run(candidate_id)
+            finally:
+                await engine.dispose()
+
+        result = asyncio.run(scenario())
+        assert result.get("rendered") is True
+        ass_path = (
+            tmp_path / "media" / "tmp" / f"subtitles_{result['clip_candidate_id']}.ass"
+        )
+        assert not ass_path.exists()
+        import json
+
+        events = _sync_rows(
+            tmp_path,
+            "SELECT detail FROM audit_events WHERE event_type='render.done'",
+        )
+        raw = events[0].detail
+        detail = json.loads(raw) if isinstance(raw, str) else raw
+        assert detail["subtitles_burned"] is False

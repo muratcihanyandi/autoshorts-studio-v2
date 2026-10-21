@@ -10,6 +10,7 @@ import {
 import { usePolling } from '../hooks/usePolling'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 import { ApiError } from '../api/client'
+import { SubtitlePreview } from '../components/SubtitlePreview'
 import { WhisperInstallControl } from '../components/WhisperInstallControl'
 
 const PHASE_LABEL: Record<string, string> = {
@@ -195,6 +196,9 @@ interface FormState {
   retention: string
   whisperModel: string
   whisperLanguage: string
+  subtitleBurn: boolean
+  subtitleFontSize: string
+  subtitlePosition: string
 }
 
 function initForm(view: SettingsView): FormState {
@@ -220,6 +224,9 @@ function initForm(view: SettingsView): FormState {
     retention: String(view.media_retention_days.value),
     whisperModel: view.whisper_model.value,
     whisperLanguage: view.whisper_language.value,
+    subtitleBurn: view.burn_subtitles.value,
+    subtitleFontSize: String(view.subtitle_font_size.value),
+    subtitlePosition: view.subtitle_position.value || 'middle',
   }
 }
 
@@ -303,6 +310,19 @@ export function SettingsScreen() {
     }
     if (form.whisperLanguage.trim() !== view.whisper_language.value) {
       patch.whisper_language = form.whisperLanguage.trim()
+    }
+    if (form.subtitleBurn !== view.burn_subtitles.value) {
+      patch.burn_subtitles = form.subtitleBurn
+    }
+    const subtitleSize = Number(form.subtitleFontSize)
+    if (
+      Number.isFinite(subtitleSize) &&
+      subtitleSize !== view.subtitle_font_size.value
+    ) {
+      patch.subtitle_font_size = subtitleSize
+    }
+    if (form.subtitlePosition !== view.subtitle_position.value) {
+      patch.subtitle_position = form.subtitlePosition
     }
 
     if (Object.keys(patch).length === 0) {
@@ -626,6 +646,129 @@ export function SettingsScreen() {
                   onClick={() => void save()}
                 >
                   {saveState.kind === 'saving' ? 'Kaydediliyor…' : 'Limitleri Kaydet'}
+                </button>
+                {saveState.kind === 'saved' && (
+                  <span className="save-ok" role="status">
+                    Kaydedildi.
+                  </span>
+                )}
+                {saveState.kind === 'error' && (
+                  <span className="save-error" role="alert">
+                    {saveState.message}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="plate settings-form">
+          <h2 className="panel-title">Altyazı (Dikey Klipler)</h2>
+          {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+          {view && form && (
+            <>
+              <p className="plate-note">
+                Reels klipleri çıkarılırken transkriptten altyazı gömülür.
+                Ayarları değiştirdikçe yanındaki önizleme güncellenir;
+                kaydedince bir sonraki render'dan itibaren uygulanır.
+              </p>
+              <div className="subtitle-settings">
+                <div className="settings-grid">
+                  <div className="field">
+                    <label htmlFor="set-subtitle-burn">
+                      Altyazı Gömme
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.burn_subtitles.source]}
+                      </span>
+                    </label>
+                    <label className="check-row">
+                      <input
+                        id="set-subtitle-burn"
+                        type="checkbox"
+                        checked={form.subtitleBurn}
+                        onChange={(e) =>
+                          setForm((f) =>
+                            f ? { ...f, subtitleBurn: e.target.checked } : f,
+                          )
+                        }
+                      />
+                      <span>Dikey kliplere altyazı göm</span>
+                    </label>
+                    <span className="field-help">
+                      Transkripti olmayan videolar (mevcut altyazı da
+                      Whisper da yoksa) altyazısız çıkar; akış durmaz.
+                    </span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="set-subtitle-size">
+                      Yazı Boyutu
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.subtitle_font_size.source]}
+                      </span>
+                    </label>
+                    <div className="range-row">
+                      <input
+                        id="set-subtitle-size"
+                        type="range"
+                        min={24}
+                        max={140}
+                        step={2}
+                        value={form.subtitleFontSize}
+                        onChange={(e) =>
+                          setForm((f) =>
+                            f ? { ...f, subtitleFontSize: e.target.value } : f,
+                          )
+                        }
+                      />
+                      <span className="nums">{form.subtitleFontSize}</span>
+                    </div>
+                    <span className="field-help">
+                      1080x1920 çıktıda piksel cinsinden yazı yüksekliği
+                      (varsayılan 64).
+                    </span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="set-subtitle-pos">
+                      Konum
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.subtitle_position.source]}
+                      </span>
+                    </label>
+                    <select
+                      id="set-subtitle-pos"
+                      value={form.subtitlePosition}
+                      onChange={(e) =>
+                        setForm((f) =>
+                          f ? { ...f, subtitlePosition: e.target.value } : f,
+                        )
+                      }
+                    >
+                      <option value="top">Üst (bant içinde)</option>
+                      <option value="middle">Orta</option>
+                      <option value="bottom">Alt</option>
+                    </select>
+                    <span className="field-help">
+                      Altyazı daima video bölümünün alt bandında kalır;
+                      kamera bölümünün üstüne çıkmaz.
+                    </span>
+                  </div>
+                </div>
+                <SubtitlePreview
+                  burn={form.subtitleBurn}
+                  fontSizePx={Number(form.subtitleFontSize) || 64}
+                  position={form.subtitlePosition}
+                />
+              </div>
+              <div className="settings-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={saveState.kind === 'saving'}
+                  onClick={() => void save()}
+                >
+                  {saveState.kind === 'saving'
+                    ? 'Kaydediliyor…'
+                    : 'Altyazı Ayarlarını Kaydet'}
                 </button>
                 {saveState.kind === 'saved' && (
                   <span className="save-ok" role="status">

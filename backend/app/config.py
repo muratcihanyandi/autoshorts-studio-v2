@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     transcription_method: str = "sidecar"
     whisper_model: str = "tiny"
     whisper_language: str = "tr"
+    # Dikey (Reels) kliplerine gomulecek altyazi. Stil ASS
+    # 1080x1920 piksel uzayindadir (subtitle_style); konum alt bant
+    # icindedir — webcam bolumu asla kapanmaz. Ayarlar ekranindaki
+    # onizleme ayni degerlerle cizilir.
+    burn_subtitles: bool = True
+    subtitle_font_size: int = 64
+    subtitle_position: str = "middle"
     # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
     shorts_per_video: int = 3
 

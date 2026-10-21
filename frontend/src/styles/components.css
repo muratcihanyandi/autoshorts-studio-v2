@@ -1244,6 +1244,112 @@
   width: 100%;
 }
 
+/* --- Altyazi ayarlari (Ayarlar): form solda, onizleme sagda --- */
+.subtitle-settings {
+  display: flex;
+  gap: var(--space-4, 20px);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.subtitle-settings .settings-grid {
+  flex: 1 1 320px;
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.range-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent-deep);
+}
+
+.range-row .nums {
+  min-width: 34px;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* 9:16 onizleme kadranı: koyu video zemini, iki bölüm, altyazı */
+.sub-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.sub-preview-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--plate-line);
+  background: var(--ink-deep);
+  display: flex;
+  flex-direction: column;
+}
+
+.sub-preview-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #1c3050, #14243d);
+  border-bottom: 1px solid rgba(240, 244, 248, 0.12);
+}
+
+.sub-preview-top span,
+.sub-preview-bottom span {
+  font: 500 10px var(--font-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-on-dark);
+}
+
+.sub-preview-bottom {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      #101d31 0 14px,
+      #0d1829 14px 28px
+    );
+}
+
+.sub-preview-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  color: #ffffff;
+  font-family: var(--font-body);
+  font-weight: 500;
+  line-height: 1.15;
+  /* ASS Outline=4 taklidi: yonlu golgelerle siyah kontur */
+  text-shadow:
+    -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+    -2px 0 0 #000, 2px 0 0 #000, 0 -2px 0 #000, 0 2px 0 #000;
+}
+
+.sub-preview-off {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  font: 500 10.5px var(--font-body);
+  color: var(--faint-on-dark);
+  background: rgba(11, 25, 44, 0.72);
+  border: 1px dashed var(--ink-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
 /* --- Filtre seridi (kutuphane / gunlukler) --- */
 .filter-row {
   display: flex;

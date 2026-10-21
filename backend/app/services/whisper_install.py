@@ -16,7 +16,11 @@ screen when the binary is missing:
 
 Installations run as a background task; their state lives in app_meta
 under 'whisper_install' so the UI polls honestly (running / succeeded /
-failed with the pip output tail — never silent success).
+failed with the pip output tail — never silent success). While pip
+runs the task refreshes the state's 'updated_at' heartbeat; a 'running'
+state whose heartbeat went silent (application restart killed the task)
+is reconciled to 'failed' on the next status read so the retry button
+is never blocked forever.
 """
 from __future__ import annotations
 
@@ -27,7 +31,8 @@ import os
 import platform as platform_mod
 import shutil
 import sys
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -81,6 +86,11 @@ INSTALL_STATE_KEY = "whisper_install"
 INSTALL_DISK_GB = 2.0
 INSTALL_TIMEOUT_SECONDS = 3600.0
 LOG_TAIL_CHARS = 2000
+# Kalp atisi: pip surerken durum satiri bu aralikla tazelenir. Okuma
+# tarafinda STALE_AFTER_SECONDS'ten uzun susan bir 'running' durumu olu
+# kabul edilip acilir (tekrar deneme kilidi kalkar).
+HEARTBEAT_SECONDS = 30.0
+STALE_AFTER_SECONDS = 300.0
 
 
 class WhisperInstallError(Exception):
@@ -162,7 +172,9 @@ def plan_install(settings: Settings) -> dict:
 
 def subprocess_env(settings: Settings) -> dict | None:
     """Whisper cagrilari icin tam ortam (PYTHONPATH hedefli kurulumda).
-    Direct kurulumda None: surec ortami miras alinir."""
+    Direct kurulumda None: surec ortami miras alinir. Hedefli kurulumda
+    model onbellegi de medya agacina yonlendirilir (XDG_CACHE_HOME) —
+    konteyner yenilense de ~75 MB'lik model dosyasi yeniden inmez."""
     if _spec_available():
         return None
     target = target_dir(settings)
@@ -172,6 +184,7 @@ def subprocess_env(settings: Settings) -> dict | None:
         env["PYTHONPATH"] = (
             f"{target}{os.pathsep}{existing}" if existing else str(target)
         )
+        env["XDG_CACHE_HOME"] = str(target.parent / ".whisper-cache")
         return env
     return None
 
@@ -190,19 +203,55 @@ def disk_ok_for_install(settings: Settings) -> bool:
     return free >= INSTALL_DISK_GB * 1024**3
 
 
-async def run_install(cmd: list[str]) -> tuple[int, str]:
-    """pip surecini kos; (cikis kodu, cikti kuyrugu). Zaman asiminda
-    surec oldurulur ve hata olarak doner."""
+def _wheel_prereq_cmd() -> list[str]:
+    """openai-whisper sdist'i --no-build-isolation ile kurulurken
+    yorumlayici ortaminda 'wheel' paketi bulunmali (bdist_wheel)."""
+    return [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-input",
+        "--disable-pip-version-check",
+        "--no-warn-script-location",
+        "wheel",
+    ]
+
+
+async def run_install(
+    cmd: list[str],
+    *,
+    heartbeat: Callable[[], Awaitable[None]] | None = None,
+) -> tuple[int, str]:
+    """pip surecini kos; (cikis kodu, cikti kuyrugu). Surerken heartbeat
+    callback HEARTBEAT_SECONDS aralikla cagrilir (durumu canli tutar);
+    toplam sure asilirsa surec oldurulur ve hata olarak doner."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + INSTALL_TIMEOUT_SECONDS
+    communicate = asyncio.ensure_future(proc.communicate())
+    out = b""
     try:
-        out, _ = await asyncio.wait_for(
-            proc.communicate(), INSTALL_TIMEOUT_SECONDS
-        )
+        while True:
+            try:
+                out, _ = await asyncio.wait_for(
+                    asyncio.shield(communicate), HEARTBEAT_SECONDS
+                )
+                break
+            except TimeoutError:
+                if loop.time() >= deadline:
+                    raise
+                if heartbeat is not None:
+                    try:
+                        await heartbeat()
+                    except Exception:  # noqa: BLE001 - atis best-effort
+                        logger.debug("whisper kurulum kalp atisi yazilamadi")
     except TimeoutError:
+        communicate.cancel()
         proc.kill()
         await proc.wait()
         raise WhisperInstallError(
@@ -246,6 +295,57 @@ async def write_state(
         await session.commit()
 
 
+def _heartbeat_is_fresh(state: dict) -> bool:
+    """Son kalp atisi (updated_at; eskilerde yalniz started_at) hala
+    taze mi? Okunamayan/eksik zaman olmus sayilir."""
+    beat = state.get("updated_at") or state.get("started_at")
+    if not beat:
+        return False
+    try:
+        moment = datetime.fromisoformat(str(beat))
+    except ValueError:
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return datetime.now(UTC) - moment <= timedelta(seconds=STALE_AFTER_SECONDS)
+
+
+async def reconcile_stale_state(
+    sessionmaker: async_sessionmaker[AsyncSession] | None,
+) -> dict | None:
+    """Olu 'running' durumunu ac: kalp atisi susmussa 'failed' yaz.
+
+    Kurulum durumu app_meta'da yasar; uygulamayi yeniden baslatmak
+    (imaj guncellemesi dahil) arka plan gorevini oldurur ama durumu
+    degil — 'running' kalir ve yeniden deneme 409 ile sonsuza kadar
+    reddedilirdi. Durum sorgulandiginda/istendiginde cagrilir; kendi
+    sureci icindeki canli kurulumun kalp atisi taze oldugundan etkilenmez.
+    """
+    state = await read_state(sessionmaker)
+    if sessionmaker is None or state is None:
+        return state
+    if state.get("state") != "running" or _heartbeat_is_fresh(state):
+        return state
+    final = {
+        **state,
+        "state": "failed",
+        "error": (
+            "Kurulum yarıda kesildi: arka plan görevi sonlandı (büyük "
+            "olasılıkla uygulama yeniden başlatıldı). Yeniden deneyin."
+        ),
+        "finished_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        await write_state(sessionmaker, final)
+    except Exception:  # noqa: BLE001 - yazilmazsa eski durum kalir
+        logger.exception("bayat whisper kurulum durumu yazilamadi")
+        return state
+    await _audit_result(
+        sessionmaker, "whisper.install_stale", "kalp atisi susmus"
+    )
+    return final
+
+
 def _audit(
     session: AsyncSession, event_type: str, detail: dict
 ) -> None:
@@ -266,15 +366,24 @@ async def install_whisper(
     """
     plan = plan_install(settings)
     info = platform_info()
+    started_at = datetime.now(UTC).isoformat()
     running_state = {
         "state": "running",
         "mode": plan["mode"],
         "target": plan["target"],
         "platform": info["platform"],
         "machine": info["machine"],
-        "started_at": datetime.now(UTC).isoformat(),
+        "started_at": started_at,
+        "updated_at": started_at,
     }
     await write_state(sessionmaker, running_state)
+
+    async def _heartbeat() -> None:
+        await write_state(
+            sessionmaker,
+            {**running_state, "updated_at": datetime.now(UTC).isoformat()},
+        )
+
     async with sessionmaker() as session:
         _audit(
             session,
@@ -285,7 +394,20 @@ async def install_whisper(
 
     final: dict
     try:
-        returncode, tail = await run_install(plan["cmd"])
+        # Direct kurulumda sdist (openai-whisper) bdist_wheel ister;
+        # venv'ler wheel ile dogmayabilir. On kosul kurulumu ayni
+        # kalp atisiyla izlenir; target modunda yorumlayici ortami
+        # root'a aittir ve imaj zaten wheel tasir.
+        if plan["mode"] == "direct":
+            prereq_code, _ = await run_install(
+                _wheel_prereq_cmd(), heartbeat=_heartbeat
+            )
+            if prereq_code != 0:
+                raise WhisperInstallError(
+                    "Kurulum on kosulu (wheel) kurulamadi; agi/pip'i "
+                    "kontrol edin."
+                )
+        returncode, tail = await run_install(plan["cmd"], heartbeat=_heartbeat)
     except WhisperInstallError as exc:
         final = {**running_state, "state": "failed", "error": str(exc)}
         await write_state(sessionmaker, final)

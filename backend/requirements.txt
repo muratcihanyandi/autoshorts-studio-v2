@@ -42,3 +42,6 @@ websockets==17.2
 yt-dlp==2026.8.19
 opencv-python-headless==4.12.0.88
 tzdata==2026.5
+# Whisper'in --no-build-isolation sdist kurulumu bdist_wheel ister;
+# temel imaj her zaman wheel tasimayabilir (bkz. whisper_install).
+wheel==0.45.1

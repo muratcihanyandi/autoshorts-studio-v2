@@ -29,6 +29,11 @@ class IntSettingOut(BaseModel):
     source: SettingSource
 
 
+class BoolSettingOut(BaseModel):
+    value: bool
+    source: SettingSource
+
+
 class SecretSettingOut(BaseModel):
     """Secret field: never carries the value."""
 
@@ -65,6 +70,9 @@ class SettingsOut(BaseModel):
     transcription_method: PlainSettingOut
     whisper_model: PlainSettingOut
     whisper_language: PlainSettingOut
+    burn_subtitles: BoolSettingOut
+    subtitle_font_size: IntSettingOut
+    subtitle_position: PlainSettingOut
     media_root: PlainSettingOut
 
 
@@ -99,3 +107,6 @@ class SettingsUpdate(BaseModel):
     transcription_method: str | None = None
     whisper_model: str | None = None
     whisper_language: str | None = None
+    burn_subtitles: bool | None = None
+    subtitle_font_size: int | None = None
+    subtitle_position: str | None = None

@@ -17,7 +17,7 @@ from app.services.whisper_install import (
     install_whisper,
     platform_info,
     plan_install,
-    read_state,
+    reconcile_stale_state,
     whisper_available,
 )
 
@@ -38,7 +38,7 @@ def _sessionmaker(request: Request):
 async def whisper_status(request: Request) -> dict:
     settings = request.app.state.settings
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
-    status_row = await read_state(sessionmaker)
+    status_row = await reconcile_stale_state(sessionmaker)
     return {
         "installed": whisper_available(settings),
         **platform_info(),
@@ -64,7 +64,10 @@ async def start_whisper_install(request: Request) -> dict:
             status_code=409,
             detail="Whisper kurulumu zaten sürüyor.",
         )
-    state_row = await read_state(sessionmaker)
+    # Once olu kilidi kaldir: kalp atisi susmus bir 'running' durumu
+    # (yeniden baslatma golpeyi oldurdu) 'failed'a cevrilir ki 409
+    # yalnizca gercekten kosan kurulumu korusun.
+    state_row = await reconcile_stale_state(sessionmaker)
     if state_row is not None and state_row.get("state") == "running":
         raise HTTPException(
             status_code=409,

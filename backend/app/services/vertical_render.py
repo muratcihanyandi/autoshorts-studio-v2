@@ -31,7 +31,6 @@ HORIZONTAL_H = 1080
 # dikdortgenlerinde bile alt bant (icerik + altyazi) yasamali.
 MAX_TOP_FRACTION = 0.65
 DEFAULT_WEBCAM_PADDING = 0.35
-SUBTITLE_MARGIN_V = 80  # alt bantta kenardan px
 
 
 class VerticalRenderError(Exception):
@@ -152,11 +151,15 @@ def _escape_filter_path(path: str | Path) -> str:
 
 
 def build_filter_graph(layout: VerticalLayout, subtitle_path: str | Path) -> str:
+    """Iki kirpma + vstack; subtitle_path verilirse alt banda gomulur.
+
+    Altyazi dosyasi ASS'tir ve stilini kendi icinde tasir (PlayRes
+    1080x1920 — uretimi subtitle_style.build_ass); force_style
+    kullanilmaz ki onizleme ayni degerlerle birebir cizilebilsin."""
     top = layout.top
     bottom = layout.bottom
     subtitle = (
         f"subtitles='{_escape_filter_path(subtitle_path)}'"
-        f":force_style='Alignment=2,MarginV={SUBTITLE_MARGIN_V},Fontsize=16'"
         if subtitle_path
         else ""
     )

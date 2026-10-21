@@ -13,6 +13,9 @@ import re
 import sys
 from pathlib import Path
 
+from sqlalchemy import select as sa_select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 _TIMESTAMP = re.compile(
     r"(\d{1,2}:)?(\d{1,2}):(\d{2})[.,](\d{1,3})"
 )
@@ -131,6 +134,41 @@ def transcript_text_in_range(
         if seg["end"] > start and seg["start"] < end
     ]
     return " ".join(parts).strip()
+
+
+async def load_segments(
+    session: AsyncSession, media_asset_id: int
+) -> list[dict]:
+    """Mevcut en iyi transkript dilimleri: duzeltilmis (M9) yoksa ham
+    (sidecar/Whisper). Aday secimi ve altyazi gomme ayni onceligi
+    paylasir — duzeltilmis metin klipe de oyle dusmelidir."""
+    from app.models import CorrectedTranscript, Transcript
+
+    corrected = (
+        (
+            await session.execute(
+                sa_select(CorrectedTranscript).where(
+                    CorrectedTranscript.media_asset_id == media_asset_id
+                )
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if corrected is not None:
+        return list(corrected.segments)
+    original = (
+        (
+            await session.execute(
+                sa_select(Transcript).where(
+                    Transcript.media_asset_id == media_asset_id
+                )
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    return list(original.segments) if original is not None else []
 
 
 class TranscriptError(Exception):
