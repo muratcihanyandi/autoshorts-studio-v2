@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
-from app.models import SourceChannel, SourceVideo
+from app.models import PlanningDecision, SourceChannel, SourceVideo
 from app.services.channel_service import record_event
 from app.services.source_dedupe import find_duplicate_title, normalize_title
 from app.services.source_rules import evaluate_source_rules
@@ -163,19 +163,39 @@ class DiscoveryService:
                         duplicate_of = find_duplicate_title(
                             normalize_title(video["title"]), known_titles
                         )
-                    session.add(
-                        SourceVideo(
-                            source_channel_id=source.id,
-                            youtube_video_id=video["video_id"],
-                            title=video["title"],
-                            published_at=published_at,
-                            status=(
-                                "excluded"
-                                if exclusion or duplicate_of is not None
-                                else "discovered"
-                            ),
-                        )
+                    row = SourceVideo(
+                        source_channel_id=source.id,
+                        youtube_video_id=video["video_id"],
+                        title=video["title"],
+                        published_at=published_at,
+                        status=(
+                            "excluded"
+                            if exclusion or duplicate_of is not None
+                            else "discovered"
+                        ),
                     )
+                    session.add(row)
+                    if exclusion is not None or duplicate_of is not None:
+                        # Kural urunu ve mirror haricleri karar defterine
+                        # de yazilir (2026-10-21 canli kusurun kalici
+                        # cozumu): reapply'in geri getirme kosulu karar
+                        # gerekcesine bakar — kayit yoksa manuel haric
+                        # sanilir ve yas penceresi genisletilse bile
+                        # video geri gelmez. Mirror haricleri bilincli
+                        # olarak kural onekleri TASIMAYAN bir gerekce
+                        # tasir: ayni icerik sistemde oldugu icin reapply
+                        # onlari geri getirmez.
+                        await session.flush()
+                        reason = exclusion or (
+                            "ayni icerik zaten sistemde (mirror kaynak)"
+                        )
+                        session.add(
+                            PlanningDecision(
+                                source_video_id=row.id,
+                                decision="skipped",
+                                reason=reason,
+                            )
+                        )
                     known_ids.add(video["video_id"])
                     if exclusion:
                         new_excluded += 1

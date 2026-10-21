@@ -972,6 +972,27 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Excluded-video re-processing fix (2026-10-21, third round — user
+  removed processed videos so the current system would rebuild them,
+  but the engine still remembered them as "already processed"):
+  root cause chain found and closed. (a) The user-deleted videos
+  returned from discovery as 'excluded' because the 15-day recency
+  window had passed — the source-level max_age_days was raised to 30
+  on all four live sources (Characters → Güncellik, editable in UI).
+  (b) REAL DEFECT: discovery wrote rule-based exclusions WITHOUT a
+  planning_decisions reason, so reapply treated them as manual
+  exclusions and never restored them when the window widened. Fix:
+  discovery now records every rule/mirror exclusion in the planning
+  ledger with its reason (mirror duplicates carry a deliberately
+  non-rule prefix so reapply never resurrects them). Verified:
+  backend 477/477 (test_discovery +1 end-to-end: 1-day window
+  excludes both mock videos with 'yaş kuralı' reasons, widening to
+  60 restores them to planned; test_plan_skips_excluded_videos
+  updated to the new ledger contract), secret scan clean.
+  LIVE REPAIR sequence after deploy: delete the 163 reason-less
+  excluded rows, re-run discovery (new code writes reasons; the
+  30-day window lets the previously-processed reaction videos back
+  in as planned), verify the engine starts processing.
 - "Motor çalışıyor ama işlem yok" kalıcı çözümü (2026-10-21, canlı
   olayın ikinci turu — kullanıcı tüm videoları sildi/kaldırdı, 177
   kayıt 'excluded' birikti, üretim sırası boşaldı ve motor idle

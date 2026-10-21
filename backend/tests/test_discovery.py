@@ -201,6 +201,56 @@ def test_discovery_excludes_duplicate_content_across_mirrors(
     assert by_id["vid-mirror-2"] == "discovered"  # gerçekten yeni video
 
 
+def test_discovery_exclusions_carry_reason_and_reapply_restores(
+    client_youtube: TestClient, mock_youtube: None
+) -> None:
+    """2026-10-21 canlı kusurun kalıcı çözümü: keşif anında kural dışı
+    kalan videolar karar defterine gerekçesiyle yazılmalı — aksi halde
+    reapply onları manuel hariç sanar ve yaş penceresi genişletilse
+    bile geri getiremez."""
+
+    channel_id = _setup_authorized_source(client_youtube)
+    sources = client_youtube.get(f"/api/channels/{channel_id}/sources").json()
+    source_id = sources["sources"][0]["id"]
+
+    # 1 günlük pencere: mock videoları (15-17 Ekim) yaş dışı kalır.
+    patch = client_youtube.patch(
+        f"/api/sources/{source_id}",
+        json={"filter_rules": {"max_age_days": 1}},
+    )
+    assert patch.status_code == 200
+    discover = client_youtube.post(f"/api/channels/{channel_id}/discover")
+    assert discover.status_code == 200
+    assert discover.json()["new_excluded"] == 2
+
+    engine = sa.create_engine(f"sqlite:///{client_youtube.app.state.test_db_path}")
+    with engine.connect() as conn:
+        decisions = conn.execute(
+            sa.text(
+                "SELECT decision, reason FROM planning_decisions"
+                " ORDER BY source_video_id"
+            )
+        ).fetchall()
+    engine.dispose()
+    # Kural ürünü hariçler gerekçe taşır — reapply'ın geri getirme
+    # koşulu bu kayda bakar.
+    assert len(decisions) == 2
+    for decision, reason in decisions:
+        assert decision == "skipped"
+        assert reason is not None and reason.startswith("yaş kuralı")
+
+    # Pencereyi genişlet: reapply yaş nedeniyle hariç kalanları geri
+    # getirir — videolar üretime döner.
+    widen = client_youtube.patch(
+        f"/api/sources/{source_id}",
+        json={"filter_rules": {"max_age_days": 60}},
+    )
+    assert widen.status_code == 200
+    videos = client_youtube.get(f"/api/channels/{channel_id}/videos").json()
+    statuses = {v["status"] for v in videos["videos"]}
+    assert statuses == {"planned"}
+
+
 def test_discovery_run_audited(client_youtube: TestClient, mock_youtube: None) -> None:
     channel_id = _setup_authorized_source(client_youtube)
     client_youtube.post(f"/api/channels/{channel_id}/discover")

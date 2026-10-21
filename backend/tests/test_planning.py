@@ -159,11 +159,25 @@ def test_plan_skips_excluded_videos(
     result = client_youtube.post(f"/api/channels/{channel_id}/plan").json()
     assert result == {"planned": 1, "skipped": 0}
 
-    # Hariç tutulan video için karar satırı yazılmaz.
-    decisions = _sync_count(
-        client_youtube, "SELECT COUNT(*) FROM planning_decisions"
+    # Kural ürünü hariçler keşif anında karar defterine gerekçesiyle
+    # yazılır (2026-10-21 kalıcı çözüm: reapply'ın geri getirme koşulu
+    # bu kayda bakar); planlama turu mevcut kararı korur, yenisini
+    # eklemez.
+    engine = sa.create_engine(
+        f"sqlite:///{client_youtube.app.state.test_db_path}"
     )
-    assert decisions == 1
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sa.text(
+                "SELECT decision, reason FROM planning_decisions"
+                " ORDER BY source_video_id"
+            )
+        ).fetchall()
+    engine.dispose()
+    assert len(rows) == 2
+    by_decision = {decision: reason for decision, reason in rows}
+    assert by_decision.get("skipped") is not None
+    assert "Video 1" in by_decision["skipped"]
     excluded = client_youtube.get(
         f"/api/channels/{channel_id}/videos", params={"status": "excluded"}
     ).json()
