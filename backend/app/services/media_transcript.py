@@ -20,6 +20,32 @@ _TIMESTAMP = re.compile(
     r"(\d{1,2}:)?(\d{1,2}):(\d{2})[.,](\d{1,3})"
 )
 
+# YouTube otomatik altyazilari (yt-dlp --write-auto-subs) kelime
+# zamanlamasi etiketleri tasir: "<00:00:08.040><c> almaya</c>".
+# Bunlar cue metnine karisirsa klipte zaman damgalari olarak görünür
+# (2026-10-21 canli bulgu). VTT inline etiketleri ve HTML varliklari
+# temizlenir.
+_VTT_TAG = re.compile(r"<[^>]+>")
+_HTML_ENTITIES = {
+    "&gt;": ">",
+    "&lt;": "<",
+    "&amp;": "&",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&nbsp;": " ",
+}
+
+
+def _clean_cue_text(raw: str) -> str:
+    """VTT/SRT cue metnini altyazi olarak kullanilabilir hale getir:
+    inline etiketler ve HTML varliklari ayiklanir, beyaz alan
+    duzlestirilir, bastaki konusmaci gecis isareti ('>>') kaldirilir."""
+    text = _VTT_TAG.sub(" ", raw)
+    for entity, char in _HTML_ENTITIES.items():
+        text = text.replace(entity, char)
+    text = " ".join(text.split())
+    return re.sub(r"^>>\s*", "", text)
+
 
 def _seconds(hours: str | None, minutes: str, secs: str, millis: str) -> float:
     total = int(minutes) * 60 + int(secs) + int(millis.ljust(3, "0")) / 1000
@@ -59,8 +85,15 @@ def _split_blocks(text: str) -> list[list[str]]:
 
 
 def parse_vtt(text: str) -> list[dict]:
-    """Parse WEBVTT cue blocks into [{start, end, text}]."""
+    """Parse WEBVTT cue blocks into [{start, end, text}].
+
+    YouTube otomatik altyazilari 'kayan' cue'lar yazar: her blokta ilk
+    satir onceki cue'nun metnini tekrarlar, asil ekleme sonraki
+    satirdadir. Tekrar kaldirilir ki altyazida cumleler iki kez
+    görünmesin (yalnizca ilk satir gercekten onceki cue ile ayniysa —
+    manuel cok satirli altyazilar bozulmaz)."""
     segments: list[dict] = []
+    prev_text = ""
     for block in _split_blocks(text):
         cue = None
         text_lines: list[str] = []
@@ -71,9 +104,17 @@ def parse_vtt(text: str) -> list[dict]:
             text_lines.append(line)
         if cue is None or not text_lines:
             continue
+        cleaned = [_clean_cue_text(line) for line in text_lines]
+        cleaned = [line for line in cleaned if line]
+        if len(cleaned) >= 2 and cleaned[0] == prev_text:
+            cleaned = cleaned[1:]
+        if not cleaned:
+            continue
+        cue_text = " ".join(cleaned)
         segments.append(
-            {"start": cue[0], "end": cue[1], "text": " ".join(text_lines)}
+            {"start": cue[0], "end": cue[1], "text": cue_text}
         )
+        prev_text = cue_text
     return segments
 
 
@@ -93,8 +134,15 @@ def parse_srt(text: str) -> list[dict]:
             text_lines.append(line)
         if cue is None or not text_lines:
             continue
+        cleaned = " ".join(
+            line
+            for line in (_clean_cue_text(l) for l in text_lines)
+            if line
+        )
+        if not cleaned:
+            continue
         segments.append(
-            {"start": cue[0], "end": cue[1], "text": " ".join(text_lines)}
+            {"start": cue[0], "end": cue[1], "text": cleaned}
         )
     return segments
 

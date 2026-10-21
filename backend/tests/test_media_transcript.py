@@ -111,3 +111,55 @@ class TestSidecarAndRange:
         # tek cue araligi
         only_second = transcript_text_in_range(segments, 4.0, 4.4)
         assert only_second == "Ikinci satir devam ediyor"
+
+
+class TestYouTubeAutoCaptionCleanup:
+    """2026-10-21 canlı olay: yt-dlp --write-auto-subs ile inen YouTube
+    otomatik altyazıları kelime zamanlaması etiketleri
+    ('<00:00:08.040><c> almaya</c>') ve HTML varlıkları taşır; temizlenmezse
+    altyazı klipte zaman damgalarıyla birlikte görünür. Ayrıca 'kayan'
+    cue'larda ilk satır önceki cue'nun tekrarıdır."""
+
+    AUTO_VTT = """WEBVTT
+
+00:00:07.670 --> 00:00:07.680
+Bilgisayarına, bazen internetin
+
+00:00:07.680 --> 00:00:09.950
+Bilgisayarına, bazen internetin &gt;&gt; 360<00:00:08.040><c> almaya</c><00:00:08.280><c> koş.</c>
+
+00:00:09.950 --> 00:00:12.000
+360 almaya koş. PlayStation 5 &amp; kırıldı
+"""
+
+    def test_word_timing_tags_stripped(self):
+        segments = parse_vtt(self.AUTO_VTT)
+        texts = " ".join(seg["text"] for seg in segments)
+        # Zaman damgaları ve etiketler metinde görünmez.
+        assert "00:00:08" not in texts
+        assert "<c>" not in texts and "<" not in texts
+        assert "&gt;" not in texts and "&amp;" not in texts
+        # Asil kelimeler kalir.
+        assert "almaya" in texts and "koş" in texts
+        assert "PlayStation 5" in texts
+
+    def test_rolling_repeat_line_dropped(self):
+        segments = parse_vtt(self.AUTO_VTT)
+        # Ikinci cue'nun ilk satiri onceki cue'nun tekrariydi; altyazida
+        # cumle iki kez görünmemeli.
+        assert segments[1]["text"].startswith("Bilgisayarına")
+        assert segments[1]["text"].count("Bilgisayarına") == 1
+
+    def test_srt_entities_cleaned(self):
+        segments = parse_srt(
+            "1\n00:00:01,000 --> 00:00:03,000\n"
+            "Merhaba &amp; hos &lt;geldin&gt;\n"
+        )
+        assert segments[0]["text"] == "Merhaba & hos <geldin>"
+
+    def test_speaker_marker_dropped(self):
+        segments = parse_vtt(
+            "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n"
+            "&gt;&gt; Konusmaci degisti\n"
+        )
+        assert segments[0]["text"] == "Konusmaci degisti"

@@ -958,6 +958,141 @@ class TestWhisperFallback:
         assert row.segment_count == 1
         assert row.segments[0]["text"] == "whisper transkript"
 
+    def test_whisper_primary_even_with_sidecar(self, tmp_path, monkeypatch):
+        """Kullanıcı isteği (2026-10-22): 'whisper' yöntemi BİRİNCİLDİR —
+        YouTube otomatik altyazısı (yan dosya) VARSA BİLE Whisper koşar,
+        sidecar yalnızca Whisper hata verirse kullanılır."""
+
+        import app.services.media_transcript as mt
+        from app.services.media_pipeline import MediaPipelineService
+
+        media = make_face_stream_video(tmp_path / "w2.mp4")
+        # Yan altyazı var: yt-dlp tarzı '<id>.tr.vtt'.
+        sidecar = tmp_path / "w2.tr.vtt"
+        sidecar.write_text(
+            "WEBVTT\n\n00:00:00.500 --> 00:00:03.000\n"
+            "youtube otomatik altyazisi\n",
+            encoding="utf-8",
+        )
+
+        class FakeWhisper:
+            def __init__(self, runner=None, env=None):
+                pass
+
+            async def transcribe(self, media_path, output_dir, **kwargs):
+                from app.services.media_transcript import parse_srt
+
+                return parse_srt(
+                    "1\n00:00:00,500 --> 00:00:03,000\n"
+                    "whisper birincil transkript\n"
+                )
+
+        monkeypatch.setattr(mt, "WhisperTranscriber", FakeWhisper)
+
+        async def scenario():
+            sessionmaker, settings, engine = _env(
+                tmp_path, transcription_method="whisper"
+            )
+            try:
+                channel_id = await _seed_channel(sessionmaker)
+                [video_id] = await _seed_planned_video(
+                    sessionmaker, channel_id
+                )
+                pipeline = MediaPipelineService(sessionmaker, settings)
+                asset_id = await pipeline._ensure_asset(video_id, True)
+                async with sessionmaker() as session:
+                    asset = await session.get(MediaAsset, asset_id)
+                    asset.file_path = str(media)
+                    await session.commit()
+                await pipeline._stage_transcript(
+                    asset_id, channel_id, video_id, "vid-0", None
+                )
+                async with sessionmaker() as session:
+                    row = (
+                        (
+                            await session.execute(
+                                sa.select(Transcript).where(
+                                    Transcript.media_asset_id == asset_id
+                                )
+                            )
+                        )
+                        .scalars()
+                        .one_or_none()
+                    )
+                    return row
+            finally:
+                await engine.dispose()
+
+        row = _run(scenario())
+        assert row is not None
+        assert row.source == "whisper"
+        assert row.segments[0]["text"] == "whisper birincil transkript"
+
+    def test_whisper_failure_falls_back_to_sidecar(self, tmp_path, monkeypatch):
+        """Whisper hata verirse iş kaybolmaz: yan altyazıya düşer."""
+
+        import app.services.media_transcript as mt
+        from app.services.media_pipeline import MediaPipelineService
+        from app.services.media_transcript import TranscriptError
+
+        media = make_face_stream_video(tmp_path / "w3.mp4")
+        sidecar = tmp_path / "w3.tr.vtt"
+        sidecar.write_text(
+            "WEBVTT\n\n00:00:00.500 --> 00:00:03.000\n"
+            "youtube otomatik altyazisi\n",
+            encoding="utf-8",
+        )
+
+        class FailingWhisper:
+            def __init__(self, runner=None, env=None):
+                pass
+
+            async def transcribe(self, media_path, output_dir, **kwargs):
+                raise TranscriptError("whisper basarisiz")
+
+        monkeypatch.setattr(mt, "WhisperTranscriber", FailingWhisper)
+
+        async def scenario():
+            sessionmaker, settings, engine = _env(
+                tmp_path, transcription_method="whisper"
+            )
+            try:
+                channel_id = await _seed_channel(sessionmaker)
+                [video_id] = await _seed_planned_video(
+                    sessionmaker, channel_id
+                )
+                pipeline = MediaPipelineService(sessionmaker, settings)
+                asset_id = await pipeline._ensure_asset(video_id, True)
+                async with sessionmaker() as session:
+                    asset = await session.get(MediaAsset, asset_id)
+                    asset.file_path = str(media)
+                    await session.commit()
+                await pipeline._stage_transcript(
+                    asset_id, channel_id, video_id, "vid-0", None
+                )
+                async with sessionmaker() as session:
+                    row = (
+                        (
+                            await session.execute(
+                                sa.select(Transcript).where(
+                                    Transcript.media_asset_id == asset_id
+                                )
+                            )
+                        )
+                        .scalars()
+                        .one_or_none()
+                    )
+                    return row
+            finally:
+                await engine.dispose()
+
+        row = _run(scenario())
+        assert row is not None
+        # Whisper degil: yan altyaziya dusuldu (kaynak adi import
+        # kokune gore 'sidecar' ya da indirmeye gore 'auto_caption').
+        assert row.source != "whisper"
+        assert row.segments[0]["text"] == "youtube otomatik altyazisi"
+
 
 class TestTerminalFailureAndResources:
     def test_terminal_media_failure_keeps_flow(self, tmp_path):

@@ -413,15 +413,14 @@ class MediaPipelineService:
         source_kind = "sidecar" if origin == "local_import" else "auto_caption"
         whisper_used = False
         whisper_error: str | None = None
-        if sidecar is not None:
-            text = await asyncio.to_thread(
-                sidecar.read_text, encoding="utf-8", errors="replace"
-            )
-            segments = parse_sidecar_text(text)
-            raw_path = str(sidecar)
-        elif self._settings.transcription_method == "whisper" and media_path:
-            # Altyazi yok: yerel Whisper fallback (python -m whisper;
-            # kurulum Ayarlar'daki 'Indir ve Kur' ile yapilir).
+        # Kullanici istegi (2026-10-22): 'whisper' yontemi BIRINCILDIR —
+        # YouTube otomatik altyazisi (kelime zamanlamali, bozuk metin)
+        # yalnizca Whisper hata verirse guvenlik agi olarak kullanilir.
+        # 'sidecar' yontemi eski davranisi korur: yan altyazi once.
+        prefer_whisper = (
+            self._settings.transcription_method == "whisper" and media_path
+        )
+        if prefer_whisper:
             from app.services.media_storage import media_subdir
             from app.services.media_transcript import (
                 TranscriptError,
@@ -443,8 +442,15 @@ class MediaPipelineService:
                 whisper_used = True
             except TranscriptError as exc:
                 # Transkript uretilemedi: is kaybolmaz, hata kayda gecer
-                # ve hat bicimi (enerji/sahne) uzerinden devam eder.
+                # ve once yan altyazi, o da yoksa hat bicimi (enerji/
+                # sahne) uzerinden devam edilir.
                 whisper_error = str(exc)
+        if not segments and sidecar is not None:
+            text = await asyncio.to_thread(
+                sidecar.read_text, encoding="utf-8", errors="replace"
+            )
+            segments = parse_sidecar_text(text)
+            raw_path = str(sidecar)
 
         async with self._sessionmaker() as session:
             existing = (

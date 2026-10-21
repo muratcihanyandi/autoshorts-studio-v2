@@ -662,16 +662,17 @@ export function SettingsScreen() {
                       }
                     >
                       <option value="sidecar">
-                        Yalnızca mevcut altyazı (hafif)
+                        Yalnızca YouTube altyazısı (hızlı)
                       </option>
                       <option value="whisper">
-                        Eksik altyazıda Whisper (yerel, ağır)
+                        Her zaman Whisper (temiz metin, yavaş)
                       </option>
                     </select>
                     <span className="field-help">
-                      Whisper eksik altyazıda konuşma tanımayı devreye sokar;
-                      kurulumu aşağıdaki düğmeyle yapabilirsiniz. Varsayılan
-                      hafif mod yalnızca mevcut altyazıyı kullanır.
+                      Whisper seçiliyken YouTube altyazısı kullanılmaz;
+                      metin her zaman yerel Whisper ile yazılır (yalnızca
+                      Whisper hata verirse YouTube altyazısına düşer).
+                      Kurulumu aşağıdaki düğmeyle yapabilirsiniz.
                     </span>
                     <WhisperInstallControl />
                   </div>
