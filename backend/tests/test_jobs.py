@@ -456,6 +456,49 @@ class TestJobWorker:
         assert recovered3 == 1
         assert status3 == "queued"
 
+    def test_effective_settings_reach_claim_gate_without_restart(
+        self, tmp_path
+    ):
+        """Siteden değiştirilen disk eşiği kuyruk kapısına yeniden
+        başlatma olmadan yansır: refresh efektif ayarı kuyruk servisine
+        taşır, kapı yeni eşiğe göre açılıp kapanır."""
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                async def noop(payload):
+                    return None
+
+                worker = JobWorker(
+                    sessionmaker, settings, handlers={"noop": noop}
+                )
+                service = worker._jobs
+                await service.enqueue(
+                    "media_process", {"source_video_id": 1}, priority=8
+                )
+                publish = await service.enqueue("publish_due", {}, priority=5)
+
+                await worker.refresh_effective_settings()
+                wired = worker._jobs._settings is worker._effective
+
+                # Esik simdi diskten buyuk: kapali kapida yayin akar,
+                # medya isi bekler.
+                tight = Settings(
+                    database_url=settings.database_url,
+                    min_free_disk_gb=99999,
+                )
+                worker._jobs.update_settings(tight)
+                first = await service.claim_next("w")
+                second = await service.claim_next("w")
+                return wired, publish.id, first, second
+            finally:
+                await engine.dispose()
+
+        wired, publish_id, first, second = asyncio.run(scenario())
+        assert wired  # refresh -> kuyruk servisi baglantisi kurulu
+        assert first is not None and first.id == publish_id
+        assert second is None
+
     def test_enqueue_poll_jobs_per_authorized_channel(self, tmp_path):
         async def scenario():
             sessionmaker, settings, engine, db = _queue_env(tmp_path)

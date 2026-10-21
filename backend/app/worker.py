@@ -470,6 +470,9 @@ class JobWorker:
             self._effective = await SettingsService(
                 self._sessionmaker, self._settings
             ).effective_settings()
+            # Kuyruk servisi de efektif ayarlari gorsun: disk esigi site
+            # ayarindan degistiginde restart gerektirmesin.
+            self._jobs.update_settings(self._effective)
         except Exception:  # noqa: BLE001 - ayar okunamazsa onceki deger
             pass
         return self._effective

@@ -131,6 +131,11 @@ class JobService:
                 self._settings.min_free_disk_gb,
             )
 
+    def update_settings(self, settings: Settings) -> None:
+        """Efektif (DB) ayarlara gec: disk esigi gibi site ayarları
+        yeniden başlatma olmadan kuyruk davranışına yansısın."""
+        self._settings = settings
+
     async def claim_next(
         self,
         worker_id: str,
