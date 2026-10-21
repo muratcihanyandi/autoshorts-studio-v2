@@ -14,7 +14,9 @@ exists.
 """
 from __future__ import annotations
 
+import logging
 import shutil
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
@@ -22,6 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.models import Job
+
+logger = logging.getLogger(__name__)
+
+# Disk kapisi yalniz GB'larca medya yazan isleri bekletir (kullanici
+# istegi 2026-10-21: dolu diskte sistem durmaz, BEKLEMEYE alinir).
+# Yayinlama/kesif/temizlik akmaya devam eder: stok yayinlanip
+# retention temizligiyle silindikce yer acilir ve isleme kendiliginden
+# surer. Kucuk ciktili dikey klip render'i bilincli olarak serbest:
+# eldeki indirilmis videolar stoga donusur, yer acilmasi hizlanir.
+DISK_BLOCKED_JOB_TYPES = ("media_process", "clip_render_full_cut")
 
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running", "cancelling")
@@ -53,6 +65,7 @@ class JobService:
     ) -> None:
         self._sessionmaker = sessionmaker
         self._settings = settings
+        self._last_disk_warning = 0.0
 
     # --- enqueue ---
 
@@ -108,6 +121,16 @@ class JobService:
             return False
         return free >= self._settings.min_free_disk_gb * 1024**3
 
+    def _warn_disk_gate(self) -> None:
+        now = time.monotonic()
+        if now - self._last_disk_warning > 60:
+            self._last_disk_warning = now
+            logger.warning(
+                "Disk esigin altinda (min %.1f GB bos alan); agir medya"
+                " isleri beklemede, yayinlama ve temizlik suruyor",
+                self._settings.min_free_disk_gb,
+            )
+
     async def claim_next(
         self,
         worker_id: str,
@@ -119,10 +142,16 @@ class JobService:
 
         job_types restricts the claim to the given types (the heavy-job
         limit needs this); run_at gates retry backoff — a job whose
-        retry delay has not elapsed is not claimable yet.
+        retry delay has not elapsed is not claimable yet. Dolu disk
+        yalniz disk-yazan isleri bekletir; yayin isleri akar (pause,
+        stop degil — 2026-10-21).
         """
+        exclude = list(exclude_types) if exclude_types else []
         if not self.disk_ok():
-            return None
+            self._warn_disk_gate()
+            exclude.extend(
+                t for t in DISK_BLOCKED_JOB_TYPES if t not in exclude
+            )
         now = _utcnow()
         async with self._sessionmaker() as session:
             # FOR UPDATE SKIP LOCKED: PostgreSQL'te eşzamanlı worker'lar
@@ -137,8 +166,8 @@ class JobService:
             )
             if job_types is not None:
                 query = query.where(Job.job_type.in_(job_types))
-            if exclude_types is not None:
-                query = query.where(Job.job_type.notin_(exclude_types))
+            if exclude:
+                query = query.where(Job.job_type.not_in(exclude))
             row_id = (
                 (
                     await session.execute(

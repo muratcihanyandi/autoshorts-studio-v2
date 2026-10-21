@@ -568,6 +568,80 @@ class TestYtDlpAdapter:
         # başlar, 49.9 geri gidişi tekrar bildirilmez.
         assert seen == [12.3, 50.0, 100.0]
 
+    def test_subprocess_download_aborts_when_disk_floor_crossed(
+        self, tmp_path
+    ):
+        """Disk koruması (2026-10-21): boş alan güvenlik payının altına
+        düşünce indirme yarıda kesilir ve yarım dosya silinir — flash
+        dolduğu için sistem kilitlenmez."""
+        import sys
+
+        from app.services.media_download import (
+            MediaDownloadError,
+            YtDlpAdapter,
+        )
+
+        dest_dir = tmp_path / "downloads"
+        dest_dir.mkdir()
+        part = dest_dir / "9.f299.mp4.part"
+        part.write_bytes(b"YARIM" * 100)
+
+        lines = "\n".join(
+            [
+                f"[download] Destination: {dest_dir / '9.f299.mp4'}",
+                "[download]  12.3% of ~1.23GiB at 1.50MiB/s",
+            ]
+        )
+        cmd = [sys.executable, "-c", f"print({lines!r})"]
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings(), runner=None)
+            await adapter._run_subprocess(
+                cmd,
+                dest_dir=dest_dir,
+                reserve_bytes=99999 * 1024**3,
+            )
+
+        with pytest.raises(MediaDownloadError) as exc:
+            asyncio.run(scenario())
+        assert "Disk doldu" in str(exc.value)
+        assert not part.exists()  # yarim dosya temizlendi
+
+    def test_subprocess_download_aborts_when_video_too_large(
+        self, tmp_path
+    ):
+        """Tahmini boyut kalan alanına sığmayan video en başta kesilir
+        (güvenlik payı üstündeki boş alana sığmalı)."""
+        import sys
+
+        from app.services.media_download import (
+            MediaDownloadError,
+            YtDlpAdapter,
+        )
+
+        dest_dir = tmp_path / "downloads"
+        dest_dir.mkdir()
+
+        lines = "\n".join(
+            [
+                f"[download] Destination: {dest_dir / '10.f299.mp4'}",
+                "[download]  5.0% of ~999.0GiB at 1.50MiB/s",
+            ]
+        )
+        cmd = [sys.executable, "-c", f"print({lines!r})"]
+
+        async def scenario():
+            adapter = YtDlpAdapter(self._settings(), runner=None)
+            await adapter._run_subprocess(
+                cmd,
+                dest_dir=dest_dir,
+                reserve_bytes=3.0 * 1024**3,
+            )
+
+        with pytest.raises(MediaDownloadError) as exc:
+            asyncio.run(scenario())
+        assert "sigmiyor" in str(exc.value)
+
     def test_missing_binary_reports_turkish_error(self, tmp_path, monkeypatch):
         from app.services.media_download import (
             MediaDownloadError,

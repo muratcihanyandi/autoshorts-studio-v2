@@ -108,23 +108,31 @@ class TestJobService:
         assert first_id == high_id
         assert second_id == low_id
 
-    def test_low_disk_blocks_claim(self, tmp_path):
+    def test_low_disk_pauses_media_jobs_but_not_publish(self, tmp_path):
+        """Dolu disk sistemi durdurmaz (kullanıcı isteği 2026-10-21):
+        disk-yazan işler kuyrukta bekler, yayınlama akmaya devam eder —
+        stok yayınlanıp silindikçe yer açılır ve işleme kendiliğinden sürer."""
+
         async def scenario():
             sessionmaker, settings, engine, db = _queue_env(
                 tmp_path, min_free_disk_gb=99999
             )
             try:
                 service = JobService(sessionmaker, settings)
-                await service.enqueue("job_a")
-                claimed = await service.claim_next("w")
-                # Disk engellendiğinde iş kuyrukta kalır, kaybolmaz.
+                media = await service.enqueue(
+                    "media_process", {"source_video_id": 1}, priority=8
+                )
+                publish = await service.enqueue("publish_due", {}, priority=5)
+                first = await service.claim_next("w")
+                second = await service.claim_next("w")
                 counts = await service.counts()
-                return claimed, counts
+                return media.id, publish.id, first, second, counts
             finally:
                 await engine.dispose()
 
-        claimed, counts = asyncio.run(scenario())
-        assert claimed is None
+        media_id, publish_id, first, second, counts = asyncio.run(scenario())
+        assert first is not None and first.id == publish_id  # yayın akar
+        assert second is None  # medya işi kuyrukta bekler, kaybolmaz
         assert counts["queued"] == 1
 
     def test_fail_retries_then_fails_for_good(self, tmp_path):

@@ -85,6 +85,13 @@ class MediaDownloadError(Exception):
     """Download failure with a user-facing Turkish message."""
 
 
+class _DiskGuardError(Exception):
+    """Indirma sirasindaki disk korumasi kesmesi (yerel temizlik icin)."""
+
+
+_GB = 1024**3
+
+
 @dataclass
 class DownloadResult:
     path: Path
@@ -189,12 +196,16 @@ class YtDlpAdapter:
         self,
         cmd: list[str],
         on_progress: Callable[[float], Awaitable[None]] | None = None,
+        *,
+        dest_dir: Path | None = None,
+        reserve_bytes: float = 0.0,
     ) -> int:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        dests: list[str] = []
 
         async def run_with_progress() -> bytes:
             assert proc.stdout is not None and proc.stderr is not None
@@ -207,16 +218,37 @@ class YtDlpAdapter:
                     line = await proc.stdout.readline()
                     if not line:
                         break
-                    if on_progress is None:
-                        continue
                     dest = parse_destination_line(line)
                     if dest is not None:
                         current_dest = dest
+                        dests.append(dest)
+                        continue
+                    if on_progress is None and reserve_bytes <= 0:
                         continue
                     percent = parse_progress_line(line)
                     if percent is None:
                         continue
                     size = parse_size_bytes(line)
+                    # Disk korumasi (2026-10-21, flash bellek): bos alan
+                    # guvenlik payinin altina dusmez; tahmini boyut ice
+                    # sigmayacak video en bastan kesilir. Flash doldugu
+                    # icin sistem kilitlenmez.
+                    if dest_dir is not None and reserve_bytes > 0:
+                        free = shutil.disk_usage(dest_dir).free
+                        if free < reserve_bytes:
+                            raise _DiskGuardError(
+                                "Disk doldu: bos alan %.1f GB, guvenlik"
+                                " payi %.1f GB. Indirme yarida kesildi ve"
+                                " yarim dosya temizlendi."
+                                % (free / _GB, reserve_bytes / _GB)
+                            )
+                        if size is not None and size > free - reserve_bytes:
+                            raise _DiskGuardError(
+                                "Video kalan alana sigmiyor: tahmini %.1f"
+                                " GB, bos alan %.1f GB, guvenlik payi %.1f"
+                                " GB. Indirme kesildi."
+                                % (size / _GB, free / _GB, reserve_bytes / _GB)
+                            )
                     if size is not None and size < _SMALL_FILE_BYTES:
                         continue
                     # Buyuk dosya degisince yuzde bastan: onceki akisin
@@ -226,7 +258,8 @@ class YtDlpAdapter:
                         last_percent = -1.0
                     if percent > last_percent:
                         last_percent = percent
-                        await on_progress(percent)
+                        if on_progress is not None:
+                            await on_progress(percent)
                 return await stderr_task
             finally:
                 if not stderr_task.done():
@@ -242,6 +275,17 @@ class YtDlpAdapter:
             raise MediaDownloadError(
                 "Indirme zaman asimina ugradi (4 saat)."
             ) from None
+        except _DiskGuardError as exc:
+            proc.kill()
+            await proc.wait()
+            # Yarim dosyalar temizlenir: yer acilmasi aninda olsun.
+            for dest in dests:
+                for candidate in (dest, f"{dest}.part"):
+                    try:
+                        Path(candidate).unlink()
+                    except OSError:
+                        pass
+            raise MediaDownloadError(str(exc)) from None
         # Borular EOF'a ulasti ama cikis kodu henuz yazilmamis olabilir
         # (hizli cikan sureclerde returncode None kaliyordu); reaper
         # calismadan once kesin sonuc bekle.
@@ -264,15 +308,24 @@ class YtDlpAdapter:
                 raise MediaDownloadError(
                     "yt-dlp bulunamadi; konteyner imajina kurulu olmali."
                 )
-            runner = self._run_subprocess
-        else:
-            runner = self._runner
         dest_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(dest_dir / f"{source_video_id}.%(ext)s")
         cmd = self.build_command(youtube_video_id, dest_dir, output_path)
-        # Monotonluk ve dosya ayrimi alt surec okuyucusunda yapilir;
-        # sahte runner'lar yuzdeyi dogrudan iletir.
-        await runner(cmd, on_progress=on_progress)
+        if self._runner is None:
+            # Monotonluk, dosya ayrimi ve disk korumasi alt surec
+            # okuyucusunda yapilir.
+            await self._run_subprocess(
+                cmd,
+                on_progress=on_progress,
+                dest_dir=dest_dir,
+                reserve_bytes=(
+                    max(0.0, self._settings.min_free_disk_gb) * _GB
+                ),
+            )
+        else:
+            # Sahte runner'lar yuzdeyi dogrudan iletir; disk korumasi
+            # yalniz gercek yt-dlp yolunda anlamli.
+            await self._runner(cmd, on_progress=on_progress)
         # yt-dlp uzantiyi kendisi secer: en yeni video dosyasini bul.
         candidates = sorted(
             (

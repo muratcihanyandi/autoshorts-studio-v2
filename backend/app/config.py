@@ -47,7 +47,11 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 2
     job_stale_after_seconds: int = 600
     source_poll_interval_minutes: int = 60
-    min_free_disk_gb: float = 2.0
+    # Medya diski (flash bellek) guvenlik payi: bu kadar bos alan kalinca
+    # yeni agir medya isleri beklemeye alinir (yayinlama surer; stok
+    # yayinlanip silindikce yer acilir ve isleme surer). Kullanici
+    # istegi 2026-10-21: dolu disk sistemi durdurmaz, bekletir.
+    min_free_disk_gb: float = 3.0
     download_rate_limit_kbps: int = 0
     # Labelled media tree root INSIDE the container (deployment mounts
     # /mnt/usb/Autoshorts_Studio here). Empty keeps the feature off.
