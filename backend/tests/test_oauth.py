@@ -411,3 +411,14 @@ def test_callback_redirects_to_frontend(client_oauth_redirect: TestClient, mock_
     )
     assert failure.status_code == 307
     assert failure.headers["location"] == "http://ui-test:1478/kanallar?oauth=hata"
+
+
+def test_oauth_scopes_cover_publication_update() -> None:
+    """Zamanlı yayın (videos.update ile herkese açma) force-ssl kapsamı
+    ister — youtube.upload yalnız yükleme izni verir (2026-10-21 canlı
+    olay: gizli yükleme çalıştı, açılış 'insufficient authentication
+    scopes' 403'ü ile düştü)."""
+    from app.services.oauth_service import OAUTH_SCOPES
+
+    assert "youtube.upload" in OAUTH_SCOPES
+    assert "youtube.force-ssl" in OAUTH_SCOPES

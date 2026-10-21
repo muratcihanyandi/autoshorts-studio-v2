@@ -111,8 +111,11 @@ class PublishingService:
                     f"Gorunurluk dogrulanamadi: {status.privacy_status!r}"
                 )
         except Exception as exc:  # noqa: BLE001 - hata kayda gecer
+            # Satir 'verified' kalir: video yuklenmis ve dogrulanmis bir
+            # durumdadir; acilisin basarisiz olmasi (kapsam/kota/gecici
+            # API hatasi) klibi mahsur birakmamali — sonraki slot
+            # denemesinde yeniden secilir. Isin kendisi hata verir.
             message = f"{type(exc).__name__}: {exc}"
-            await self._fail(row.id, message)
             raise PublishingError(message) from exc
         finally:
             if owned:

@@ -348,6 +348,74 @@ class TestPublishFlow:
         assert "publish.done" in events
         assert "publish.public" in events
 
+    def test_make_public_failure_keeps_row_verified(self, tmp_path):
+        """Açılış başarısızsa (kapsam/kota/geçici API hatası) klip mahsur
+        kalmaz: satır 'verified' kalır ve sonraki slot denemesinde yeniden
+        seçilir (2026-10-21 canlı olay: 403 her denemede bir satırı
+        'failed'a düşürüp stoku tıkamıştı)."""
+        from app.services.publishing_service import (
+            PublishingError,
+            PublishingService,
+        )
+
+        def failing_update_handler(
+            request: httpx.Request,
+        ) -> httpx.Response:
+            url = str(request.url)
+            if (
+                url.startswith(
+                    "https://www.googleapis.com/youtube/v3/videos"
+                )
+                and request.method == "PUT"
+            ):
+                return httpx.Response(
+                    403, json={"error": "insufficient scopes"}
+                )
+            return youtube_handler()(request)
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                _, candidate_id = await _seed(
+                    sessionmaker, settings.token_encryption_key, tmp_path
+                )
+                service = PublishingService(sessionmaker, settings)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(failing_update_handler)
+                ) as http:
+                    result = await service.publish_clip(
+                        candidate_id, http=http
+                    )
+                    row_id = await _published_row_id(
+                        sessionmaker, candidate_id
+                    )
+                    try:
+                        await service.make_public(row_id, http=http)
+                        raised = None
+                    except PublishingError as exc:
+                        raised = str(exc)
+                return result, row_id, raised
+            finally:
+                await engine.dispose()
+
+        result, row_id, raised = _run(scenario())
+        assert result["visibility"] == "private"
+        assert raised is not None and "403" in raised
+
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m10.db")
+        try:
+            with engine.connect() as conn:
+                status = conn.execute(
+                    sa.text(
+                        "SELECT status FROM published_videos"
+                        " WHERE id = :id"
+                    ),
+                    {"id": row_id},
+                ).scalar()
+        finally:
+            engine.dispose()
+        assert status == "verified"  # klip mahsur kalmadi
+
     def test_duplicate_publish_skipped(self, tmp_path):
         from app.services.publishing_service import PublishingService
 

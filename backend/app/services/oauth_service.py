@@ -23,8 +23,14 @@ from app.services.channel_service import record_event
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
+# force-ssl: videos.update (zamanli yayinin herkese acma adimi)
+# youtube.upload kapsamini kapsamaz — 2026-10-21 canli olay: gizli
+# yukleme calisti, acilis "insufficient authentication scopes" 403'u
+# ile dustu. Baglantiyi bu kapsamla acan mevcut kanallar yeniden
+# Baglan'mali (eski token yalniz eski kapsamlari tasir).
 OAUTH_SCOPES = (
     "https://www.googleapis.com/auth/youtube.upload "
+    "https://www.googleapis.com/auth/youtube.force-ssl "
     "https://www.googleapis.com/auth/youtube.readonly"
 )
 STATE_TTL_MINUTES = 10
