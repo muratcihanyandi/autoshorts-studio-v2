@@ -612,6 +612,31 @@ class TestHypeAndConfirmed:
         assert validate_window(5.0, 5.0, 9.0, min_seconds=3, max_seconds=6) is None
         assert validate_window(-1.0, 4.0, 9.0, min_seconds=3, max_seconds=6) is None
 
+    def test_hype_llm_context_spans_wide_window(self):
+        """LLM bağlamı geniş (±90 sn, kullanıcı isteği 2026-10-21): hype
+        anı 20 sn de 2 dk da olabildiğinden model anın doğal sınırlarını
+        görebilmeli — dar bağlam aday penceresine kilitlenip süreyi
+        sabitliyordu."""
+        from app.config import Settings
+        from app.models import ClipCandidate
+        from app.services.hype_service import CONTEXT_SECONDS, HypeService
+
+        assert CONTEXT_SECONDS >= 90.0
+        service = HypeService(None, None, Settings(database_url=""))
+        segments = [
+            {"start": float(t), "end": float(t) + 10.0, "text": f"cumle {t}"}
+            for t in range(0, 600, 10)
+        ]
+        context = {"segments": segments, "duration": 600.0, "analysis": {}}
+        candidate = ClipCandidate(id=1, start_seconds=100.0, end_seconds=120.0)
+        block = service._candidate_block(context, candidate)
+        # ±90 sn baglam: 10-90 ve 120-200 arasi cumleler gorunur.
+        assert "cumle 20" in block
+        assert "cumle 90" in block
+        assert "cumle 200" in block
+        assert "cumle 0" not in block
+        assert "cumle 210" not in block
+
     def test_maybe_confirm_source_after_renders(self, tmp_path):
         """#confirmed gecisi: tum secili adaylar render edilince kaynak
         nihailesir ve stoktan dusulur; tekrar kuyruga alinmaz."""

@@ -499,6 +499,257 @@ class TestJobWorker:
         assert first is not None and first.id == publish_id
         assert second is None
 
+    def test_enqueue_upload_jobs_auto_private_upload(self, tmp_path):
+        """Tamamlandı → otomatik GİZLİ yükleme (kullanıcı isteği
+        2026-10-21): render'ı hazır + metaverisi onaylı (ya da kanalda
+        otomatik onay açık) + henüz yüklenmemiş klip için publish_clip
+        işi açılır; onay bekleyen ve zaten yüklenmiş olanlar alınmaz."""
+
+        async def seed(sessionmaker, *, auto_approve: bool, draft: bool):
+            from app.models import (
+                Channel,
+                ClipCandidate,
+                ClipMetadata,
+                PublishingProfile,
+                RenderedClip,
+                SourceChannel,
+                SourceVideo,
+            )
+
+            async with sessionmaker() as session:
+                session.add(Channel(id=1, name="Kanal 1"))
+                session.add(
+                    PublishingProfile(
+                        channel_id=1,
+                        automation_state="running",
+                        settings=(
+                            {"auto_approve_metadata": True}
+                            if auto_approve
+                            else {}
+                        ),
+                    )
+                )
+                session.add(
+                    SourceChannel(
+                        channel_id=1,
+                        youtube_channel_id="UCx",
+                        title="Kaynak",
+                        permission_status="authorized",
+                    )
+                )
+                session.add(
+                    SourceVideo(
+                        id=1,
+                        source_channel_id=1,
+                        youtube_video_id="yt-1",
+                        title="Video",
+                        status="processed",
+                    )
+                )
+                # Ara flush: iliski tanimi olmadan SQLAlchemy FK sirasini
+                # cikaramiyor; adaylar videodan once girip FK hatasi veriyor.
+                await session.flush()
+                for cid, status in ((11, "selected"), (12, "selected")):
+                    session.add(
+                        ClipCandidate(
+                            id=cid,
+                            source_video_id=1,
+                            start_seconds=10.0,
+                            end_seconds=40.0,
+                            duration_seconds=30.0,
+                            score=0.7,
+                            status=status,
+                        )
+                    )
+                    session.add(
+                        RenderedClip(
+                            clip_candidate_id=cid,
+                            source_video_id=1,
+                            orientation="vertical",
+                            status="rendered",
+                            file_path=f"/tmp/{cid}.mp4",
+                        )
+                    )
+                    session.add(
+                        ClipMetadata(
+                            clip_candidate_id=cid,
+                            source_video_id=1,
+                            title=f"Klip {cid}",
+                            description="Aciklama",
+                            status="draft" if draft else "approved",
+                        )
+                    )
+                await session.commit()
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                async def noop(payload):
+                    return None
+
+                worker = JobWorker(
+                    sessionmaker, settings, handlers={"noop": noop}
+                )
+                service = worker._jobs
+
+                # 1) Onayli metaveri, otomatik onay kapali -> yuklenir.
+                await seed(sessionmaker, auto_approve=False, draft=False)
+                first = await worker.enqueue_upload_jobs()
+
+                # 2) Ayni tur dedupe ile yigin buyumez.
+                second = await worker.enqueue_upload_jobs()
+
+                queued = (
+                    await service.list_jobs(status="queued")
+                )
+                types = [j.job_type for j in queued]
+                return first, second, types
+            finally:
+                await engine.dispose()
+
+        first, second, types = asyncio.run(scenario())
+        assert first == 2  # iki hazir klip icin publish_clip isleri
+        assert second == 0  # dedupe
+        assert types == ["publish_clip", "publish_clip"]
+
+    def test_enqueue_upload_jobs_skip_unapproved_and_uploaded(
+        self, tmp_path
+    ):
+        """Onay bekleyen metaveri (otomatik onay kapalıyken) ve zaten
+        yüklenmiş klip otomatik yükleme beslemesine girmez."""
+
+        async def seed(sessionmaker):
+            from app.models import (
+                Channel,
+                ClipCandidate,
+                ClipMetadata,
+                PublishedVideo,
+                PublishingProfile,
+                RenderedClip,
+                SourceChannel,
+                SourceVideo,
+            )
+
+            async with sessionmaker() as session:
+                session.add(Channel(id=1, name="Kanal 1"))
+                session.add(
+                    PublishingProfile(
+                        channel_id=1, automation_state="running"
+                    )
+                )
+                session.add(
+                    SourceChannel(
+                        channel_id=1,
+                        youtube_channel_id="UCx",
+                        title="Kaynak",
+                        permission_status="authorized",
+                    )
+                )
+                session.add(
+                    SourceVideo(
+                        id=1,
+                        source_channel_id=1,
+                        youtube_video_id="yt-1",
+                        title="Video",
+                        status="processed",
+                    )
+                )
+                # Ara flush: FK sirasi (bkz. diger tohum testi).
+                await session.flush()
+                # 21: onay bekleyen metaveri -> besleme almaz.
+                session.add(
+                    ClipCandidate(
+                        id=21,
+                        source_video_id=1,
+                        start_seconds=0.0,
+                        end_seconds=30.0,
+                        duration_seconds=30.0,
+                        score=0.7,
+                        status="selected",
+                    )
+                )
+                session.add(
+                    RenderedClip(
+                        clip_candidate_id=21,
+                        source_video_id=1,
+                        orientation="vertical",
+                        status="rendered",
+                        file_path="/tmp/21.mp4",
+                    )
+                )
+                session.add(
+                    ClipMetadata(
+                        clip_candidate_id=21,
+                        source_video_id=1,
+                        title="Onay bekleyen",
+                        description="Aciklama",
+                        status="draft",
+                    )
+                )
+                # 22: onayli ama zaten yuklenmis -> besleme almaz.
+                session.add(
+                    ClipCandidate(
+                        id=22,
+                        source_video_id=1,
+                        start_seconds=60.0,
+                        end_seconds=90.0,
+                        duration_seconds=30.0,
+                        score=0.8,
+                        status="selected",
+                    )
+                )
+                session.add(
+                    RenderedClip(
+                        clip_candidate_id=22,
+                        source_video_id=1,
+                        orientation="vertical",
+                        status="rendered",
+                        file_path="/tmp/22.mp4",
+                    )
+                )
+                session.add(
+                    ClipMetadata(
+                        clip_candidate_id=22,
+                        source_video_id=1,
+                        title="Yuklenmis",
+                        description="Aciklama",
+                        status="approved",
+                    )
+                )
+                session.add(
+                    PublishedVideo(
+                        clip_candidate_id=22,
+                        source_video_id=1,
+                        orientation="vertical",
+                        channel_id=1,
+                        youtube_video_id="yt-uploaded",
+                        visibility="private",
+                        status="verified",
+                        title="Yuklenmis",
+                    )
+                )
+                await session.commit()
+
+        async def scenario():
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                async def noop(payload):
+                    return None
+
+                worker = JobWorker(
+                    sessionmaker, settings, handlers={"noop": noop}
+                )
+                await seed(sessionmaker)
+                added = await worker.enqueue_upload_jobs()
+                queued = await worker._jobs.list_jobs(status="queued")
+                return added, [j.job_type for j in queued]
+            finally:
+                await engine.dispose()
+
+        added, types = asyncio.run(scenario())
+        assert added == 0
+        assert types == []
+
     def test_enqueue_poll_jobs_per_authorized_channel(self, tmp_path):
         async def scenario():
             sessionmaker, settings, engine, db = _queue_env(tmp_path)

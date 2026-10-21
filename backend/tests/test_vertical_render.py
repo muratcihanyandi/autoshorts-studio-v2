@@ -56,6 +56,35 @@ class TestLayout:
         with pytest.raises(VerticalRenderError):
             build_layout(1280, 720, (0, 0, 0, 0))
 
+    def test_webcam_rectangle_not_zoomed_full_width_top(self):
+        """Kullanıcı isteği 2026-10-21: webcam zoomlanmaz — pad'li
+        dikdörtgen en-boy oranı korunarak tam genişlikte üst bölümde
+        olduğu gibi görünür; bölüm yüksekliği dikdörtgenin oranından
+        türer (eski davranış bölgeyi bölüm oranına zorlayıp kırpıyordu)."""
+        layout = build_layout(1280, 720, WEBCAM_REGION)
+        top = layout.top
+        assert top.get("out_w", OUT_W) == OUT_W
+        # Zoom yok: üst bölüm çıkış orani kirpilan dikdortgenin oraniyla
+        # ayni (yuvarlama payiyla).
+        assert top["out_h"] == pytest.approx(
+            OUT_W * top["h"] / top["w"], abs=1.5
+        )
+        assert layout.bottom["out_h"] == OUT_H - top["out_h"]
+        assert layout.subtitle_band[0] >= top["out_h"]
+
+    def test_tall_webcam_caps_top_and_pads_sides(self):
+        """Çok dik webcam dikdörtgeni: üst bölüm yükseklik sınırına
+        takılır, dikdörtgen yanlardan pad'lenerek TAMAMEN görünür kalır
+        (asla kırpılmaz) ve alt bant yaşamaya devam eder."""
+        layout = build_layout(1280, 720, (600, 100, 80, 500))
+        top = layout.top
+        assert top["out_h"] == int(round(OUT_H * 0.65))
+        assert top["out_w"] < OUT_W  # contain: en-boy korunur, yanlar pad
+        assert top["out_h"] == pytest.approx(
+            top["out_w"] * top["h"] / top["w"], rel=0.005
+        )
+        assert layout.bottom["out_h"] == OUT_H - top["out_h"]
+
     def test_filter_graph_contains_both_crops_and_subtitles(self, tmp_path):
         layout = build_layout(1280, 720, WEBCAM_REGION)
         srt = tmp_path / "subs.srt"

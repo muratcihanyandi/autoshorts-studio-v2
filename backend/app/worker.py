@@ -387,6 +387,7 @@ class JobWorker:
         self._last_planned_enqueue = 0.0
         self._last_render_enqueue = 0.0
         self._last_content_enqueue = 0.0
+        self._last_upload_enqueue = 0.0
         self._last_hype_enqueue = 0.0
         self._last_publish_enqueue = 0.0
         self._last_media_cleanup = 0.0
@@ -838,6 +839,103 @@ class JobWorker:
                 added += 1
         return added
 
+    async def enqueue_upload_jobs(self) -> int:
+        """Tamamlandiktan sonra otomatik GIZLI yukleme (kullanici istegi
+        2026-10-21): render'i hazir ve metaverisi onayli (ya da kanalda
+        otomatik onay acik) ama henuz YouTube'a yuklenmemis klipler icin
+        publish_clip / publish_full_cut isleri acar. Yukleme GIZLIDIR;
+        herkese acilma yine planlanan saatte publish_due ile yapilir.
+        Manuel onay akisi bozulmaz: otomatik onayi kapali kanalda yalniz
+        onaylanmis metaveri yuklenir."""
+        interval = self._effective.planned_poll_interval_minutes * 60
+        now = time.monotonic()
+        if (
+            self._last_upload_enqueue
+            and now - self._last_upload_enqueue < interval
+        ):
+            return 0
+        self._last_upload_enqueue = now
+        added = 0
+        async with self._sessionmaker() as session:
+            candidate_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT rc.clip_candidate_id FROM rendered_clips rc"
+                            " JOIN source_videos sv"
+                            " ON sv.id = rc.source_video_id"
+                            " JOIN source_channels sc"
+                            " ON sv.source_channel_id = sc.id"
+                            " JOIN publishing_profiles pp"
+                            " ON pp.channel_id = sc.channel_id"
+                            " WHERE rc.status = 'rendered'"
+                            " AND rc.clip_candidate_id IS NOT NULL"
+                            " AND rc.orientation = 'vertical'"
+                            " AND pp.automation_state IN ('running','paused')"
+                            " AND ("
+                            " pp.settings->>'auto_approve_metadata' = 'true'"
+                            " OR EXISTS ("
+                            " SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.clip_candidate_id"
+                            " = rc.clip_candidate_id"
+                            " AND cm.status = 'approved')"
+                            " )"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM published_videos pv"
+                            " WHERE pv.clip_candidate_id = rc.clip_candidate_id)"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            fullcut_video_ids = (
+                (
+                    await session.execute(
+                        text(
+                            "SELECT rc.source_video_id FROM rendered_clips rc"
+                            " JOIN source_videos sv"
+                            " ON sv.id = rc.source_video_id"
+                            " JOIN source_channels sc"
+                            " ON sv.source_channel_id = sc.id"
+                            " JOIN publishing_profiles pp"
+                            " ON pp.channel_id = sc.channel_id"
+                            " WHERE rc.status = 'rendered'"
+                            " AND rc.clip_candidate_id IS NULL"
+                            " AND rc.orientation = 'horizontal'"
+                            " AND pp.automation_state IN ('running','paused')"
+                            " AND ("
+                            " pp.settings->>'auto_approve_metadata' = 'true'"
+                            " OR EXISTS ("
+                            " SELECT 1 FROM clip_metadata cm"
+                            " WHERE cm.source_video_id = rc.source_video_id"
+                            " AND cm.clip_candidate_id IS NULL"
+                            " AND cm.status = 'approved')"
+                            " )"
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM published_videos pv"
+                            " WHERE pv.source_video_id = rc.source_video_id"
+                            " AND pv.clip_candidate_id IS NULL)"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        for candidate_id in candidate_ids:
+            job = await self._jobs.enqueue(
+                "publish_clip", {"clip_candidate_id": candidate_id}, priority=6
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        for video_id in fullcut_video_ids:
+            job = await self._jobs.enqueue(
+                "publish_full_cut", {"source_video_id": video_id}, priority=6
+            )
+            if job.status == "queued" and job.attempts == 0:
+                added += 1
+        return added
+
     async def enqueue_publish_jobs(self) -> int:
         """Schedule-aware publishing: one publish_due job per connected,
         running channel whose slot arrived. The job itself picks the
@@ -1012,6 +1110,7 @@ class JobWorker:
                     await self.enqueue_hype_jobs()
                     await self.enqueue_render_jobs()
                     await self.enqueue_content_jobs()
+                    await self.enqueue_upload_jobs()
                     await self.enqueue_publish_jobs()
                     await self.enqueue_summary_jobs()
                     await self._maybe_cleanup_tmp()

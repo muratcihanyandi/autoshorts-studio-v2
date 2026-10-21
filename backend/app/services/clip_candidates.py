@@ -124,10 +124,11 @@ def generate_candidates(
             clip_max_seconds,
         }
     )
-    windows: list[tuple[float, float, float, dict]] = []
+    windows_by_length: dict[int, list[tuple[float, float, float, dict]]] = {}
     for length in lengths:
         if length > usable_end - usable_start:
             continue
+        bucket = windows_by_length[length] = []
         start = usable_start
         while start + length <= usable_end:
             score, detail = _score_window(
@@ -138,20 +139,36 @@ def generate_candidates(
                 segments,
                 silences,
             )
-            windows.append((start, start + length, score, detail))
+            bucket.append((start, start + length, score, detail))
             start += step_seconds
 
-    # En yuksek puanli pencereyi al, cakisanlari at (greedy).
-    ranked = sorted(windows, key=lambda w: (-w[2], w[0]))
+    # Uzunluk cesitliligi (kullanici istegi 2026-10-21): yogunluk
+    # metrikleri kisa pencerelere dogal avantaj verdiginden tohum adaylar
+    # hep en kisa uzunlukta cikiyordu ve klipler sabit 20 saniyeye
+    # kilitleniyordu. Uzunluklar round-robin sirayla birer tohum verir;
+    # nihai sureyi hype (LLM) anin dogasina gore belirler.
+    ranked_by_length = {
+        length: sorted(bucket, key=lambda w: (-w[2], w[0]))
+        for length, bucket in windows_by_length.items()
+    }
+
+    def _overlaps(window: tuple[float, float, float, dict]) -> bool:
+        return any(window[0] < c[1] and window[1] > c[0] for c in chosen)
+
     chosen: list[tuple[float, float, float, dict]] = []
-    for window in ranked:
-        if len(chosen) >= max_candidates:
-            break
-        if any(
-            window[0] < c[1] and window[1] > c[0] for c in chosen
-        ):
-            continue
-        chosen.append(window)
+    progressed = True
+    while len(chosen) < max_candidates and progressed:
+        progressed = False
+        for length in sorted(ranked_by_length, reverse=True):
+            if len(chosen) >= max_candidates:
+                break
+            bucket = ranked_by_length[length]
+            while bucket:
+                window = bucket.pop(0)
+                if not _overlaps(window):
+                    chosen.append(window)
+                    progressed = True
+                    break
 
     return [
         CandidateSpec(

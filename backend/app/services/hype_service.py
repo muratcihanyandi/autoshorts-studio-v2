@@ -54,8 +54,11 @@ from app.services.media_transcript import transcript_text_in_range
 
 logger = logging.getLogger(__name__)
 
-# Cevap oncesi/sonrasi baglam penceresi (saniye).
-CONTEXT_SECONDS = 20.0
+# Cevap oncesi/sonrasi baglam penceresi (saniye). Genis tutulur
+# (kullanici istegi 2026-10-21): hype ani 20 saniye de 2 dakika da
+# olabildiginden LLM anin dogal sinirlarini GOREBILMELI; dar baglam
+# rafine edilmez, aday penceresine kilitlenirdi.
+CONTEXT_SECONDS = 90.0
 
 DEFAULT_HYPE_SYSTEM_PROMPT = (
     "Sen bir kisa video kurgu uzmanisin. Verilen aday klip bolgelerini "
@@ -421,10 +424,10 @@ class HypeService:
             f"ani yukselis {energy['spikes']}",
         ]
         if before:
-            lines.append(f"  onceki baglam: {before[:400]}")
-        lines.append(f"  transkript: {window_text[:1200]}")
+            lines.append(f"  onceki baglam: {before[:1000]}")
+        lines.append(f"  transkript: {window_text[:1500]}")
         if after:
-            lines.append(f"  sonraki baglam: {after[:400]}")
+            lines.append(f"  sonraki baglam: {after[:1000]}")
         return "\n".join(lines)
 
     async def _evaluate_with_llm(

@@ -27,7 +27,9 @@ OUT_W = 1080
 OUT_H = 1920
 HORIZONTAL_W = 1920
 HORIZONTAL_H = 1080
-DEFAULT_TOP_FRACTION = 0.4
+# Ust bolumun paylasacagi en buyuk yukseklik orani: cok dik webcam
+# dikdortgenlerinde bile alt bant (icerik + altyazi) yasamali.
+MAX_TOP_FRACTION = 0.65
 DEFAULT_WEBCAM_PADDING = 0.35
 SUBTITLE_MARGIN_V = 80  # alt bantta kenardan px
 
@@ -65,14 +67,17 @@ def build_layout(
     *,
     out_w: int = OUT_W,
     out_h: int = OUT_H,
-    top_fraction: float = DEFAULT_TOP_FRACTION,
+    max_top_fraction: float = MAX_TOP_FRACTION,
     padding: float = DEFAULT_WEBCAM_PADDING,
 ) -> VerticalLayout:
     """Compute the two crop rectangles and the subtitle band.
 
-    The webcam box is padded and aspect-corrected to the top section's
-    aspect (out_w / top_h); the bottom is a center crop matching the
-    bottom section's aspect. Everything is clamped to the source frame.
+    Kullanici istegi (2026-10-21): webcam ZOOMLANMAZ — bulunan
+    dikdortgen (pad'li) en-boy orani korunarak tam genislikte ust
+    bolume sigdirilir; bolum yuksekligi dikdortgenin oranindan tureir.
+    Cok dik dikdortgenlerde yukseklik sinirina takilinca yanlardan
+    pad'lenir (contain), asla kirpilmaz. Alt bant kaynak videonun
+    merkez dilimidir.
     """
     if source_w <= 0 or source_h <= 0:
         raise VerticalRenderError("Kaynak video boyutlari gecersiz.")
@@ -80,20 +85,12 @@ def build_layout(
     if fw <= 0 or fh <= 0:
         raise VerticalRenderError("Webcam bolgesi gecersiz.")
 
-    top_h = int(round(out_h * top_fraction))
-    bottom_h = out_h - top_h
-
-    # Webcam: pad, sonra ust bant en-boy oranina getir (genislet/kirp).
+    # Webcam: pad'li kutu; kaynak cerceveye sigdir (olcek kucultur,
+    # merkez korunur) — en-boy duzeltme (zoom) YOK.
     cx = fx + fw / 2.0
     cy = fy + fh / 2.0
     box_w = fw * (1 + 2 * padding)
     box_h = fh * (1 + 2 * padding)
-    target_aspect = out_w / top_h
-    if box_w / box_h > target_aspect:
-        box_w = box_h * target_aspect
-    else:
-        box_h = box_w / target_aspect
-    # Kaynak cercevesine sigdir: olcegi kucult, merkez korunur.
     scale = min(1.0, source_w / box_w, source_h / box_h)
     box_w *= scale
     box_h *= scale
@@ -101,6 +98,18 @@ def build_layout(
     ty = _clamp(int(round(cy - box_h / 2)), 0, max(0, source_h - int(box_h)))
     tw = min(int(box_w), source_w - tx)
     th = min(int(box_h), source_h - ty)
+    if tw <= 0 or th <= 0:
+        raise VerticalRenderError("Webcam bolgesi gecersiz.")
+
+    # Ust bolum yuksekligi: dikdortgen tam genislige olceklendigindeki
+    # yukseklik; cok dikse sinira kilitle ve genislik contain olur.
+    max_top_h = int(round(out_h * max_top_fraction))
+    top_h = int(round(th * out_w / tw))
+    displayed_w = out_w
+    if top_h > max_top_h:
+        top_h = max_top_h
+        displayed_w = max(1, int(round(tw * (top_h / th))))
+    bottom_h = out_h - top_h
 
     # Alt bant: merkez dikey dilim, alt bant en-boy oranina getir.
     bottom_aspect = out_w / bottom_h  # ~0.94 (dikey)
@@ -121,7 +130,14 @@ def build_layout(
     return VerticalLayout(
         out_w=out_w,
         out_h=out_h,
-        top={"x": tx, "y": ty, "w": tw, "h": th, "out_h": top_h},
+        top={
+            "x": tx,
+            "y": ty,
+            "w": tw,
+            "h": th,
+            "out_h": top_h,
+            "out_w": displayed_w,
+        },
         bottom={"x": bx, "y": by, "w": bw, "h": bh, "out_h": bottom_h},
         subtitle_band=(subtitle_y1, subtitle_y2),
     )
@@ -151,10 +167,14 @@ def build_filter_graph(layout: VerticalLayout, subtitle_path: str | Path) -> str
     if subtitle:
         bottom_chain += f",{subtitle}"
     bottom_chain += "[bottom]"
+    # Ust bolum: dikdortgen olceklenir (out_w x out_h bolum icin),
+    # dar kalirsa yanlardan pad'lenir — kirpma (zoom) yok.
+    top_w = top.get("out_w", layout.out_w)
     return (
         f"[0:v]split=2[base1][base2];"
         f"[base1]crop={top['w']}:{top['h']}:{top['x']}:{top['y']}"
-        f",scale={layout.out_w}:{top['out_h']}[top];"
+        f",scale={top_w}:{top['out_h']}"
+        f",pad={layout.out_w}:{top['out_h']}:(ow-iw)/2:(oh-ih)/2[top];"
         f"{bottom_chain};"
         f"[top][bottom]vstack=inputs=2[out]"
     )

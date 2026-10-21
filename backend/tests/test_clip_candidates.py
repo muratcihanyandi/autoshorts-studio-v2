@@ -149,3 +149,31 @@ class TestCandidateSpec:
     def test_duration_property(self):
         spec = CandidateSpec(start_seconds=5.0, end_seconds=25.0, score=0.5)
         assert spec.duration_seconds == 20.0
+
+
+class TestLengthDiversity:
+    def test_seed_candidates_include_every_window_length(self):
+        """Uzunluk çeşitliliği (kullanıcı isteği 2026-10-21): yoğunluk
+        metrikleri kısa pencereyi ödüllendirip tohumları sabit 20 sn'ye
+        kilitliyordu. Aday listesi her uzunluktan (20/100/180) gelmek
+        zorundadır; nihai süreyi hype (LLM) anın doğasına göre belirler."""
+
+        def run(max_candidates: int = 5):
+            return generate_candidates(
+                600.0,
+                silences=[],
+                scene_changes=[],
+                energy_windows=[20000.0] * 600,
+                segments=[],
+                clip_min_seconds=20,
+                clip_max_seconds=180,
+                max_candidates=max_candidates,
+            )
+
+        durations = {c.duration_seconds for c in run()}
+        assert 180.0 in durations  # en uzun tohum mutlaka seçilir
+        assert 100.0 in durations
+        assert 20.0 in durations
+        # Kısıtlı kota: yine en uzun pencere önce gelir.
+        only_two = [c.duration_seconds for c in run(max_candidates=2)]
+        assert 180.0 in only_two
