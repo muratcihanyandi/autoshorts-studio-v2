@@ -827,7 +827,8 @@ class RenderedClip(Base):
     status: Mapped[str] = mapped_column(
         String(16),
         CheckConstraint(
-            "status IN ('rendering', 'rendered', 'review', 'failed')",
+            "status IN ('rendering', 'rendered', 'review', 'failed',"
+            " 'removed')",
             name="ck_rendered_clips_status",
         ),
         default="rendering",

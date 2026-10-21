@@ -330,3 +330,184 @@ async def remove_source_videos(
         "files_removed": files_removed,
         "jobs_cancelled": cancel["cancelled"] + cancel["cancelling"],
     }
+
+
+async def remove_rendered_clip(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    render_id: int,
+    *,
+    http: Any = None,
+) -> dict[str, Any]:
+    """Hazır klibi kaldırır (kullanıcı isteği 2026-10-21): önce
+    YouTube'daki gizli video silinir, sonra yerel dosyalar.
+
+    YouTube silinemediyse HİÇBİR ŞEY silinmez — yerel video korunur.
+    Render satırı 'removed' mezartaşı olur: render/yükleme/metaveri
+    beslemeleri status='rendered' ister, dolayısıyla klip yeniden
+    üretilmez, yüklenmez; aday ve hype seçimi aynen kalır."""
+    import httpx
+
+    from app.models import PublishedVideo, RenderedClip
+    from app.services.oauth_service import OAuthService
+    from app.services.settings_service import SettingsService
+    from app.services.youtube_upload import YouTubeUploadClient
+
+    async with sessionmaker() as session:
+        render = await session.get(RenderedClip, render_id)
+        if render is None:
+            raise VideoRemovalError("Klip bulunamadi.", 404)
+        if render.status == "removed":
+            return {
+                "render_id": render_id,
+                "status": "removed",
+                "youtube_deleted": [],
+                "files_removed": 0,
+                "jobs_cancelled": 0,
+                "skipped": True,
+            }
+        candidate_id = render.clip_candidate_id
+        source_video_id = render.source_video_id
+        file_path = render.file_path
+        thumbnail_path = render.thumbnail_path
+
+        if candidate_id is not None:
+            pub_rows = (
+                (
+                    await session.execute(
+                        sa.select(PublishedVideo).where(
+                            PublishedVideo.clip_candidate_id == candidate_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        elif source_video_id is not None:
+            pub_rows = (
+                (
+                    await session.execute(
+                        sa.select(PublishedVideo).where(
+                            PublishedVideo.source_video_id
+                            == source_video_id,
+                            PublishedVideo.clip_candidate_id.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        else:
+            pub_rows = []
+        youtube_ids = [
+            row.youtube_video_id
+            for row in pub_rows
+            if row.youtube_video_id
+        ]
+        channel_id = pub_rows[0].channel_id if pub_rows else None
+
+    # 1) YouTube tarafı önce: gizli yüklenmişse oradan sil.
+    if youtube_ids and channel_id is not None:
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        oauth = OAuthService(sessionmaker, effective)
+        owned = http is None
+        client = http if http is not None else httpx.AsyncClient()
+        try:
+            token = await oauth.access_token(channel_id, http=client)
+            uploader = YouTubeUploadClient(token)
+            for video_id in youtube_ids:
+                await uploader.delete_video(client, video_id)
+        except Exception as exc:  # noqa: BLE001 - YouTube silinemedi
+            raise VideoRemovalError(
+                f"YouTube videosu silinemedi, yerel klip korundu: {exc}",
+                502,
+            ) from exc
+        finally:
+            if owned:
+                await client.aclose()
+
+    # 2) Yerel dosyalar.
+    files_removed = _remove_file(file_path, settings.media_root)
+    files_removed += _remove_file(thumbnail_path, settings.media_root)
+
+    # 3) Satirlar: render mezartasi, yayin kayitlari duser, siradaki
+    #    isler iptal edilir.
+    async with sessionmaker() as session:
+        row = await session.get(RenderedClip, render_id)
+        row.status = "removed"
+        if candidate_id is not None:
+            await session.execute(
+                sa.delete(PublishedVideo).where(
+                    PublishedVideo.clip_candidate_id == candidate_id
+                )
+            )
+        elif source_video_id is not None:
+            await session.execute(
+                sa.delete(PublishedVideo).where(
+                    PublishedVideo.source_video_id == source_video_id,
+                    PublishedVideo.clip_candidate_id.is_(None),
+                )
+            )
+        if candidate_id is not None:
+            job_types = (
+                "clip_render",
+                "metadata_generate",
+                "publish_clip",
+                "subtitle_correct",
+            )
+        else:
+            job_types = (
+                "clip_render_full_cut",
+                "publish_full_cut",
+                "metadata_generate",
+            )
+        queued = (
+            (
+                await session.execute(
+                    sa.select(Job).where(
+                        Job.status == "queued",
+                        Job.job_type.in_(job_types),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        cancel_ids = []
+        for job in queued:
+            payload = job.payload or {}
+            if candidate_id is not None:
+                if payload.get("clip_candidate_id") == candidate_id:
+                    cancel_ids.append(job.id)
+            elif payload.get("source_video_id") == source_video_id:
+                cancel_ids.append(job.id)
+        if cancel_ids:
+            await session.execute(
+                sa.update(Job)
+                .where(Job.id.in_(cancel_ids))
+                .values(status="cancelled")
+            )
+        jobs_cancelled = len(cancel_ids)
+        if channel_id is not None:
+            record_event(
+                session,
+                channel_id,
+                "media.clip_removed",
+                {
+                    "render_id": render_id,
+                    "youtube_deleted": youtube_ids,
+                    "files_removed": files_removed,
+                    "jobs_cancelled": jobs_cancelled,
+                },
+            )
+        await session.commit()
+
+    return {
+        "render_id": render_id,
+        "status": "removed",
+        "youtube_deleted": youtube_ids,
+        "files_removed": files_removed,
+        "jobs_cancelled": jobs_cancelled,
+    }

@@ -1999,7 +1999,13 @@
   border-radius: 10px;
   overflow: hidden;
   padding: 0;
+  cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clip-card:focus-visible {
+  outline: 2px solid var(--ocean, #15f5ba);
+  outline-offset: 2px;
 }
 
 .clip-card:hover {
@@ -2078,6 +2084,17 @@
   align-self: flex-start;
   margin-top: 2px;
   font-size: 10.5px;
+  padding: 2px 8px;
+}
+
+.clip-card-remove {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.clip-card-remove .btn--ghost {
+  font-size: 11px;
   padding: 2px 8px;
 }
 

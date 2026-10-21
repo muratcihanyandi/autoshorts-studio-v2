@@ -80,3 +80,23 @@ def test_offline_sql_contains_0012_channel_automation() -> None:
     assert "content_warning" in sql
     assert "ai_disclosure" in sql
     assert "run_at" in sql
+
+
+def test_offline_sql_contains_0015_removed_status() -> None:
+    """0015: rendered_clips 'removed' mezartas durumu (klip kaldirma)."""
+    env = dict(os.environ)
+    env["DATABASE_URL"] = (
+        "postgresql+asyncpg://offlinegen:offlinegen@localhost:5432/autoshorts_studio"  # secret-scan-ok
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    sql = result.stdout
+    assert "'removed'" in sql
+    assert "ck_rendered_clips_status" in sql

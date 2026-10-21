@@ -131,6 +131,22 @@ class YouTubeUploadClient:
                 f"Video herkese acik yapilamadi (HTTP {response.status_code})."
             )
 
+    async def delete_video(
+        self, http: httpx.AsyncClient, video_id: str
+    ) -> None:
+        """videos.delete — klibi YouTube uzerinden kalici siler (kullanici
+        istegi 2026-10-21: kaldirilan klip once YouTube'dan silinir).
+        404 'zaten yok' sayilir; force-ssl kapsami ister."""
+        response = await http.delete(
+            VIDEOS_URL,
+            params={"id": video_id},
+            headers=self._headers(),
+        )
+        if response.status_code not in (200, 204, 404):
+            raise UploadError(
+                f"Video YouTube'dan silinemedi (HTTP {response.status_code})."
+            )
+
     async def fetch_status(
         self, http: httpx.AsyncClient, video_id: str
     ) -> VideoStatus:

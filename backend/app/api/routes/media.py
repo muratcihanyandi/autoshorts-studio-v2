@@ -85,6 +85,32 @@ async def remove_source_video(
         ) from exc
 
 
+@router.delete("/media/clips/{render_id}")
+async def remove_clip(request: Request, render_id: int) -> dict:
+    """Hazır klibi kaldır (kullanıcı isteği 2026-10-21): gizli yüklenmişse
+    video önce YouTube'dan silinir, sonra yerel dosya ve kayıtlar;
+    YouTube silinemediyse yerel klip korunur."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı.",
+        )
+    from app.services.video_removal import (
+        VideoRemovalError,
+        remove_rendered_clip,
+    )
+
+    try:
+        return await remove_rendered_clip(
+            sessionmaker, request.app.state.settings, render_id
+        )
+    except VideoRemovalError as exc:
+        raise HTTPException(
+            status_code=exc.status_code, detail=str(exc)
+        ) from exc
+
+
 @router.get("/media/clips/{render_id}")
 async def clip_detail(request: Request, render_id: int) -> dict:
     detail = await _service(request).clip_detail(render_id)

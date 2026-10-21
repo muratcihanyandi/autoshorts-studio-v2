@@ -589,8 +589,11 @@ class LibraryViewService:
         session: AsyncSession, ready_only: bool = False
     ) -> tuple[list[dict], int]:
         total_query = sa.select(sa.func.count()).select_from(RenderedClip)
+        statement_filter = RenderedClip.status != "removed"
         if ready_only:
             total_query = total_query.where(RenderedClip.status == "rendered")
+        else:
+            total_query = total_query.where(statement_filter)
         total = int((await session.execute(total_query)).scalar() or 0)
 
         statement = (
@@ -621,6 +624,9 @@ class LibraryViewService:
         )
         if ready_only:
             statement = statement.where(RenderedClip.status == "rendered")
+        else:
+            # Kaldirilan klipler (mezartas) listede gorunmez.
+            statement = statement.where(statement_filter)
         rows = (await session.execute(statement)).all()
 
         candidate_ids = [

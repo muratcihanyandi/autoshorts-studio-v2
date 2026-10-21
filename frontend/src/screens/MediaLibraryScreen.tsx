@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 
 import {
   fetchMedia,
+  removeClip,
   removeSourceVideo,
   type LibraryClip,
   type LibrarySource,
@@ -26,6 +27,7 @@ const RENDER_VIEW: Record<string, { tone: string; label: string }> = {
   rendering: { tone: 'run', label: 'Render' },
   review: { tone: 'warn', label: 'İnceleme' },
   failed: { tone: 'error', label: 'Hata' },
+  removed: { tone: 'idle', label: 'Kaldırıldı' },
 }
 
 function sourceView(tag: string) {
@@ -192,16 +194,26 @@ function SourceCard({
 function ClipCard({
   clip,
   onOpen,
+  onRemove,
 }: {
   clip: LibraryClip
   onOpen: (clip: LibraryClip) => void
+  onRemove: (clip: LibraryClip) => void
 }) {
   const view = publishView(clip)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   return (
-    <button
-      type="button"
+    <div
       className="clip-card"
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(clip)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(clip)
+        }
+      }}
       aria-label={`${clip.title} detayını aç`}
     >
       <span className="clip-card-thumb">
@@ -242,8 +254,42 @@ function ClipCard({
           {clip.orientation === 'vertical' ? 'Dikey' : 'Yatay'}
         </small>
         <span className={`pill pill--${view.tone}`}>{view.label}</span>
+        <span
+          className="clip-card-remove"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {confirmRemove ? (
+            <>
+              <button
+                type="button"
+                className="btn--ghost"
+                onClick={() => onRemove(clip)}
+                title="Klibi YouTube'tan ve yerelden kalıcı olarak kaldırır."
+              >
+                Kalıcı olarak kaldır
+              </button>
+              <button
+                type="button"
+                className="btn--ghost"
+                onClick={() => setConfirmRemove(false)}
+              >
+                Vazgeç
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="btn--ghost"
+              onClick={() => setConfirmRemove(true)}
+              title="Klibi kaldır: YouTube'taki gizli video ve yerel dosya silinir."
+            >
+              Kaldır
+            </button>
+          )}
+        </span>
       </span>
-    </button>
+    </div>
   )
 }
 
@@ -265,6 +311,22 @@ export function MediaLibraryScreen() {
       } catch (err) {
         setRemoveError(
           err instanceof Error ? err.message : 'Video kaldırılamadı.',
+        )
+        return
+      }
+      library.retry()
+    },
+    [library.retry],
+  )
+
+  const handleClipRemove = useCallback(
+    async (clip: LibraryClip) => {
+      setRemoveError(null)
+      try {
+        await removeClip(clip.id)
+      } catch (err) {
+        setRemoveError(
+          err instanceof Error ? err.message : 'Klip kaldırılamadı.',
         )
         return
       }
@@ -387,6 +449,7 @@ export function MediaLibraryScreen() {
                     key={clip.id}
                     clip={clip}
                     onOpen={(selected) => setOpenClipId(selected.id)}
+                    onRemove={handleClipRemove}
                   />
                 ))}
               </div>

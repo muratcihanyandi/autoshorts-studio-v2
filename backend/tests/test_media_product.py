@@ -368,6 +368,96 @@ def test_delete_source_cleans_files_and_cancels_jobs(tmp_path):
     assert not (media_root / "thumbnails" / "preview_1.jpg").exists()
 
 
+def test_remove_clip_keeps_local_when_youtube_delete_fails(tmp_path):
+    """Kaldırma kuralı (kullanıcı isteği 2026-10-21): gizli yüklenmiş
+    klip YouTube'dan silinemiyorsa yerel dosya ve kayıtlar korunur."""
+    media_root = tmp_path / "media"
+    app = _make_app(tmp_path, media_root=str(media_root))
+    _seed_product(app.state.test_db_path, media_root)
+
+    with TestClient(app) as client:
+        render_id = client.get("/api/media").json()["clips"][0]["id"]
+        response = client.delete(f"/api/media/clips/{render_id}")
+
+    assert response.status_code == 502, response.text
+    assert "YouTube videosu silinemedi" in response.json()["detail"]
+    assert (media_root / "edited" / "1.mp4").exists()  # yerel korundu
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.connect() as conn:
+            status = conn.execute(
+                sa.text("SELECT status FROM rendered_clips WHERE id = :id"),
+                {"id": render_id},
+            ).scalar()
+            published = conn.execute(
+                sa.text("SELECT count(*) FROM published_videos")
+            ).scalar()
+    finally:
+        engine.dispose()
+    assert status == "rendered"
+    assert published == 1
+
+
+def test_remove_clip_tombstones_cleans_and_hides(tmp_path):
+    """Yüklenmemiş klip kaldırma: dosyalar silinir, render satırı
+    'removed' mezartaşı olur (beslemeler yeniden üretmez), yayın kaydı
+    düşer, kütüphanede görünmez, sıradaki işi iptal edilir."""
+    media_root = tmp_path / "media"
+    app = _make_app(tmp_path, media_root=str(media_root))
+    _seed_product(app.state.test_db_path, media_root)
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.begin() as conn:
+            # Bu klip hiç YouTube'a yüklenmemiş (gizli yükleme yok).
+            conn.execute(sa.text("DELETE FROM published_videos"))
+            candidate_id = conn.execute(
+                sa.text("SELECT id FROM clip_candidates")
+            ).scalar_one()
+            conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (job_type, payload, status, priority,"
+                    " attempts, max_attempts) VALUES"
+                    " ('clip_render', :p, 'queued', 5, 0, 3)"
+                ),
+                {"p": f'{{"clip_candidate_id": {candidate_id}}}'},
+            )
+    finally:
+        engine.dispose()
+
+    with TestClient(app) as client:
+        render_id = client.get("/api/media").json()["clips"][0]["id"]
+        removed = client.delete(f"/api/media/clips/{render_id}")
+        after = client.get("/api/media").json()
+
+    assert removed.status_code == 200, removed.text
+    body = removed.json()
+    assert body["status"] == "removed"
+    assert body["youtube_deleted"] == []
+    assert body["files_removed"] >= 2  # render + kapak
+    assert after["clips_total"] == 0  # mezartas listede gorunmez
+    assert not (media_root / "edited" / "1.mp4").exists()
+    assert not (media_root / "thumbnails" / "preview_1.jpg").exists()
+
+    engine = sa.create_engine(f"sqlite:///{app.state.test_db_path}")
+    try:
+        with engine.connect() as conn:
+            status = conn.execute(
+                sa.text("SELECT status FROM rendered_clips WHERE id = :id"),
+                {"id": render_id},
+            ).scalar()
+            job_status = conn.execute(
+                sa.text(
+                    "SELECT status FROM jobs WHERE job_type = 'clip_render'"
+                ),
+            ).scalar()
+    finally:
+        engine.dispose()
+    assert status == "removed"
+    assert job_status == "cancelled"
+
+
 def test_download_stage_carries_percent_detail(tmp_path):
     """İndirme sırasında download adımı canlı yüzde detayı taşır
     (app_meta.download_progress -> '%63')."""

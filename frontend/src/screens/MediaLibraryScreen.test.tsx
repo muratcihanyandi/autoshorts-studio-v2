@@ -289,8 +289,15 @@ describe('MediaLibraryScreen', () => {
     const fetchMock = mockFetch()
     render(<MediaLibraryScreen />)
 
-    // İki adımlı onay: Kaldır -> Kalıcı olarak kaldır.
-    fireEvent.click(await screen.findByRole('button', { name: 'Kaldır' }))
+    // İki adımlı onay: Kaldır -> Kalıcı olarak kaldır. Klip kartının da
+    // kendi kaldırma düğmesi olduğundan kaynak kartınınki seçilir.
+    const sourceRemove = (
+      await screen.findAllByRole('button', { name: 'Kaldır' })
+    ).find((button) =>
+      (button.getAttribute('title') ?? '').includes('Videoyu'),
+    )
+    expect(sourceRemove).toBeDefined()
+    fireEvent.click(sourceRemove as HTMLElement)
     fireEvent.click(
       screen.getByRole('button', { name: 'Kalıcı olarak kaldır' }),
     )
@@ -309,5 +316,33 @@ describe('MediaLibraryScreen', () => {
         fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/media?'))
           .length,
       ).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  it('removes a ready clip with a two-step confirm (YouTube first, then local)', async () => {
+    const fetchMock = mockFetch()
+    render(<MediaLibraryScreen />)
+
+    const clipCard = await screen.findByRole('button', {
+      name: 'Hazır klip detayını aç',
+    })
+    // İlk tıklama yalnız onay ister; silme isteği gitmez.
+    fireEvent.click(within(clipCard).getByRole('button', { name: 'Kaldır' }))
+    const deleteCalls = () =>
+      fetchMock.mock.calls.filter(
+        (call) =>
+          String(call[0]).includes('/api/media/clips/9') &&
+          (call[1] as RequestInit | undefined)?.method === 'DELETE',
+      )
+    expect(deleteCalls()).toHaveLength(0)
+    expect(
+      within(clipCard).getByRole('button', { name: 'Kalıcı olarak kaldır' }),
+    ).toBeInTheDocument()
+
+    fireEvent.click(
+      within(clipCard).getByRole('button', { name: 'Kalıcı olarak kaldır' }),
+    )
+    await waitFor(() => {
+      expect(deleteCalls()).toHaveLength(1)
     })
   })

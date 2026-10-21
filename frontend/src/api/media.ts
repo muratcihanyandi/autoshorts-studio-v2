@@ -231,3 +231,26 @@ export function removeSourceVideo(
     return body
   })
 }
+
+/** Hazır klibi kaldır: gizli yüklenmişse önce YouTube'dan silinir,
+ * sonra yerel dosya ve kayıtlar; klip yeniden üretilmez. */
+export interface ClipRemovalResult {
+  render_id: number
+  status: string
+  youtube_deleted: string[]
+  files_removed: number
+  jobs_cancelled: number
+  skipped?: boolean
+}
+
+export function removeClip(renderId: number): Promise<ClipRemovalResult> {
+  return sendJson<ClipRemovalResult>(
+    `/api/media/clips/${renderId}`,
+    'DELETE',
+  ).then((body) => {
+    if (body === null) {
+      throw new ApiError(204, 'Klip kaldırma yanıtı boş döndü')
+    }
+    return body
+  })
+}

@@ -890,3 +890,87 @@ class TestOrientationPublishing:
 
         error = _run(scenario())
         assert error is not None and "render" in error
+
+
+class TestClipRemoval:
+    def test_remove_clip_deletes_on_youtube_then_local(self, tmp_path):
+        """Kaldırma sırası (kullanıcı isteği 2026-10-21): gizli yüklenmiş
+        klip önce YouTube'dan silinir, sonra yerel dosya; render satırı
+        'removed' mezartaşı olur ve yayın kaydı düşer."""
+        from app.services.video_removal import remove_rendered_clip
+
+        deleted: list[str] = []
+
+        def deleting_handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if (
+                url.startswith(
+                    "https://www.googleapis.com/youtube/v3/videos"
+                )
+                and request.method == "DELETE"
+            ):
+                deleted.append(str(request.url.params.get("id")))
+                return httpx.Response(204)
+            return youtube_handler()(request)
+
+        async def scenario():
+            from app.services.publishing_service import PublishingService
+
+            sessionmaker, settings, engine, db = _env(tmp_path)
+            try:
+                _, candidate_id = await _seed(
+                    sessionmaker, settings.token_encryption_key, tmp_path
+                )
+                service = PublishingService(sessionmaker, settings)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(youtube_handler())
+                ) as http:
+                    await service.publish_clip(candidate_id, http=http)
+                async with sessionmaker() as session:
+                    render_id = (
+                        (
+                            await session.execute(
+                                sa.select(RenderedClip.id).where(
+                                    RenderedClip.clip_candidate_id
+                                    == candidate_id
+                                )
+                            )
+                        )
+                        .scalars()
+                        .one()
+                    )
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(deleting_handler)
+                ) as http:
+                    result = await remove_rendered_clip(
+                        sessionmaker, settings, render_id, http=http
+                    )
+                return candidate_id, render_id, result
+            finally:
+                await engine.dispose()
+
+        candidate_id, render_id, result = _run(scenario())
+        assert deleted == ["yt-vid-123"]  # önce YouTube
+        assert result["youtube_deleted"] == ["yt-vid-123"]
+        assert result["files_removed"] >= 1
+
+        engine = sa.create_engine(f"sqlite:///{tmp_path}/m10.db")
+        try:
+            with engine.connect() as conn:
+                status = conn.execute(
+                    sa.text(
+                        "SELECT status FROM rendered_clips"
+                        " WHERE id = :id"
+                    ),
+                    {"id": render_id},
+                ).scalar()
+                published = conn.execute(
+                    sa.text("SELECT count(*) FROM published_videos")
+                ).scalar()
+        finally:
+            engine.dispose()
+        assert status == "removed"  # mezartasi
+        assert published == 0
+        assert not (
+            tmp_path / "edited" / f"clip_{candidate_id}.mp4"
+        ).exists()
