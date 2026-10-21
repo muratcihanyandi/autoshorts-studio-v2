@@ -42,8 +42,8 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 # Sabit surum: tekrarlanabilir kurulum (torch bagimliligi pip'in
-# cozmesine birakilir; PyPI varsayilanlari her iki platformda da
-# CPU tekerlekleridir).
+# cozmesine birakilir; torch'un KENDI surumu LEAN_DEPS'te aarch64
+# CPU-teker garantisiyle sabitlenmistir).
 WHISPER_PACKAGE = "openai-whisper==20231117"
 
 # openai-whisper PyPI'da yalnizca kaynak paketi (sdist) olarak dagitilir
@@ -59,8 +59,14 @@ BUILD_ISOLATION_OFF = "--no-build-isolation"
 # yalnizca CPU calisma zamani paketlerine indirir (~600 MB). Liste,
 # whisper'in install_requires'i ile torch/numba/tiktoken'in import
 # zincirini kapsar; yeni bir bagimlilik eklendiginde burada taze tut.
+#
+# torch SABIT SURUM: PyPI'nin yeni (2.7+) aarch64 tekerleri CUDA
+# kutuphanelerini sistemden on-yuklemeye calisir (libcublasLt hatasi,
+# canlida 2.14.1'de goruldu) — Pi'de CUDA yok. 2.6.0 aarch64 tekeri
+# CPU-only'dir (~91 MB). torch aarch64 surumu degistirilirse tekerin
+# CPU oldugu boyut/import testiyle DOGRULANMALI.
 LEAN_DEPS = (
-    "torch",
+    "torch==2.6.0",
     "numpy",
     "numba",
     "llvmlite",
