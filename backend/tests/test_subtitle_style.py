@@ -149,6 +149,31 @@ class TestStylePresets:
         assert (fonts / "Anton-Regular.ttf").is_file()
         assert (fonts / "NotoSans-Regular.ttf").is_file()
 
+    def test_style_line_fully_resolved_no_literals(self):
+        """2026-10-21 canlı olay: Style satırındaki iki preset değeri
+        f-string olmayan bir satırda kaldığı için ASS'e LİTERAL olarak
+        yazılıyor, libass bozuk stili reddediyor ve altyazı sessizce
+        çizilmiyordu (subtitles_burned=true'ya rağmen). Stil satırı
+        artık tamamen çözülmüş olmalı: literal süslü parantez yok,
+        her preset rengi dosyada geçiyor, alan sayısı 23."""
+        for key, preset in SUBTITLE_STYLES.items():
+            ass = build_ass(
+                [{"start": 0.0, "end": 1.0, "text": "x"}],
+                start=0.0,
+                end=1.0,
+                style=SubtitleStyle(style_key=key),
+            )
+            style_line = next(
+                line for line in ass.splitlines() if line.startswith("Style:")
+            )
+            assert "{" not in style_line and "}" not in style_line, key
+            assert preset["primary"] in style_line, key
+            assert preset["outline_colour"] in style_line, key
+            assert preset["back"] in style_line, key
+            # Format satırı 23 alan tanımlar; Style de tam olarak
+            # 23 alan taşımalı (virgül sayısı = 22).
+            assert style_line.count(",") == 22, key
+
 
 class TestFreePosition:
     """Gorev 2: altyazi cimbasi (alt kenar ortasi) kadranin herhangi

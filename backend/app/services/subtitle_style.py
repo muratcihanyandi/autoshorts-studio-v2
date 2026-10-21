@@ -222,7 +222,7 @@ def build_ass(
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Sub,{preset['font']},{style.font_size},{preset['primary']},"
-        "&H000000FF,{preset['outline_colour']},{preset['back']},"
+        f"&H000000FF,{preset['outline_colour']},{preset['back']},"
         f"{preset['bold']},0,0,0,100,100,0,0,"
         f"{preset['border_style']},{preset['outline']},{preset['shadow']},2,"
         f"{TEXT_MARGIN_H},{TEXT_MARGIN_H},1,1\n"
