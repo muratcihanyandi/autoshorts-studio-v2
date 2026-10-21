@@ -750,6 +750,58 @@ class TestJobWorker:
         assert added == 0
         assert types == []
 
+    def test_publish_handlers_use_effective_settings_for_cipher(
+        self, tmp_path, monkeypatch
+    ):
+        """Yayın işleyicileri efektif ayarlarla servis kurar: şifreleme
+        anahtarı yalnız DB'de durduğunda ham env ayarlarıyla OAuth
+        çözülemezdi (2026-10-21 canlı olay — hype/metaveri işleyicilerinde
+        alınmış dersin yayın tarafındaki kopyası)."""
+
+        async def scenario():
+            from cryptography.fernet import Fernet
+
+            from app.models import AppMeta
+            from app.worker import build_handlers
+
+            sessionmaker, settings, engine, db = _queue_env(tmp_path)
+            try:
+                db_key = Fernet.generate_key().decode()
+                assert not settings.token_encryption_key
+                async with sessionmaker() as session:
+                    session.add(
+                        AppMeta(
+                            key="runtime_settings",
+                            value={"token_encryption_key": db_key},
+                        )
+                    )
+                    await session.commit()
+
+                captured = {}
+
+                class FakeService:
+                    def __init__(self, sm, effective):
+                        captured["key"] = effective.token_encryption_key
+
+                    async def publish_clip(self, clip_candidate_id):
+                        return {"clip_candidate_id": clip_candidate_id}
+
+                monkeypatch.setattr(
+                    "app.services.publishing_service.PublishingService",
+                    FakeService,
+                )
+                handlers = build_handlers(sessionmaker, settings)
+                result = await handlers["publish_clip"](
+                    {"clip_candidate_id": 7}
+                )
+                return captured.get("key"), result
+            finally:
+                await engine.dispose()
+
+        key, result = asyncio.run(scenario())
+        assert key is not None  # DB'deki anahtar işleyiciye ulaşır
+        assert result == {"clip_candidate_id": 7}
+
     def test_enqueue_poll_jobs_per_authorized_channel(self, tmp_path):
         async def scenario():
             sessionmaker, settings, engine, db = _queue_env(tmp_path)

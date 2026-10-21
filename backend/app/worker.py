@@ -317,7 +317,13 @@ def build_handlers(
         clip_candidate_id = payload.get("clip_candidate_id")
         if not isinstance(clip_candidate_id, int):
             raise ValueError("payload.clip_candidate_id gerekli.")
-        service = PublishingService(sessionmaker, settings)
+        # Efektif ayarlar: TOKEN_ENCRYPTION_KEY Ayarlar ekranindan DB'de
+        # durur; ham env ayariyla OAuth anahtari cozulemez (2026-10-21
+        # canli olay — ayni ders hype/metaveri isleyicilerinde alinmisti).
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        service = PublishingService(sessionmaker, effective)
         return await service.publish_clip(clip_candidate_id)
 
     async def publish_full_cut(payload: dict[str, Any]) -> dict:
@@ -327,7 +333,10 @@ def build_handlers(
         source_video_id = payload.get("source_video_id")
         if not isinstance(source_video_id, int):
             raise ValueError("payload.source_video_id gerekli.")
-        service = PublishingService(sessionmaker, settings)
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        service = PublishingService(sessionmaker, effective)
         return await service.publish_full_cut(source_video_id)
 
     async def publish_due(payload: dict[str, Any]) -> dict:
@@ -336,7 +345,11 @@ def build_handlers(
         channel_id = payload.get("channel_id")
         if not isinstance(channel_id, int):
             raise ValueError("payload.channel_id gerekli.")
-        service = AutomationService(sessionmaker, settings)
+        # make_public yolu da OAuth anahtarina uzanir: efektif ayarlar.
+        effective = await SettingsService(
+            sessionmaker, settings
+        ).effective_settings()
+        service = AutomationService(sessionmaker, effective)
         return await service.publish_for_channel(channel_id)
 
     async def ops_summary(payload: dict[str, Any]) -> dict:

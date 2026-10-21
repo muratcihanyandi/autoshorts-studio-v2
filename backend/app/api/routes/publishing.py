@@ -16,18 +16,22 @@ from app.services.publishing_service import (
     PublishingError,
     PublishingService,
 )
+from app.api.routes.settings import effective_settings
 
 router = APIRouter(tags=["publishing"])
 
 
-def _service(request: Request) -> PublishingService:
+async def _service(request: Request) -> PublishingService:
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Veritabanı yapılandırılmadı; yayınlama kapalı.",
         )
-    return PublishingService(sessionmaker, request.app.state.settings)
+    # Efektif ayarlar: TOKEN_ENCRYPTION_KEY Ayarlar ekranından girildiyse
+    # DB'de durur; ham env ayarlarıyla OAuth anahtarı çözülemez.
+    settings = await effective_settings(request)
+    return PublishingService(sessionmaker, settings)
 
 
 async def _enqueue_private_upload(
@@ -52,7 +56,7 @@ async def _enqueue_private_upload(
 async def publish_clip(request: Request, clip_candidate_id: int) -> PublishResult:
     """Publish one clip now (guards still apply: rights, render,
     approved metadata, not already published)."""
-    service = _service(request)
+    service = await _service(request)
     try:
         result = await service.publish_clip(clip_candidate_id)
     except PublishingError as exc:
@@ -68,7 +72,7 @@ async def approve_metadata(
 ) -> ApproveResult:
     """Approve the latest metadata revision: approval is the trigger for
     the private upload (the scheduled slot later makes it public)."""
-    service = _service(request)
+    service = await _service(request)
     try:
         metadata = await service.approve_metadata(clip_candidate_id)
     except PublishingError as exc:
@@ -89,7 +93,7 @@ async def approve_full_cut(
 ) -> ApproveResult:
     """Approve the horizontal full-cut metadata of a source video (M13);
     approval triggers the private upload of the full cut."""
-    service = _service(request)
+    service = await _service(request)
     try:
         metadata = await service.approve_full_cut(source_video_id)
     except PublishingError as exc:
@@ -111,7 +115,7 @@ async def publish_full_cut(
     """Publish the horizontal full cut of a reaction source video
     (guards still apply: rights, render, approved metadata, once per
     source video)."""
-    service = _service(request)
+    service = await _service(request)
     try:
         result = await service.publish_full_cut(source_video_id)
     except PublishingError as exc:
@@ -127,7 +131,7 @@ async def list_published(request: Request, channel_id: int) -> PublishedVideosOu
 
     from app.models import PublishedVideo
 
-    service = _service(request)
+    service = await _service(request)
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     async with sessionmaker() as session:
         rows = (
