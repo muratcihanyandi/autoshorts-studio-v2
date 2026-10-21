@@ -564,7 +564,8 @@ class TestJobWorker:
                     session.add(
                         RenderedClip(
                             clip_candidate_id=cid,
-                            source_video_id=1,
+                            # Uretimde dikey render video bagini aday
+                            # uzerinden tasir (source_video_id NULL).
                             orientation="vertical",
                             status="rendered",
                             file_path=f"/tmp/{cid}.mp4",
@@ -671,7 +672,6 @@ class TestJobWorker:
                 session.add(
                     RenderedClip(
                         clip_candidate_id=21,
-                        source_video_id=1,
                         orientation="vertical",
                         status="rendered",
                         file_path="/tmp/21.mp4",

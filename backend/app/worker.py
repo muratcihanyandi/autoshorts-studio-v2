@@ -862,8 +862,10 @@ class JobWorker:
                     await session.execute(
                         text(
                             "SELECT rc.clip_candidate_id FROM rendered_clips rc"
+                            " JOIN clip_candidates cc"
+                            " ON cc.id = rc.clip_candidate_id"
                             " JOIN source_videos sv"
-                            " ON sv.id = rc.source_video_id"
+                            " ON sv.id = cc.source_video_id"
                             " JOIN source_channels sc"
                             " ON sv.source_channel_id = sc.id"
                             " JOIN publishing_profiles pp"
