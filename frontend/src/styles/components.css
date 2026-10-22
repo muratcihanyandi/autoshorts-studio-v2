@@ -359,7 +359,9 @@
 
 @media (max-width: 1100px) {
   .two-col {
-    grid-template-columns: 1fr;
+    /* minmax(0,…) korunur: içerik min-genişliği kolonu şişirmesin
+       (masaüstündeki iki kolon da aynı korumayı taşır). */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -396,6 +398,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Grid içindeyken içerik min-genişliği kolonu şişirmesin (uzun
+     select seçenekleri mobilde taşıyordu). */
+  min-width: 0;
 }
 
 .field > label,
@@ -413,6 +418,7 @@
   padding: 9px 12px;
   font: inherit;
   border-radius: var(--radius-control);
+  width: 100%;
 }
 
 /* metin alanları: girdi diliyle aynı, dikey boyutlandırılabilir */
@@ -1431,11 +1437,6 @@
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.lib-thumb-wrap:hover {
-  transform: scale(1.05);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
 .lib-thumb {
   width: 100%;
   height: 100%;
@@ -1454,10 +1455,6 @@
   background: rgba(0, 0, 0, 0.35);
   opacity: 0;
   transition: opacity 0.15s ease;
-}
-
-.lib-thumb-wrap:hover .lib-play-icon {
-  opacity: 1;
 }
 
 .lib-title b {
@@ -1558,6 +1555,7 @@
 .log-scroll {
   max-height: 62vh;
   overflow-y: auto;
+  overflow-x: auto;
 }
 
 .log-scroll thead th {
@@ -2124,6 +2122,23 @@
   box-shadow: 0 0 0 2px var(--ocean, #15f5ba);
 }
 
+/* Kalkma yalnız gerçek hover'da: dokunmatikte tap sonrası yapışmaz. */
+@media (hover: hover) {
+  .clip-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(11, 25, 44, 0.1);
+  }
+
+  .lib-thumb-wrap:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  .lib-thumb-wrap:hover .lib-play-icon {
+    opacity: 1;
+  }
+}
+
 .clip-check {
   position: absolute;
   top: 8px;
@@ -2169,11 +2184,6 @@
   font-size: 12.5px;
   color: var(--plate-muted);
   margin: 0 0 10px;
-}
-
-.clip-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(11, 25, 44, 0.1);
 }
 
 .clip-card-thumb {
@@ -2895,4 +2905,165 @@
 .excluded-row small {
   color: var(--plate-muted);
   flex-shrink: 0;
+}
+
+/* --- Mobil uyarlama (2026-10-22) ---
+   Masaüstü "Kategori Standardı" dili aynen korunur; aşağıdakiler yalnız
+   dar ekran ve dokunmatik ortamın gerektirdiği ölçü düzeltmeleridir. */
+
+/* Dar ekranda tablolar: hücre dolgusu sıkışır, monospace yol metinleri
+   kırılır, LLM tablosunun sabit 200px etiket kolonu serbest kalır,
+   eylem düğme sıraları alt satıra sarar. */
+@media (max-width: 620px) {
+  .info-table th,
+  .info-table td {
+    padding: 8px 12px;
+  }
+
+  .guide-table td {
+    overflow-wrap: anywhere;
+  }
+
+  /* Etiket+değer rehber tablosu: sabit düzen kolonları eşitler, değer
+     metni kırılır — tablo min-içerik genişliği listeyi şişirmez. */
+  .guide-table {
+    table-layout: fixed;
+  }
+
+  /* Panel tablolarındaki durum hapları bir ölçü küçülür; uzun
+     "Yapılandırılmadı" gibi etiketler kolonu zorlamaz. */
+  .info-table .pill {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  .llm-table th {
+    width: auto;
+  }
+
+  .channel-actions,
+  .channel-row {
+    flex-wrap: wrap;
+  }
+
+  .character-head {
+    flex-wrap: wrap;
+  }
+
+  .modal-tabs {
+    overflow-x: auto;
+  }
+}
+
+/* Tablo sarmalayıcı: tabloların min-içerik genişliği üst düzeni
+   (grid colonları) şişirmesin; gerçekten geniş tablolar yatay kayar. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* Rehber adım listesi: grid kolonu kapsayıcıya sabitlenir; içindeki
+   uzun yol tabloları listeyi taşmaz. */
+.guide-steps {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Satır içi kod (uç nokta adresleri gibi) uzun tek parçaysa satır
+   sonunda kırılır; adım satırından taşmaz. */
+.guide-steps code {
+  overflow-wrap: anywhere;
+}
+
+/* Dokunmatik (hover'sız kaba işaretçi: telefon/tablet): hedefler parmak
+   boyutuna büyür, girdi metni 16px olur ki iOS odakta sayfayı
+   yakınlaştırmasın. Masaüstü yoğunluğu değişmez. */
+@media (hover: none) and (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+
+  .btn--ghost,
+  .btn--danger {
+    min-height: 40px;
+  }
+
+  .filter-pill {
+    min-height: 36px;
+  }
+
+  .ribbon-option {
+    width: 32px;
+    height: 32px;
+  }
+
+  .modal-close {
+    width: 40px;
+    height: 40px;
+  }
+
+  .modal-tab {
+    padding: 11px 14px;
+  }
+
+  .settings-tab {
+    padding: 12px 16px;
+  }
+
+  .stale-note button {
+    min-height: 36px;
+  }
+
+  .auth-tabs button {
+    padding: 11px 10px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea,
+  .auth-form input,
+  .filter-select select,
+  .secret-row input {
+    font-size: 16px;
+  }
+
+  .field input,
+  .field select,
+  .field textarea,
+  .auth-form input {
+    min-height: 44px;
+  }
+
+  /* Onay kutuları ve kaydırıcılar kutu boyutuyla ölçülür, uzamaz. */
+  .field input[type='checkbox'],
+  .check-row input[type='checkbox'] {
+    min-height: 0;
+    width: 18px;
+    height: 18px;
+  }
+
+  .range-row input[type='range'] {
+    min-height: 0;
+  }
+}
+
+/* Küçük telefon (≤560px): giriş kartı nefes alır, marka bloğu toplanır. */
+@media (max-width: 560px) {
+  .auth-card {
+    padding: 22px 18px;
+  }
+
+  .auth-card h2 {
+    font-size: 21px;
+  }
+
+  .auth-card-logo {
+    width: 128px;
+  }
+
+  .auth-brand h1 {
+    font-size: 30px;
+  }
+
+  .auth-logo {
+    width: 172px;
+  }
 }

@@ -314,7 +314,8 @@ export function OverviewScreen() {
 
               <section className="ink-panel" aria-label="Boru hattı">
                 <h2>Boru hattı</h2>
-                <table className="info-table">
+                <div className="table-scroll">
+                  <table className="info-table">
                   <tbody>
                     <tr
                       className="interactive-row"
@@ -393,7 +394,8 @@ export function OverviewScreen() {
                       </td>
                     </tr>
                   </tbody>
-                </table>
+                  </table>
+                </div>
                 <div style={{ padding: '10px 18px', borderTop: '1px solid var(--plate-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <small style={{ color: 'var(--plate-muted)' }}>İşlenen videolar ve izlenen kanalların ayrıntıları</small>
                   <button type="button" className="btn btn--ghost" onClick={() => setPipelineDetail(true)}>

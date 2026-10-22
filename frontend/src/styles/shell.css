@@ -120,14 +120,20 @@
     border-bottom: 1px solid var(--ink-border);
   }
   .rail-brand {
-    padding: 14px 16px 10px;
+    padding: 14px max(16px, env(safe-area-inset-left)) 10px;
     margin-bottom: 0;
     border-bottom: none;
   }
   .rail nav {
     flex-direction: row;
     overflow-x: auto;
-    padding: 0 8px 10px;
+    padding: 0 max(8px, env(safe-area-inset-right)) 10px
+      max(8px, env(safe-area-inset-left));
+    /* hap şeridi kaydırma çubuğu taşmasın; kaydırma jesti aynen çalışır */
+    scrollbar-width: none;
+  }
+  .rail nav::-webkit-scrollbar {
+    display: none;
   }
   .rail nav a {
     padding: 7px 12px;
@@ -144,10 +150,25 @@
     display: none;
   }
   .content {
-    padding: var(--space-4) var(--space-4) var(--space-6);
+    /* Çentikli telefonlarda yatay/alt güvenli alanlar dolguya eklenir. */
+    padding: var(--space-4) max(var(--space-4), env(safe-area-inset-right))
+      max(var(--space-6), env(safe-area-inset-bottom))
+      max(var(--space-4), env(safe-area-inset-left));
   }
   .screen-head h1 {
     font-size: 19px;
+  }
+}
+
+/* Dokunmatikte üst şerit hapları parmak boyutuna büyür. */
+@media (hover: none) and (pointer: coarse) {
+  .rail nav a {
+    padding: 10px 14px;
+  }
+
+  .rail-user button {
+    min-height: 36px;
+    padding: 6px 12px;
   }
 }
 
