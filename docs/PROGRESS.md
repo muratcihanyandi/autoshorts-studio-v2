@@ -15,10 +15,11 @@ stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
 **Current task:** Responsive mobile adaptation of the whole frontend
-(2026-10-22, user request): every screen verified overflow-free at 390px
-and 320px with desktop layout intact; touch targets and input font sizes
-adapt on coarse-pointer devices. Frontend 39/39, tsc/build/lint clean
-(see section 7 and Handoff Notes).
+(2026-10-22, user request, two rounds): real mobile app pattern added —
+top bar + hamburger drawer + bottom tab bar (≤900px, desktop rail
+untouched); all screens overflow-free at 390/320px with the canon
+desktop layout verified intact at 1280px. Frontend 40/40, tsc/build/lint
+clean (see section 7 and Handoff Notes).
 
 **Last updated:** 2026-10-22
 
@@ -976,35 +977,44 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
-- Responsive mobile design (2026-10-22, user request): the desktop
-  "Kategori Standardı" language is untouched; mobile adapts through
-  measured fixes, not a redesign. Changes: `index.html` viewport now
-  `viewport-fit=cover`; `shell.css` mobile content padding uses
-  `env(safe-area-inset-*)` and the pill nav strip hides its scrollbar;
-  `components.css` gains a mobile section — tables tighten (≤620px cell
-  padding, smaller in-table pills, LLM table's fixed 200px label column
-  released, guide tables switch to `table-layout: fixed`), action button
-  rows and character heads wrap, `.two-col`'s ≤1100px override keeps the
-  `minmax(0, …)` guard (a bare `1fr` let table min-content blow out the
-  grid — root cause of the Overview/Rehber overflows), `.field` gets
-  `min-width: 0` + `width: 100%` inputs (long `<select>` options no
-  longer force the LLM form to 437px), Boru hattı's table sits in a new
-  `.table-scroll` wrapper (OverviewScreen.tsx), inline `<code>` in guide
-  steps wraps, log tables scroll horizontally when needed, and card
-  lift/thumbnail zoom only applies under `@media (hover: hover)`.
-  Coarse-pointer devices (`(hover: none) and (pointer: coarse)`) get
-  40–44px minimum touch targets and 16px input font (no iOS focus zoom);
-  checkbox/range are excluded. Small phones (≤560px) get a tighter auth
-  card. Verification: DOM-geometry audits (scrollWidth vs viewport,
-  per-element overflow excluding intentional scroll containers, touch
-  target and input font sizes) across all 10 routes at 390px and 320px —
-  zero horizontal overflow everywhere; 1280px desktop check confirms the
-  canon layout (216px sticky rail, 4-col stat grid, 1.4fr/1fr two-col);
-  pipeline-detail modal fits at 390px. Frontend 39/39, oxlint 0 errors
-  (8 pre-existing hook warnings), `tsc -b && vite build` clean. Limit:
-  coarse-pointer rules verified by stylesheet parsing + identical-syntax
-  `(hover: hover)` block behavior in the same engine; no real
-  touch-device pass (image input unavailable in this environment).
+- Responsive mobile design (2026-10-22, user request, two rounds): the
+  desktop "Kategori Standardı" language is untouched; mobile is a real
+  application pattern, not a squeezed desktop. Round two (user feedback:
+  "where is the drawer menu and the bottom nav bar") replaced the old
+  top pill-strip with a proper mobile shell in `AppShell.tsx` (≤900px,
+  chosen by `useSyncExternalStore` over `matchMedia('(max-width:
+  900px)')` — same breakpoint as the CSS, no first-paint flicker,
+  jsdom-safe via guards): sticky top bar (hamburger + brand logo on
+  ink-deep navy), a left slide-in drawer (all 10 destinations + Yönetim
+  section + user/logout, ink-deep navy, same dot/active-accent link
+  language as the rail, backdrop, Escape/link/X close, body scroll lock,
+  focus returns to the hamburger), and a fixed bottom tab bar (Genel,
+  Kanallar, Medya, Takvim, Otomasyon — hand-drawn inline SVG icon set in
+  `components/icons.tsx`, 24-grid/1.8px stroke/currentColor, no external
+  icon package for the offline Pi; active tab = ocean pill + navy text,
+  safe-area-inset-bottom padding). Content bottom padding reserves the
+  tab bar (last block clears it by 31px at 320px). Round one fixes
+  retained: `viewport-fit=cover`; safe-area insets; tables tightened
+  (≤620px padding, smaller in-table pills, LLM 200px label column
+  released, guide tables `table-layout: fixed`, log/pipeline tables
+  scroll in `.table-scroll`); `.two-col`'s ≤1100px override keeps
+  `minmax(0, …)` (bare `1fr` let table min-content blow out the grid);
+  `.field` `min-width: 0` + full-width inputs (long select options no
+  longer force the LLM form to 437px); inline guide `<code>` wraps;
+  hover lifts gated behind `(hover: hover)`; coarse-pointer devices get
+  40–44px touch targets and 16px inputs (no iOS focus zoom); tighter
+  auth card ≤560px. Verification: DOM-geometry audits across all 10
+  routes — zero horizontal overflow at 390px, 320px and 768px; 1280px
+  desktop canon intact (216px sticky rail, 4-col stat grid, 1.4fr/1fr);
+  drawer open/close/navigate/Escape/body-lock and tab navigation
+  exercised in a real browser; live desktop↔mobile transition verified
+  by dispatching a resize event (the in-app browser's viewport override
+  dispatches no window events — environment quirk, code path proven
+  correct). Frontend 40/40 (new mobile-shell test with matchMedia mock),
+  oxlint 0 errors (8 pre-existing warnings), `tsc -b && vite build`
+  clean. Limit: no real touch-device pass (image input unavailable in
+  this environment); coarse-pointer rules verified by stylesheet parsing
+  and identical-syntax `(hover: hover)` block behavior.
 
 - Settings restructure + webcam ratio (2026-10-22, user request):
   Settings tabs are now Bağlantılar / Üretim / Shorts / Yatay video /

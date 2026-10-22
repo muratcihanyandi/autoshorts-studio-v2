@@ -245,6 +245,49 @@ describe('App', () => {
     expect(channelsLink).toHaveAttribute('href', '/kanallar')
   })
 
+  it('shows the mobile shell (drawer + bottom tabs) on narrow screens', async () => {
+    mockApiOk()
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('max-width'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })),
+    )
+    const { container } = render(<App />)
+
+    // Mobil kabuk: üst çubuk + alt sekmeler; masaüstü rayı render edilmez.
+    expect(
+      await screen.findByRole('button', { name: 'Menüyü aç' }),
+    ).toBeInTheDocument()
+    const tabs = screen.getByRole('navigation', {
+      name: 'Stüdyo kısayolları',
+    })
+    expect(tabs).toHaveTextContent('Genel')
+    expect(tabs).toHaveTextContent('Kanallar')
+    expect(tabs).toHaveTextContent('Medya')
+    expect(tabs).toHaveTextContent('Takvim')
+    expect(tabs).toHaveTextContent('Otomasyon')
+    expect(container.querySelector('.rail')).toBeNull()
+    expect(container.querySelector('.mobile-drawer')).not.toBeNull()
+
+    // Çekmece: hamburger açar, tüm hedefler + yönetim bölümü listelenir,
+    // bir hedefe tıklayınca kapanır.
+    fireEvent.click(screen.getByRole('button', { name: 'Menüyü aç' }))
+    const drawer = screen.getByRole('complementary', {
+      name: 'Stüdyo menüsü',
+    })
+    expect(drawer).toHaveClass('open')
+    expect(drawer).toHaveTextContent('Yönetim')
+    expect(drawer).toHaveTextContent('Ayarlar')
+    const settingsLink = screen.getByRole('link', { name: 'Ayarlar' })
+    expect(settingsLink).toHaveAttribute('href', '/ayarlar')
+    fireEvent.click(settingsLink)
+    expect(drawer).not.toHaveClass('open')
+  })
+
   it('lists channels and offers the new-channel form on /kanallar', async () => {
     mockApiOk()
     window.history.pushState({}, '', '/kanallar')
