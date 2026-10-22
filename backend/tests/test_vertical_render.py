@@ -85,6 +85,55 @@ class TestLayout:
         )
         assert layout.bottom["out_h"] == OUT_H - top["out_h"]
 
+    def test_webcam_fraction_sets_section_height(self):
+        """Kullanıcı isteği 2026-10-22: top_fraction verilirse üst bölümün
+        yüksekliği kadranın bu oranıdır (%35 → 672 px); webcam dikdörtgeni
+        zoom'suz contain ile bölüme oturur (en-boy korunur, kırpma yok)."""
+        layout = build_layout(
+            1280, 720, WEBCAM_REGION, top_fraction=0.35
+        )
+        top = layout.top
+        assert top["out_h"] == int(round(OUT_H * 0.35))
+        assert layout.bottom["out_h"] == OUT_H - top["out_h"]
+        # Contain: dikdörtgen bölüme sığar ve en-boy oranı korunur.
+        assert top["out_w"] <= OUT_W and top["fit_h"] <= top["out_h"]
+        assert top["out_w"] / top["fit_h"] == pytest.approx(
+            top["w"] / top["h"], rel=0.01
+        )
+        assert layout.subtitle_band[0] >= top["out_h"]
+
+    def test_webcam_fraction_flat_rect_pads_vertically(self):
+        """Yassı webcam dikdörtgeni + küçük oran: dikdörtgen tam genişliğe
+        ölçeklenir, kalan yükseklik dikeyde ortalanır (fit_h < bölüm)."""
+        # 320x160 pad'li kutu -> yatay dikdortgen, 0.30 oraninda bolum
+        layout = build_layout(
+            1280, 720, (480, 280, 320, 160), top_fraction=0.30
+        )
+        top = layout.top
+        assert top["out_h"] == int(round(OUT_H * 0.30))
+        assert top["out_w"] == OUT_W  # genişlik dolu
+        assert top["fit_h"] < top["out_h"]  # dikeyde pay var, ortalanır
+        assert top["out_w"] / top["fit_h"] == pytest.approx(
+            top["w"] / top["h"], rel=0.01
+        )
+        graph = build_filter_graph(layout, "")
+        assert f"scale={top['out_w']}:{top['fit_h']}" in graph
+        assert (
+            f"pad={OUT_W}:{top['out_h']}:(ow-iw)/2:(oh-ih)/2" in graph
+        )
+
+    def test_webcam_fraction_clamped_to_max(self):
+        """Oran üst sınırı aşarsa MAX_TOP_FRACTION'a kilitlenir (alt bant
+        yaşamaya devam eder); 0.05'in altına inmez."""
+        layout = build_layout(
+            1280, 720, WEBCAM_REGION, top_fraction=0.90
+        )
+        assert layout.top["out_h"] == int(round(OUT_H * 0.65))
+        low = build_layout(
+            1280, 720, WEBCAM_REGION, top_fraction=0.01
+        )
+        assert low.top["out_h"] == int(round(OUT_H * 0.05))
+
     def test_filter_graph_contains_both_crops_and_subtitles(self, tmp_path):
         layout = build_layout(1280, 720, WEBCAM_REGION)
         ass = tmp_path / "subs.ass"

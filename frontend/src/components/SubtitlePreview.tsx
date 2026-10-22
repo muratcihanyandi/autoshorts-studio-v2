@@ -14,9 +14,9 @@ const SCALE = 0.25
 const PREVIEW_W = OUT_W * SCALE
 const PREVIEW_H = OUT_H * SCALE
 
-// Temsilî üst bölüm oranı: gerçek klipte webcam dikdörtgeninin
-// en-boy oranından türer; önizleme tipik bir değerde çizilir.
-const REPRESENTATIVE_TOP_H = Math.round(OUT_H * 0.45)
+// Varsayılan webcam bolum orani (%): backend shorts_webcam_percent
+// ayariyla ayni sozlesme; kalan yukseklik videoya kalir.
+const DEFAULT_WEBCAM_PERCENT = 35
 
 const SAMPLE_TEXT = 'İşte günün en heyecanlı anı!'
 const STYLE_CSS: Record<
@@ -74,6 +74,8 @@ interface SubtitlePreviewProps {
   styleKey: string
   posX: number
   posY: number
+  /** Webcam üst bölümünün kadran yüksekliğinden payı (%). */
+  webcamPercent?: number
 }
 
 export function SubtitlePreview({
@@ -82,9 +84,12 @@ export function SubtitlePreview({
   styleKey,
   posX,
   posY,
+  webcamPercent = DEFAULT_WEBCAM_PERCENT,
 }: SubtitlePreviewProps) {
   const css = STYLE_CSS[styleKey] ?? STYLE_CSS.klasik
   const fontSize = Math.max(6, fontSizePx * SCALE)
+  const topPercent = Math.min(50, Math.max(20, webcamPercent))
+  const topH = Math.round(OUT_H * (topPercent / 100))
   // ASS konturu (Outline piksel) ölçeklenmiş text-shadow'a çevrilir;
   // 8 yönlü gölge tek yönlü kontüre göre gerçeğe daha yakındır.
   const stroke = Math.max(1, Math.round((styleKey === 'anton' ? 5 : styleKey === 'noto' ? 3 : 4) * SCALE))
@@ -99,16 +104,16 @@ export function SubtitlePreview({
         className="sub-preview-frame"
         style={{ width: PREVIEW_W, height: PREVIEW_H }}
         role="img"
-        aria-label={`Dikey klip altyazı önizlemesi — ${css.label} stili, yatayda %${posX}, dikeyde %${posY}`}
+        aria-label={`Dikey klip önizlemesi — ${css.label} stili, yatayda %${posX}, dikeyde %${posY}, webcam bölümü %${topPercent}`}
       >
         <div
           className="sub-preview-top"
-          style={{ height: REPRESENTATIVE_TOP_H * SCALE }}
+          style={{ height: topH * SCALE }}
         >
-          <span>Kamera</span>
+          <span>Kamera %{topPercent}</span>
         </div>
         <div className="sub-preview-bottom">
-          <span>Kaynak video</span>
+          <span>Video %{100 - topPercent}</span>
         </div>
         {burn ? (
           <div
@@ -134,9 +139,10 @@ export function SubtitlePreview({
         )}
       </div>
       <span className="field-help">
-        Temsilî önizleme — kamera bölümünün yüksekliği klipe göre
-        değişir; altyazı çapasını kaydırıcılarla kadranın istediğin
-        yerine taşıyabilirsin.
+        Temsilî önizleme — webcam bölümü seçtiğin oranda çizilir;
+        dikdörtgen gerçek klipte zoom'suz, en-boy oranı korunarak
+        bölüme oturur. Altyazı çapasını kaydırıcılarla kadranın
+        istediğin yerine taşıyabilirsin.
       </span>
     </div>
   )

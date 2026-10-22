@@ -224,7 +224,12 @@ class VerticalPipelineService:
             segments = await load_segments(session, asset.id)
 
         try:
-            layout = build_layout(source_w, source_h, resolved.region)
+            layout = build_layout(
+                source_w,
+                source_h,
+                resolved.region,
+                top_fraction=self._settings.shorts_webcam_percent / 100.0,
+            )
             out_path = (
                 self._edited_dir() / f"{clip_candidate_id}.mp4"
             )

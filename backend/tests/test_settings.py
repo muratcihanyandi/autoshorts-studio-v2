@@ -62,6 +62,43 @@ def test_put_stores_override_and_get_reports_database_source(tmp_path):
         client.__exit__(None, None, None)
 
 
+def test_put_webcam_percent_roundtrip_and_bounds(tmp_path):
+    """Shorts webcam/video bölüm oranı: varsayılan 35 (ortam), PUT ile
+    override edilir, aralık dışı (20..50) değerler reddedilir."""
+    client = _make_settings_app(tmp_path)
+    try:
+        body = client.get("/api/settings").json()
+        assert body["shorts_webcam_percent"] == {
+            "value": 35,
+            "source": "environment",
+        }
+
+        response = client.put(
+            "/api/settings", json={"shorts_webcam_percent": 30}
+        )
+        assert response.status_code == 200
+        body = client.get("/api/settings").json()
+        assert body["shorts_webcam_percent"] == {
+            "value": 30,
+            "source": "database",
+        }
+
+        assert (
+            client.put(
+                "/api/settings", json={"shorts_webcam_percent": 60}
+            ).status_code
+            == 400
+        )
+        assert (
+            client.put(
+                "/api/settings", json={"shorts_webcam_percent": 10}
+            ).status_code
+            == 400
+        )
+    finally:
+        client.__exit__(None, None, None)
+
+
 def test_put_empty_string_clears_override_back_to_environment(tmp_path):
     client = _make_settings_app(tmp_path, frontend_base_url="http://env-ui:1478")
     try:

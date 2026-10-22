@@ -75,6 +75,7 @@ class SettingsOut(BaseModel):
     subtitle_style_preset: PlainSettingOut
     subtitle_pos_x_percent: IntSettingOut
     subtitle_pos_y_percent: IntSettingOut
+    shorts_webcam_percent: IntSettingOut
     media_root: PlainSettingOut
 
 
@@ -114,3 +115,4 @@ class SettingsUpdate(BaseModel):
     subtitle_style_preset: str | None = None
     subtitle_pos_x_percent: int | None = None
     subtitle_pos_y_percent: int | None = None
+    shorts_webcam_percent: int | None = None

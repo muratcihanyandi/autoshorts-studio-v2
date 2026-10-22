@@ -830,30 +830,35 @@ and a documented deployment checklist with verification steps.
 
 ## 7. Last Verified Test Results
 
-Verified 2026-10-21 (kalıcı çözüm turu: lost-file sweep, Overview
-production uyarısı, Hariç paneli + toplu geri alma) on the dev machine
-(Windows 11, Python 3.11.9 venv, Node 24.13.0). Commands run from the
-stated directories; pytest output redirected to a file (known
-dev-env quirk — piped runs hang).
+Verified 2026-10-22 (Shorts/Yatay settings tabs + webcam ratio) on
+the dev machine (Windows 11, Python 3.11.9 venv, Node 24.13.0).
+Commands run from the stated directories; pytest output redirected to
+a file (known dev-env quirk — piped runs hang).
 
 - Backend — `cd backend && ./.venv/Scripts/python.exe -m pytest -q`
-  - Passed: **476**, Failed: 0, Skipped: 0 in 93 s (new:
-    test_lost_file_sweep 5 — dead-asset video removed via the UI
-    removal path while living/public assets stay, intentional empty
-    path not swept, batch limit respected, bulk re-include partial
-    success, overview planned_videos field).
+  - Passed: **488**, Failed: 0, Skipped: 0 in 110 s (new:
+    test_vertical_render +3 — top_fraction sets the section height
+    with contain (no zoom/crop), flat rectangles center vertically
+    with scale=fit_h + pad to section, fraction clamps to
+    MAX_TOP_FRACTION/0.05 floor; test_settings +1 —
+    shorts_webcam_percent roundtrip default 35, override 30, bounds
+    20..50 reject 10/60).
   - Real ffmpeg renders and real OpenCV detection run against local
     fixtures; sqlite test connections enforce foreign keys.
   - 1 warning (starlette TestClient deprecation).
-- Frontend — `cd frontend && npx vitest run`: 37 passed, 0 failed
-  (MediaLibraryScreen 6 — +excluded panel bulk re-include; the two
-  removal tests that had sat OUTSIDE the describe block (cleanup-less
-  runs) moved inside; SettingsScreen 8; CalendarScreen 4;
-  CharactersScreen 7; AutomationScreen 3; App 7; LogsScreen 1).
-- Frontend types — `npx tsc -b`: clean. Production build —
-  `npm run build`: succeeded. Lint — `npm run lint` (oxlint):
-  0 errors, 8 warnings (pre-existing React Compiler advisories).
-- Secret scan — `python tools/scan_secrets.py`: clean.
+- Frontend — `cd frontend && npx vitest run`: 39 passed, 0 failed
+  (SettingsScreen 11 — tabs now Bağlantılar/Üretim/Shorts/Yatay
+  video/Sistem, webcam-ratio slider saves only its field and drives
+  the preview section labels, horizontal tab shows the stock target
+  and the no-subtitles contract; all others unchanged).
+- Frontend types — `npx tsc --noEmit`: clean. Production build —
+  `npm run build`: succeeded (build compiles test files too). Lint —
+  `npm run lint` (oxlint): 0 errors, 8 warnings (pre-existing React
+  Compiler advisories).
+
+Previous full-suite record (2026-10-21, kalıcı çözüm turu: lost-file
+sweep, Overview production uyarısı, Hariç paneli + toplu geri alma):
+backend 476/476, frontend 37/37 — superseded by the totals above.
 
 Previous full-suite record (2026-10-21 first pass, eight-task update:
 caption styles + free positioning, settings redesign, bulk clip
@@ -972,6 +977,30 @@ historical, superseded by the totals above):
 
 ## 10. Handoff Notes
 
+- Settings restructure + webcam ratio (2026-10-22, user request):
+  Settings tabs are now Bağlantılar / Üretim / Shorts / Yatay video /
+  Sistem. The Shorts tab owns everything vertical: clip count and
+  duration bounds (moved from Üretim), the new "Webcam / Video Oranı"
+  slider (shorts_webcam_percent, 20..50, default 35) and all subtitle
+  settings; the live preview draws the webcam section at the chosen
+  ratio. The Yatay video tab holds the horizontal stock target and
+  states the full-cut contract (1920x1080 scale+pad, subtitles never
+  burned, audio preserved; the daily horizontal limit stays a channel
+  setting). Render: build_layout takes top_fraction — the top section
+  height is the chosen share of the 1080x1920 frame and the webcam
+  rectangle is contain-fit into it (no zoom, no crop; flat rectangles
+  center vertically, narrow ones pad the sides — the filter chain now
+  scales to fit_h and pads to the section height).
+  vertical_pipeline passes the setting through; no migration needed
+  (runtime_settings blob). Verified: backend 488/488, frontend 39/39,
+  tsc/build/lint clean (see section 7).
+  Record gap closed: the two earlier commits that postdate the
+  previous PROGRESS update (0004dbb ASS style f-string fix; 5a1df87
+  Whisper-primary transcription + YouTube auto-caption cleanup) were
+  deployed and verified live before this entry — live state after
+  them: transcription_method=whisper saved in the DB, 5 dirty renders
+  locked 'removed', worker force-recreated and the channel restarted,
+  engine processing planned videos with Whisper.
 - Excluded-video re-processing fix (2026-10-21, third round — user
   removed processed videos so the current system would rebuild them,
   but the engine still remembered them as "already processed"):

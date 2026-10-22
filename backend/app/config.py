@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     subtitle_style_preset: str = "klasik"
     subtitle_pos_x_percent: int = 50
     subtitle_pos_y_percent: int = 78
+    # Dikey (Reels) kliplerinde webcam bolumunun kadran yuksekliginden
+    # alacagi pay (yuzde). Kullanici istegi 2026-10-22: oran ayarlanabilir
+    # (%30/%70, %35/%65 gibi); webcam ustte, video altta. Dikdortgen
+    # zoomlanmaz — bolume contain ile oturur (kirpma yok).
+    shorts_webcam_percent: int = 35
     # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
     shorts_per_video: int = 3
 

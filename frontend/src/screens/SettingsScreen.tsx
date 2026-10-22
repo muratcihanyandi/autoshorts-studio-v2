@@ -47,12 +47,13 @@ type NumberKey =
   | 'download_rate_limit_kbps'
   | 'planned_poll_interval_minutes'
 
-type TabKey = 'connection' | 'production' | 'subtitle' | 'system'
+type TabKey = 'connection' | 'production' | 'shorts' | 'horizontal' | 'system'
 
 const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: 'connection', label: 'Bağlantılar', hint: 'Google ve YouTube erişimi' },
   { key: 'production', label: 'Üretim', hint: 'Motor, limitler ve transkripsiyon' },
-  { key: 'subtitle', label: 'Altyazı', hint: 'Klip görünümü ve konumu' },
+  { key: 'shorts', label: 'Shorts', hint: 'Dikey klipler: görünüm, altyazı ve oran' },
+  { key: 'horizontal', label: 'Yatay video', hint: 'Yatay tam kesit ayarları' },
   { key: 'system', label: 'Sistem', hint: 'Sürüm ve çalışma ortamı' },
 ]
 
@@ -61,7 +62,7 @@ const NUMBER_FIELDS: {
   label: string
   help: string
   min?: number
-  group: 'engine' | 'clip'
+  group: 'engine' | 'shorts' | 'horizontal'
 }[] = [
   {
     key: 'cpu_target_percent',
@@ -120,39 +121,39 @@ const NUMBER_FIELDS: {
     group: 'engine',
   },
   {
-    key: 'horizontal_stock_target_default',
-    label: 'Yatay Stok Hedefi (Varsayılan)',
-    help: 'Yeni kanal profillerine başlangıç değeri (genellikle 3).',
-    min: 1,
-    group: 'clip',
+    key: 'download_rate_limit_kbps',
+    label: 'İndirme Hız Limiti (KB/s)',
+    help: 'yt-dlp --limit-rate olarak uygulanır. 0 = limitsiz.',
+    min: 0,
+    group: 'engine',
   },
   {
     key: 'shorts_per_video',
     label: 'Video Başına Shorts',
     help: 'Bir yatay videodan çıkarılacak en fazla Shorts sayısı.',
     min: 1,
-    group: 'clip',
+    group: 'shorts',
   },
   {
     key: 'clip_min_seconds',
     label: 'Klip Süresi Alt Sınır (sn)',
     help: 'Motorun seçebileceği en kısa klip süresi.',
     min: 5,
-    group: 'clip',
+    group: 'shorts',
   },
   {
     key: 'clip_max_seconds',
     label: 'Klip Süresi Üst Sınır (sn)',
     help: 'En uzun klip süresi (Shorts sınırı 180 sn). Süre esnek: an 1-2 dakika sürüyorsa klip de o kadar uzun seçilir.',
     min: 20,
-    group: 'clip',
+    group: 'shorts',
   },
   {
-    key: 'download_rate_limit_kbps',
-    label: 'İndirme Hız Limiti (KB/s)',
-    help: 'yt-dlp --limit-rate olarak uygulanır. 0 = limitsiz.',
-    min: 0,
-    group: 'clip',
+    key: 'horizontal_stock_target_default',
+    label: 'Yatay Stok Hedefi (Varsayılan)',
+    help: 'Yeni kanal profillerine başlangıç değeri (genellikle 3).',
+    min: 1,
+    group: 'horizontal',
   },
 ]
 
@@ -212,6 +213,7 @@ const SECRET_FIELDS: {
 
 const DEFAULT_POS_X = 50
 const DEFAULT_POS_Y = 78
+const DEFAULT_WEBCAM_PERCENT = 35
 
 /** Görev 1: beş seçilebilir stil — anahtarlar backend
  * subtitle_style.SUBTITLE_STYLES ile aynı sözleşme. */
@@ -237,6 +239,7 @@ interface FormState {
   subtitleStyleKey: string
   subtitlePosX: string
   subtitlePosY: string
+  webcamPercent: string
 }
 
 function initForm(view: SettingsView): FormState {
@@ -267,6 +270,9 @@ function initForm(view: SettingsView): FormState {
     subtitleStyleKey: view.subtitle_style_preset.value || 'klasik',
     subtitlePosX: String(view.subtitle_pos_x_percent.value ?? DEFAULT_POS_X),
     subtitlePosY: String(view.subtitle_pos_y_percent.value ?? DEFAULT_POS_Y),
+    webcamPercent: String(
+      view.shorts_webcam_percent.value ?? DEFAULT_WEBCAM_PERCENT,
+    ),
   }
 }
 
@@ -378,6 +384,13 @@ export function SettingsScreen() {
       posY !== view.subtitle_pos_y_percent.value
     ) {
       patch.subtitle_pos_y_percent = posY
+    }
+    const webcamPercent = Number(form.webcamPercent)
+    if (
+      Number.isInteger(webcamPercent) &&
+      webcamPercent !== view.shorts_webcam_percent.value
+    ) {
+      patch.shorts_webcam_percent = webcamPercent
     }
 
     if (Object.keys(patch).length === 0) {
@@ -595,27 +608,8 @@ export function SettingsScreen() {
                     </div>
                   ))}
                 </div>
-                <h3 className="settings-group-title">Klip Üretimi</h3>
+                <h3 className="settings-group-title">Medya Temizliği</h3>
                 <div className="settings-grid">
-                  {NUMBER_FIELDS.filter((f) => f.group === 'clip').map(({ key, label, help, min }) => (
-                    <div className="field" key={key}>
-                      <label htmlFor={`set-${key}`}>
-                        {label}
-                        <span className="source-badge">
-                          {SOURCE_LABEL[view[key].source]}
-                        </span>
-                      </label>
-                      <input
-                        id={`set-${key}`}
-                        className="nums"
-                        type="number"
-                        min={min ?? 0}
-                        value={form.numbers[key]}
-                        onChange={(e) => setNumber(key, e.target.value)}
-                      />
-                      <span className="field-help">{help}</span>
-                    </div>
-                  ))}
                   <div className="field">
                     <label htmlFor="set-retention">
                       Yayınlanan videoların temizliği
@@ -737,18 +731,75 @@ export function SettingsScreen() {
           </section>
         )}
 
-        {tab === 'subtitle' && (
-          <section className="plate settings-form" aria-label="Altyazı ayarları">
-            <h2 className="panel-title">Altyazı (Dikey Klipler)</h2>
+        {tab === 'shorts' && (
+          <section className="plate settings-form" aria-label="Shorts ayarları">
+            <h2 className="panel-title">Shorts (Dikey Klipler)</h2>
             {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
             {view && form && (
               <>
                 <p className="plate-note">
-                  Reels klipleri çıkarılırken transkriptten altyazı gömülür.
-                  Kaydettiğinde bir sonraki render'dan itibaren uygulanır.
+                  Dikey kliplerin nasıl üretileceğini ve nasıl
+                  görüneceğini yönetir: klip sayısı ve süresi, webcam
+                  oranı, altyazı stili ve konumu. Kaydettiğinde bir
+                  sonraki render'dan itibaren uygulanır.
                 </p>
+                <h3 className="settings-group-title">Klip Üretimi</h3>
+                <div className="settings-grid">
+                  {NUMBER_FIELDS.filter((f) => f.group === 'shorts').map(({ key, label, help, min }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
+                      <input
+                        id={`set-${key}`}
+                        className="nums"
+                        type="number"
+                        min={min ?? 0}
+                        value={form.numbers[key]}
+                        onChange={(e) => setNumber(key, e.target.value)}
+                      />
+                      <span className="field-help">{help}</span>
+                    </div>
+                  ))}
+                </div>
+                <h3 className="settings-group-title">Görünüm ve Altyazı</h3>
                 <div className="subtitle-settings">
                   <div className="settings-grid">
+                    <div className="field">
+                      <label htmlFor="set-webcam-percent">
+                        Webcam / Video Oranı
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view.shorts_webcam_percent.source]}
+                        </span>
+                      </label>
+                      <div className="range-row">
+                        <input
+                          id="set-webcam-percent"
+                          type="range"
+                          min={20}
+                          max={50}
+                          step={5}
+                          value={form.webcamPercent}
+                          onChange={(e) =>
+                            setForm((f) =>
+                              f ? { ...f, webcamPercent: e.target.value } : f,
+                            )
+                          }
+                        />
+                        <span className="nums">
+                          W %{form.webcamPercent} · V %
+                          {100 - (Number(form.webcamPercent) || DEFAULT_WEBCAM_PERCENT)}
+                        </span>
+                      </div>
+                      <span className="field-help">
+                        Webcam üst bölümünün kadran yüksekliğinden alacağı pay
+                        (varsayılan %35). Dikdörtgen zoom'suz, en-boy oranı
+                        korunarak bölüme tam oturur; kalan alan videoya kalır.
+                      </span>
+                    </div>
                     <div className="field">
                       <label htmlFor="set-subtitle-burn">
                         Altyazı Gömme
@@ -907,7 +958,55 @@ export function SettingsScreen() {
                     styleKey={form.subtitleStyleKey}
                     posX={Number(form.subtitlePosX) || DEFAULT_POS_X}
                     posY={Number(form.subtitlePosY) || DEFAULT_POS_Y}
+                    webcamPercent={
+                      Number(form.webcamPercent) || DEFAULT_WEBCAM_PERCENT
+                    }
                   />
+                </div>
+                <SaveBar saveState={saveState} onSave={() => void save()} />
+              </>
+            )}
+          </section>
+        )}
+
+        {tab === 'horizontal' && (
+          <section className="plate settings-form" aria-label="Yatay video ayarları">
+            <h2 className="panel-title">Yatay Video (Tam Kesit)</h2>
+            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {view && form && (
+              <>
+                <p className="plate-note">
+                  Tepki videolarının yatay tam kesitleri 1920x1080
+                  ölçek+padsiyle üretilir; altyazı yatay kesitlerde asla
+                  gömülmez ve ses korunur. Motor stok hedefine göre
+                  yatay kesit hazırlar, yayın planı kanal ayarlarından
+                  yönetilir.
+                </p>
+                <div className="settings-grid">
+                  {NUMBER_FIELDS.filter((f) => f.group === 'horizontal').map(({ key, label, help, min }) => (
+                    <div className="field" key={key}>
+                      <label htmlFor={`set-${key}`}>
+                        {label}
+                        <span className="source-badge">
+                          {SOURCE_LABEL[view[key].source]}
+                        </span>
+                      </label>
+                      <input
+                        id={`set-${key}`}
+                        className="nums"
+                        type="number"
+                        min={min ?? 0}
+                        value={form.numbers[key]}
+                        onChange={(e) => setNumber(key, e.target.value)}
+                      />
+                      <span className="field-help">{help}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="plate-note">
+                  Günlük yatay yayın limiti ve hazırlık durumu kanal
+                  profilinine aittir; kanalın Yönetim sayfasından
+                  değiştirilir.
                 </div>
                 <SaveBar saveState={saveState} onSave={() => void save()} />
               </>

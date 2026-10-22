@@ -88,6 +88,8 @@ EDITABLE_FIELDS = (
     "subtitle_style_preset",
     "subtitle_pos_x_percent",
     "subtitle_pos_y_percent",
+    # Dikey klip webcam/video bolum orani (yuzde; kalan videoya kalir).
+    "shorts_webcam_percent",
 )
 
 URL_FIELDS = ("oauth_redirect_base", "frontend_base_url")
@@ -112,6 +114,7 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "subtitle_font_size": (24, 140),
     "subtitle_pos_x_percent": (0, 100),
     "subtitle_pos_y_percent": (0, 100),
+    "shorts_webcam_percent": (20, 50),
 }
 
 FLOAT_FIELDS: dict[str, tuple[float, float]] = {
@@ -291,6 +294,7 @@ class SettingsService:
             subtitle_style_preset=plain("subtitle_style_preset"),
             subtitle_pos_x_percent=number("subtitle_pos_x_percent"),
             subtitle_pos_y_percent=number("subtitle_pos_y_percent"),
+            shorts_webcam_percent=number("shorts_webcam_percent"),
             media_root=PlainSettingOut(
                 value=str(effective.media_root or ""),
                 source=SettingSource.environment,

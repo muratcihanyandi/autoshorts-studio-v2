@@ -55,6 +55,7 @@ export interface SettingsView {
   subtitle_style_preset: PlainSetting
   subtitle_pos_x_percent: IntSetting
   subtitle_pos_y_percent: IntSetting
+  shorts_webcam_percent: IntSetting
   media_root: PlainSetting
 }
 
@@ -91,6 +92,7 @@ export type SettingsPatch = Partial<{
   subtitle_style_preset: string
   subtitle_pos_x_percent: number
   subtitle_pos_y_percent: number
+  shorts_webcam_percent: number
 }>
 
 export function fetchSettings(): Promise<SettingsView> {

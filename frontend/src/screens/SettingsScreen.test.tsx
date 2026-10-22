@@ -34,6 +34,7 @@ const settingsPayload = {
   subtitle_style_preset: { value: 'klasik', source: 'environment' },
   subtitle_pos_x_percent: { value: 50, source: 'environment' },
   subtitle_pos_y_percent: { value: 78, source: 'environment' },
+  shorts_webcam_percent: { value: 35, source: 'environment' },
   media_root: { value: '/data/media', source: 'environment' },
 }
 
@@ -140,10 +141,11 @@ describe('SettingsScreen', () => {
     expect(
       screen.getByRole('button', { name: 'Ayarları Kaydet' }),
     ).toBeInTheDocument()
-    // Kategori sekmeleri dördü de durur.
+    // Kategori sekmeleri beşi de durur (Shorts + Yatay video başlıkları).
     expect(screen.getByRole('tab', { name: 'Bağlantılar' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Üretim' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Altyazı' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Shorts' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Yatay video' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Sistem' })).toBeInTheDocument()
   })
 
@@ -201,9 +203,10 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SettingsScreen />)
 
-    await openTab('Üretim')
+    await openTab('Shorts')
 
-    // Görev 3: klip süresi alt/üst sınırı siteden ayarlanabilir.
+    // Görev 3: klip süresi alt/üst sınırı siteden ayarlanabilir
+    // (Shorts sekmesinde, kısa klip üretimi grubunda).
     expect(
       await screen.findByLabelText(/Klip Süresi Alt Sınır \(sn\)/i),
     ).toHaveValue(20)
@@ -252,16 +255,16 @@ describe('SettingsScreen', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders the subtitle section with a live preview', async () => {
+  it('renders the shorts section with a live preview', async () => {
     vi.stubGlobal('fetch', stubFetch())
     render(<SettingsScreen />)
 
-    await openTab('Altyazı')
+    await openTab('Shorts')
 
-    expect(await screen.findByText('Altyazı (Dikey Klipler)')).toBeInTheDocument()
+    expect(await screen.findByText('Shorts (Dikey Klipler)')).toBeInTheDocument()
     // Önizleme temsilî kadranı ve örnek altyazı metnini taşır.
     expect(
-      screen.getByRole('img', { name: /altyazı önizlemesi/i }),
+      screen.getByRole('img', { name: /önizlemesi/i }),
     ).toBeInTheDocument()
     expect(screen.getByText('İşte günün en heyecanlı anı!')).toBeInTheDocument()
 
@@ -277,9 +280,9 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', stubFetch())
     render(<SettingsScreen />)
 
-    await openTab('Altyazı')
+    await openTab('Shorts')
 
-    expect(await screen.findByText('Altyazı (Dikey Klipler)')).toBeInTheDocument()
+    expect(await screen.findByText('Shorts (Dikey Klipler)')).toBeInTheDocument()
     // Görev 1: beş stil seçeneği kartta sunulur.
     for (const label of [
       'Klasik Beyaz',
@@ -300,8 +303,8 @@ describe('SettingsScreen', () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<SettingsScreen />)
 
-    await openTab('Altyazı')
-    await screen.findByText('Altyazı (Dikey Klipler)')
+    await openTab('Shorts')
+    await screen.findByText('Shorts (Dikey Klipler)')
 
     // Görev 2: dikey konum slider'ı; Görev 1: stil seçimi.
     fireEvent.change(screen.getByLabelText(/Dikey Konum/i), {
@@ -324,6 +327,52 @@ describe('SettingsScreen', () => {
         subtitle_style_preset: 'shorts_sari',
       })
     })
+  })
+
+  it('saves the webcam/video ratio from the Shorts tab', async () => {
+    const fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SettingsScreen />)
+
+    await openTab('Shorts')
+    await screen.findByText('Shorts (Dikey Klipler)')
+
+    // Varsayılan %35; slider %30'a çekilince yalnızca o alan gönderilir.
+    const slider = screen.getByLabelText(/Webcam \/ Video Oranı/i)
+    expect(slider).toHaveValue('35')
+    fireEvent.change(slider, { target: { value: '30' } })
+    // Önizleme bölüm etiketleri yeni oranı gösterir.
+    expect(screen.getByText('Kamera %30')).toBeInTheDocument()
+    expect(screen.getByText('Video %70')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ayarları Kaydet' }))
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes('/api/settings') && c[1]?.method === 'PUT',
+      )
+      expect(put).toBeDefined()
+      expect(JSON.parse(String(put![1]!.body))).toEqual({
+        shorts_webcam_percent: 30,
+      })
+    })
+  })
+
+  it('shows the horizontal full-cut settings on their own tab', async () => {
+    vi.stubGlobal('fetch', stubFetch())
+    render(<SettingsScreen />)
+
+    await openTab('Yatay video')
+
+    expect(
+      await screen.findByText('Yatay Video (Tam Kesit)'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(/Yatay Stok Hedefi \(Varsayılan\)/i),
+    ).toHaveValue(3)
+    // Yatay kesit sözleşmesi: altyazı asla gömülmez, ses korunur.
+    expect(
+      screen.getByText(/altyazı yatay kesitlerde asla gömülmez/i),
+    ).toBeInTheDocument()
   })
 
   it('shows the system info on its own tab', async () => {

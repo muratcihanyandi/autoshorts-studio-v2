@@ -68,15 +68,18 @@ def build_layout(
     out_h: int = OUT_H,
     max_top_fraction: float = MAX_TOP_FRACTION,
     padding: float = DEFAULT_WEBCAM_PADDING,
+    top_fraction: float | None = None,
 ) -> VerticalLayout:
     """Compute the two crop rectangles and the subtitle band.
 
     Kullanici istegi (2026-10-21): webcam ZOOMLANMAZ — bulunan
-    dikdortgen (pad'li) en-boy orani korunarak tam genislikte ust
-    bolume sigdirilir; bolum yuksekligi dikdortgenin oranindan tureir.
-    Cok dik dikdortgenlerde yukseklik sinirina takilinca yanlardan
-    pad'lenir (contain), asla kirpilmaz. Alt bant kaynak videonun
-    merkez dilimidir.
+    dikdortgen (pad'li) en-boy orani korunarak sigdirilir (contain).
+    Kullanici istegi (2026-10-22): top_fraction verilirse ust bolumun
+    yuksekligi kadranin bu orani kadardir (%30/%70, %35/%65 gibi);
+    dikdortgen bu bolume contain ile oturur — bir kenara tam yaslanir,
+    oburunde bosluk kalirsa pad'lenir, asla kirpilmaz. top_fraction
+    None ise eski davranis: bolum yuksekligi dikdortgenin en-boy
+    oranindan turer (tam genislik), cok dikse sinira kilitlenir.
     """
     if source_w <= 0 or source_h <= 0:
         raise VerticalRenderError("Kaynak video boyutlari gecersiz.")
@@ -100,14 +103,25 @@ def build_layout(
     if tw <= 0 or th <= 0:
         raise VerticalRenderError("Webcam bolgesi gecersiz.")
 
-    # Ust bolum yuksekligi: dikdortgen tam genislige olceklendigindeki
-    # yukseklik; cok dikse sinira kilitle ve genislik contain olur.
-    max_top_h = int(round(out_h * max_top_fraction))
-    top_h = int(round(th * out_w / tw))
-    displayed_w = out_w
-    if top_h > max_top_h:
-        top_h = max_top_h
-        displayed_w = max(1, int(round(tw * (top_h / th))))
+    if top_fraction is not None:
+        # Kullanici orani: bolum yuksekligi kadranin payi; dikdortgen
+        # bolume contain (zoom yok, kirpma yok).
+        top_h = int(
+            round(out_h * max(0.05, min(top_fraction, max_top_fraction)))
+        )
+        fit_scale = min(out_w / tw, top_h / th)
+        displayed_w = max(1, int(round(tw * fit_scale)))
+        fit_h = max(1, int(round(th * fit_scale)))
+    else:
+        # Ust bolum yuksekligi: dikdortgen tam genislige olceklendigindeki
+        # yukseklik; cok dikse sinira kilitle ve genislik contain olur.
+        max_top_h = int(round(out_h * max_top_fraction))
+        top_h = int(round(th * out_w / tw))
+        displayed_w = out_w
+        if top_h > max_top_h:
+            top_h = max_top_h
+            displayed_w = max(1, int(round(tw * (top_h / th))))
+        fit_h = top_h
     bottom_h = out_h - top_h
 
     # Alt bant: merkez dikey dilim, alt bant en-boy oranina getir.
@@ -134,8 +148,9 @@ def build_layout(
             "y": ty,
             "w": tw,
             "h": th,
-            "out_h": top_h,
-            "out_w": displayed_w,
+            "out_h": top_h,  # bolum yuksekligi (vstack)
+            "out_w": displayed_w,  # dikdortgenin olcekli genisligi
+            "fit_h": fit_h,  # dikdortgenin olcekli yuksekligi (<= out_h)
         },
         bottom={"x": bx, "y": by, "w": bw, "h": bh, "out_h": bottom_h},
         subtitle_band=(subtitle_y1, subtitle_y2),
@@ -170,13 +185,16 @@ def build_filter_graph(layout: VerticalLayout, subtitle_path: str | Path) -> str
     if subtitle:
         bottom_chain += f",{subtitle}"
     bottom_chain += "[bottom]"
-    # Ust bolum: dikdortgen olceklenir (out_w x out_h bolum icin),
-    # dar kalirsa yanlardan pad'lenir — kirpma (zoom) yok.
+    # Ust bolum: dikdortgen (out_w x fit_h) olceklenir ve bolume
+    # (out_w x bolum yuksekligi) ortalanarak pad'lenir — kirpma
+    # (zoom) yok; kullanici oraninda yassi dikdortgenler dikeyde
+    # ortalanir, dar dikdortgenler yanlardan pad'lenir.
     top_w = top.get("out_w", layout.out_w)
+    fit_h = top.get("fit_h", top["out_h"])
     return (
         f"[0:v]split=2[base1][base2];"
         f"[base1]crop={top['w']}:{top['h']}:{top['x']}:{top['y']}"
-        f",scale={top_w}:{top['out_h']}"
+        f",scale={top_w}:{fit_h}"
         f",pad={layout.out_w}:{top['out_h']}:(ow-iw)/2:(oh-ih)/2[top];"
         f"{bottom_chain};"
         f"[top][bottom]vstack=inputs=2[out]"
