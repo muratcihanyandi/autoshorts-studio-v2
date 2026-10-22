@@ -15,10 +15,11 @@ stock-target refill, status tags) COMPLETE; Milestone 12 production
 hardening continues in parallel on the Pi.
 
 **Current task:** Responsive mobile adaptation of the whole frontend
-(2026-10-22, user request, two rounds): real mobile app pattern added —
-top bar + hamburger drawer + bottom tab bar (≤900px, desktop rail
-untouched); all screens overflow-free at 390/320px with the canon
-desktop layout verified intact at 1280px. Frontend 40/40, tsc/build/lint
+(2026-10-22, user request, three rounds): mobile app shell (drawer +
+bottom tabs + centered-logo top bar) plus a compact mobile-density
+layer — 2-col stat/media/clip grids, smaller cards and type, full-screen
+modals, skeleton loading. All screens overflow-free at 390/320px;
+desktop canon verified intact at 1280px. Frontend 40/40, tsc/build/lint
 clean (see section 7 and Handoff Notes).
 
 **Last updated:** 2026-10-22
@@ -976,6 +977,31 @@ historical, superseded by the totals above):
 4. User (security): confirm gates G1/G2 in `docs/SECURITY.md` (B3).
 
 ## 10. Handoff Notes
+
+- Mobile density layer (2026-10-22, third round, user feedback: "cards
+  are 80% empty space, make it feel like a real mobile app — more
+  compact, more on screen"): a ≤620px density layer in components.css
+  scales the content down to phone-app density while the desktop and
+  tablet densities are untouched. Measured wins on the user's example
+  (Medya): stat grid 360px→184px (2-col), state-box 162px→122px,
+  content side padding 20px→14px; Overview stats became a compact 2×2
+  (grid 228px vs ~480px stacked, value font 26→20px). Media/clip cards
+  drop to 2-col grids (source-grid, clip-grid) with tightened cards;
+  panels, table cells, channel rows, job cards, calendar cells, filter
+  rows and pills all shrink one notch; h1 17px. App-feel additions:
+  modals open as full-screen pages at ≤620px (radius 0, sticky action
+  bar with safe-area padding, scrollable body — verified 380×844 full
+  viewport) and `ink-loading` becomes a pulsing skeleton (text hidden
+  visually via font-size 0, kept for screen readers; skeleton-pulse
+  keyframes). Stat-grid canon updated in DESIGN.md (phones keep 2 cols
+  at compact scale; mobile navigation section rewritten for the
+  drawer/tab-bar shell). Verified: 10 routes zero overflow at 390px and
+  320px; 1280px desktop density intact (4-col stat grid, 26px values,
+  21px h1, zero overflow); vitest 40/40, oxlint 0 errors (8
+  pre-existing warnings), build clean. Ops note: a stale Vite child
+  survived TaskStop and kept serving old CSS on port 5173 — killed via
+  psutil (known environment quirk); the fresh server verified serving
+  the new rules before browser checks.
 
 - Responsive mobile design (2026-10-22, user request, two rounds): the
   desktop "Kategori Standardı" language is untouched; mobile is a real

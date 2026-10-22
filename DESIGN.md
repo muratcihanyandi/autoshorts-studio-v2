@@ -222,10 +222,14 @@ Bağlı kanal / İş kuyruğu), altında iki kolon (1.4fr/1fr) — solda Kanalla
 tablo paneli + Boru hattı tablo paneli dikte, sağda Pi kaynakları meter
 paneli.
 
-Kırılımlar: stat grid'i ≤900px'te 2 kolona, ≤620px'te 1 kolona iner; iki
-kolon ≤1100px'te tek kolona döner; ≤900px'te ray üst yatay hap sekmelerine
-döner (kaydırmalı şerit, aktif hedef okyanus blok + koyu metin), içerik
-dolgusu 20px'e iner, h1 18px.
+Kırılımlar: stat grid'i ≤900px'te 2 kolona iner; telefonlarda (≤620px)
+2 kolon kompakt ölçekle kalır (değer 20px, etiket 11px — 2026-10-22
+mobil yoğunluk kararı: tek kolon tek sayıyı gereksiz uzatıyordu). İki
+kolon ≤1100px'te tek kolona döner; ≤900px'te ray mobil uygulama
+kabuğuna döner (üst çubuk + soldan çekmece + alt sekme çubuğu), içerik
+dolgusu 20px'e iner, h1 18px; ≤620px'te mobil yoğunluk katmanı çalışır
+(kart/yazı ölçeği küçülür, medya ve klip kartları 2 kolona iner,
+modallar tam ekran sayfa olur, yükleme iskelet gösterir).
 
 Boşluk ölçeği: 4 / 8 / 14 / 20 / 28 / 40px. Yoğunluk izleme yoğunluğudur:
 stat kartları kısa, tablo satırları sıkı (10px dikey dolgu), bolca hava yok.
@@ -315,8 +319,12 @@ ekranda kalır, gizlenmez.
 ### Navigation (ray)
 Sol ray geceyarısı mavisi: marka logosu üstte, altında nokta göstergeli
 linkler (7px nokta #3a4a63). Aktif hedef okyanus yeşili blok + geceyarısı
-metni + sağda 3px koyu şerit. Hover'da metin fildişiye açılır. Mobil: yatay
-kaydırmalı hap sekmeler. Odak her yerde 2px okyanus halkası
+metni + sağda 3px koyu şerit. Hover'da metin fildişiye açılır. Mobil
+(≤900px): uygulama kabuğu — üst çubuk (hamburger + ortalanmış logo),
+soldan açılır çekmece (aynı link dili, tüm hedefler + Yönetim + kullanıcı)
+ve alt sekme çubuğu (Genel/Kanallar/Medya/Takvim/Otomasyon; el çizimi
+SVG ikonlar, aktif sekme okyanus hap + koyu metin; safe-area dolgulu).
+Odak her yerde 2px okyanus halkası
 (outline-offset 2px). Skip-link vurgu blok + koyu metin.
 
 ## Do's and Don'ts

@@ -315,6 +315,14 @@
   }
 }
 
+/* Telefonda (≤620px) yatay dolgu kompakt yoğunluğa iner. */
+@media (max-width: 620px) {
+  .content {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+}
+
 .rail-section {
   display: block;
   padding: 14px 20px 4px;
