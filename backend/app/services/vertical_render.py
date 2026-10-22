@@ -2,9 +2,10 @@
 
 Vertical layout: the output is 1080x1920 — the top fraction is the
 webcam crop (padded face box, aspect-corrected to the section), the
-rest is a center crop of the source video. Subtitles burn into the
-bottom band of the video section with ASS-style positioning, so they
-can never overlap the webcam section.
+rest is a center crop of the source video. Subtitles burn onto the
+assembled 1080x1920 frame with ASS-style positioning (default: bottom
+center, below the webcam section), so the configured pixel size and
+percent coordinates match the delivered clip exactly.
 
 Horizontal full cuts (reaction sources) are 1920x1080 scale+pad
 renders with input seeking (-ss/-to) for fast trimming; subtitles are
@@ -166,11 +167,17 @@ def _escape_filter_path(path: str | Path) -> str:
 
 
 def build_filter_graph(layout: VerticalLayout, subtitle_path: str | Path) -> str:
-    """Iki kirpma + vstack; subtitle_path verilirse alt banda gomulur.
+    """Iki kirpma + vstack; subtitle_path verilirse TAM kadrana gomulur.
 
     Altyazi dosyasi ASS'tir ve stilini kendi icinde tasir (PlayRes
     1080x1920 — uretimi subtitle_style.build_ass); force_style
-    kullanilmaz ki onizleme ayni degerlerle birebir cizilebilsin."""
+    kullanilmaz ki onizleme ayni degerlerle birebir cizilebilsin.
+
+    Subtitles filtresi vstack'ten SONRA calisir: libass, ASS'in
+    PlayRes'ini o anki kare boyutuyla eslestirir. Alt banda (orn.
+    1080x1248) uygulanirsa yazi ve konum dikeyde 1248/1920 oraninda
+    kuculur; tam kadinda (1080x1920) font size ve \\pos yuzdeleri
+    ayarlarla birebir ayni piksel karsiligina oturur."""
     top = layout.top
     bottom = layout.bottom
     subtitle = (
@@ -180,25 +187,25 @@ def build_filter_graph(layout: VerticalLayout, subtitle_path: str | Path) -> str
     )
     bottom_chain = (
         f"[base2]crop={bottom['w']}:{bottom['h']}:{bottom['x']}:{bottom['y']}"
-        f",scale={layout.out_w}:{bottom['out_h']}"
+        f",scale={layout.out_w}:{bottom['out_h']}[bottom]"
     )
-    if subtitle:
-        bottom_chain += f",{subtitle}"
-    bottom_chain += "[bottom]"
     # Ust bolum: dikdortgen (out_w x fit_h) olceklenir ve bolume
     # (out_w x bolum yuksekligi) ortalanarak pad'lenir — kirpma
     # (zoom) yok; kullanici oraninda yassi dikdortgenler dikeyde
     # ortalanir, dar dikdortgenler yanlardan pad'lenir.
     top_w = top.get("out_w", layout.out_w)
     fit_h = top.get("fit_h", top["out_h"])
-    return (
+    graph = (
         f"[0:v]split=2[base1][base2];"
         f"[base1]crop={top['w']}:{top['h']}:{top['x']}:{top['y']}"
         f",scale={top_w}:{fit_h}"
         f",pad={layout.out_w}:{top['out_h']}:(ow-iw)/2:(oh-ih)/2[top];"
         f"{bottom_chain};"
-        f"[top][bottom]vstack=inputs=2[out]"
+        f"[top][bottom]vstack=inputs=2"
     )
+    if subtitle:
+        graph += f",{subtitle}"
+    return graph + "[out]"
 
 
 async def render_vertical(

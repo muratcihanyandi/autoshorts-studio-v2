@@ -18,7 +18,7 @@ from app.services.vertical_render import (
     render_vertical,
     validate_output,
 )
-from tests.media_sample import make_face_stream_video
+from tests.media_sample import FFMPEG_BIN, make_face_stream_video
 
 # Yuz videosunda tespit edilen tipik bolge (test_webcam_detect dogruladi).
 WEBCAM_REGION = (280, 155, 85, 85)
@@ -144,6 +144,9 @@ class TestLayout:
         # Stil ASS dosyanin icinde tasir (PlayRes 1080x1920); filtre
         # grafigi force_style ile deger ezmez — onizleme sozu.
         assert "force_style" not in graph
+        # Subtitles vstack'ten SONRA: libass PlayRes'i kare boyutuyla
+        # eslestirir; alt bantta calisirsa yazi ve konum kuculur.
+        assert graph.index("vstack") < graph.index("subtitles=")
         graph_plain = build_filter_graph(layout, "")
         assert "subtitles=" not in graph_plain
 
@@ -195,6 +198,68 @@ class TestRealRender:
         assert report.has_audio is True
         assert report.av_sync_delta <= 0.25
         assert abs(report.duration_seconds - 3.0) <= 0.75
+
+    def test_subtitle_keeps_configured_size_and_position(self, tmp_path):
+        """Altyazi tam 1080x1920 kadranda yakilir: ayarlanan 100 px
+        yazi ve %78 dikey konum, alt bantta kucultulmus haline gore
+        belirgin sekilde buyuk/yuksek olmali (piksel olcumu)."""
+        import cv2
+        import subprocess
+
+        from app.services.subtitle_style import SubtitleStyle, build_ass
+
+        source = tmp_path / "plain.mp4"
+        subprocess.run(
+            [
+                FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=1280x720:d=2",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+                "-c:a", "aac", str(source),
+            ],
+            check=True,
+            timeout=120,
+        )
+        layout = build_layout(
+            1280, 720, WEBCAM_REGION, top_fraction=0.35
+        )
+        ass_path = tmp_path / "subs.ass"
+        ass_path.write_text(
+            build_ass(
+                [{"start": 0.0, "end": 1.5, "text": "TEST ALTYAZI"}],
+                start=0.0,
+                end=1.5,
+                style=SubtitleStyle(
+                    font_size=100, pos_x_percent=50, pos_y_percent=78
+                ),
+            ),
+            encoding="utf-8",
+        )
+        out = tmp_path / "clip.mp4"
+        asyncio.run(
+            render_vertical(
+                "ffmpeg", source, 0.0, 1.0, layout, out,
+                subtitle_path=ass_path,
+            )
+        )
+        frame = tmp_path / "frame.png"
+        subprocess.run(
+            [
+                FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", "0.5", "-i", str(out), "-frames:v", "1", str(frame),
+            ],
+            check=True,
+            timeout=120,
+        )
+        gray = cv2.cvtColor(cv2.imread(str(frame)), cv2.COLOR_BGR2GRAY)
+        ys, _ = (gray > 40).nonzero()
+        assert ys.size, "altyazi frame'de gorunmuyor"
+        text_h = int(ys.max() - ys.min() + 1)
+        anchor_y = int(round(OUT_H * 0.78))
+        # Alt bantta yakilsaydi: yukseklik ~0.65*100px fontun altinda,
+        # konum ise ~1645 px'e kayardi.
+        assert text_h >= 60
+        assert abs(int(ys.max()) - anchor_y) <= 30
 
     def test_render_without_subtitles(self, face_video, tmp_path):
         layout = build_layout(1280, 720, WEBCAM_REGION)
