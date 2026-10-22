@@ -116,13 +116,15 @@
 }
 
 /* --- Mobil kabuk: üst çubuk --- */
+/* Üç kolonlu ızgara: hamburger solda, marka logosu çubuğun tam
+   ortasında, sağ yuva simetri için boş rezerve. */
 .mobile-bar {
   position: sticky;
   top: 0;
   z-index: 40;
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
   align-items: center;
-  gap: 8px;
   height: 56px;
   padding: 0 max(10px, env(safe-area-inset-right)) 0
     max(10px, env(safe-area-inset-left));
@@ -150,6 +152,7 @@
   display: block;
   width: 128px;
   height: auto;
+  justify-self: center;
 }
 
 /* --- Mobil kabuk: soldan açılır çekmece --- */
