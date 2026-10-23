@@ -26,7 +26,11 @@ from app.models import (
     SourceChannel,
     SourceVideo,
 )
-from app.services.publishing_schedule import ScheduleError, next_due_time
+from app.services.publishing_schedule import (
+    ScheduleError,
+    next_due_time,
+    slots_for_orientation,
+)
 
 TAG_QUEUED = "#queued"
 TAG_DOWNLOADING = "#downloading"
@@ -354,9 +358,11 @@ class LibraryViewService:
         latest_job: Job | None,
         is_current: bool,
         download_percent: float | None = None,
+        error_text: str | None = None,
     ) -> list[dict[str, str | None]]:
         """Beş boru hattı aşaması + klip seçimi; ürün şeridi için.
-        İndirme sırasında download adımı yüzde detayı taşır."""
+        İndirme sırasında download adımı yüzde detayı taşır; hatalı
+        adım kısa hata metni taşır (tam metin kart üzerinde)."""
         states = {key: "pending" for key in _STAGE_KEYS}
         selection_state = "pending"
         if asset is not None:
@@ -384,6 +390,9 @@ class LibraryViewService:
             states["download"] = "active"
             if latest_job is not None and latest_job.status == "failed":
                 states["download"] = "failed"
+        short_error = None
+        if error_text:
+            short_error = error_text.strip()[:80] or None
         result = [
             {
                 "key": key,
@@ -394,6 +403,8 @@ class LibraryViewService:
                     if key == "download"
                     and download_percent is not None
                     and states[key] == "active"
+                    else short_error
+                    if states[key] == "failed"
                     else None
                 ),
             }
@@ -420,19 +431,21 @@ class LibraryViewService:
         channel = channels.get(channel_id) if channel_id is not None else None
         job = latest_jobs.get(video.id)
         # StatusService.source_tag ile ayni sozcukler, tek sorgu setinden.
+        # Sürüyen iş, 'failed' işaretinden önce gelir: kaldığı yerden
+        # sürdürülen video "İşleniyor" görünür, "Hata" değil.
         if video.status == "excluded":
             tag = "#excluded"
         elif video.status == "confirmed":
             tag = TAG_CONFIRMED
-        elif asset is not None and asset.status == "failed":
-            tag = TAG_ERROR
-        elif asset is not None and asset.status == "processed":
-            tag = TAG_DONE
         elif job is not None and job.status == "running":
             if asset is not None and asset.stage == "download":
                 tag = TAG_DOWNLOADING
             else:
                 tag = TAG_PROCESSING
+        elif asset is not None and asset.status == "failed":
+            tag = TAG_ERROR
+        elif asset is not None and asset.status == "processed":
+            tag = TAG_DONE
         elif job is not None and job.status == "failed":
             tag = TAG_ERROR
         else:
@@ -440,6 +453,11 @@ class LibraryViewService:
         stage_label = (
             _ASSET_STAGE_LABEL.get(asset.status) if asset is not None else None
         )
+        last_error = None
+        if asset is not None and asset.last_error:
+            last_error = asset.last_error
+        elif job is not None and job.last_error and tag == TAG_ERROR:
+            last_error = job.last_error
         return {
             "id": video.id,
             "title": video.title,
@@ -462,6 +480,7 @@ class LibraryViewService:
             "asset_stage": asset.stage if asset is not None else None,
             "asset_stage_label": stage_label,
             "asset_status": asset.status if asset is not None else None,
+            "last_error": last_error,
             "file_bytes": asset.file_bytes if asset is not None else 0,
             "origin": asset.origin if asset is not None else None,
             "stages": LibraryViewService._source_stages(
@@ -477,6 +496,7 @@ class LibraryViewService:
                     and asset.status == "downloading"
                     else None
                 ),
+                error_text=last_error,
             ),
             "selected_candidates": selected,
             "selected_count": len(selected),
@@ -895,7 +915,8 @@ class LibraryViewService:
                 last_published = (
                     await session.execute(
                         sa.select(sa.func.max(PublishedVideo.published_at)).where(
-                            PublishedVideo.channel_id == channel.id
+                            PublishedVideo.channel_id == channel.id,
+                            PublishedVideo.orientation == render.orientation,
                         )
                     )
                 ).scalar()
@@ -918,21 +939,38 @@ class LibraryViewService:
             if profile is not None and profile.timezone
             else "Europe/Istanbul"
         )
-        publish_times = (
-            (profile.settings or {}).get("publish_times")
-            if profile is not None
-            else None
-        )
-        next_slot = None
+        # Yon bazli saatler: shorts kendi prime time dilimlerinde cikar.
         try:
-            next_slot = next_due_time(
-                now_utc=datetime.now(UTC),
-                timezone_name=timezone_name,
-                publish_times=publish_times,
-                last_published_at=last_published,
+            orientation_slots = slots_for_orientation(
+                profile.settings if profile is not None else None,
+                render.orientation,
             )
+            publish_times = [s.strftime("%H:%M") for s in orientation_slots]
         except ScheduleError:
-            next_slot = None
+            publish_times = []
+        next_slot = None
+        if (
+            published is not None
+            and published.scheduled_at is not None
+            and published.visibility == "private"
+        ):
+            # Elle planlanmis klibin saati slot tahmininden oncelikli.
+            moment = published.scheduled_at
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            next_slot = moment
+        else:
+            try:
+                next_slot = next_due_time(
+                    now_utc=datetime.now(UTC),
+                    timezone_name=timezone_name,
+                    publish_times=(
+                        orientation_slots if publish_times else None
+                    ),
+                    last_published_at=last_published,
+                )
+            except ScheduleError:
+                next_slot = None
 
         youtube_video_id = (
             published.youtube_video_id if published is not None else None
@@ -1108,7 +1146,12 @@ class LibraryViewService:
                 ),
                 "next_slot": next_slot.isoformat() if next_slot else None,
                 "timezone": timezone_name,
-                "publish_times": list(publish_times or []),
+                "publish_times": publish_times,
+                "scheduled_at": (
+                    published.scheduled_at.isoformat()
+                    if published is not None and published.scheduled_at
+                    else None
+                ),
                 "automation_state": automation_state,
                 "metadata_approved": metadata_approved,
                 "auto_approve": auto_approve,

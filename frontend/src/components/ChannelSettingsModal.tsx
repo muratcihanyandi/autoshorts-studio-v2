@@ -83,6 +83,8 @@ export function ChannelSettingsModal({
   const [stockTarget, setStockTarget] = useState(3)
   const [dailyVertical, setDailyVertical] = useState(3)
   const [dailyHorizontal, setDailyHorizontal] = useState(3)
+  const [shortsTimes, setShortsTimes] = useState('12:00, 17:00, 21:00')
+  const [horizontalTimes, setHorizontalTimes] = useState('09:00, 14:00, 20:00')
   const [modes, setModes] = useState<Record<string, SettingMode>>({})
   const [prompt, setPrompt] = useState('')
   const [followed, setFollowed] = useState<number[]>([])
@@ -98,6 +100,8 @@ export function ChannelSettingsModal({
       setStockTarget(s.horizontal_stock_target)
       setDailyVertical(s.daily_vertical_limit)
       setDailyHorizontal(s.daily_horizontal_limit)
+      setShortsTimes((s.publish_times_vertical ?? ['12:00', '17:00', '21:00']).join(', '))
+      setHorizontalTimes((s.publish_times ?? ['09:00', '14:00', '20:00']).join(', '))
       setModes({
         title_mode: s.title_mode,
         description_mode: s.description_mode,
@@ -149,11 +153,36 @@ export function ChannelSettingsModal({
     setSaving(true)
     setError(null)
     setSavedNote(false)
+    const shortsSlots = shortsTimes
+      .split(/[,;\s]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    const horizontalSlots = horizontalTimes
+      .split(/[,;\s]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+    const slotPattern = /^([01]?\d|2[0-3]):[0-5]\d$/
+    for (const slot of [...shortsSlots, ...horizontalSlots]) {
+      if (!slotPattern.test(slot)) {
+        setError(
+          `"${slot}" geçerli bir saat değil. Saatleri "09:00, 14:00" biçiminde, virgülle ayırarak yazın.`,
+        )
+        setSaving(false)
+        return
+      }
+    }
+    if (shortsSlots.length === 0 || horizontalSlots.length === 0) {
+      setError('Her yön için en az bir yayın saati gerekli.')
+      setSaving(false)
+      return
+    }
     try {
       await updateChannelSettings(channelId, {
         horizontal_stock_target: stockTarget,
         daily_vertical_limit: dailyVertical,
         daily_horizontal_limit: dailyHorizontal,
+        publish_times: horizontalSlots,
+        publish_times_vertical: shortsSlots,
         title_mode: modes.title_mode,
         description_mode: modes.description_mode,
         tags_mode: modes.tags_mode,
@@ -263,6 +292,33 @@ export function ChannelSettingsModal({
                     <small className="field-help">
                       Bir günde herkese açılacak yatay tam kesit sayısı (0 =
                       sınırsız).
+                    </small>
+                  </section>
+                </div>
+
+                <div className="settings-grid">
+                  <section className="field">
+                    <span>Shorts yayın saatleri</span>
+                    <input
+                      value={shortsTimes}
+                      placeholder="12:00, 17:00, 21:00"
+                      onChange={(e) => setShortsTimes(e.target.value)}
+                    />
+                    <small className="field-help">
+                      Dikey Shortlar bu saatlerde yayına çıkar (prime time).
+                      Varsayılan: 12:00, 17:00, 21:00.
+                    </small>
+                  </section>
+                  <section className="field">
+                    <span>Yatay yayın saatleri</span>
+                    <input
+                      value={horizontalTimes}
+                      placeholder="09:00, 14:00, 20:00"
+                      onChange={(e) => setHorizontalTimes(e.target.value)}
+                    />
+                    <small className="field-help">
+                      Yatay tam kesitler bu saatlerde yayına çıkar. Varsayılan:
+                      09:00, 14:00, 20:00.
                     </small>
                   </section>
                 </div>

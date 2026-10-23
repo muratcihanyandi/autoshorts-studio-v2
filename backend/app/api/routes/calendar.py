@@ -4,8 +4,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel
 
 from app.services.calendar_view import CalendarViewService
+from app.services.publishing_service import (
+    PublishingError,
+    PublishingService,
+)
 
 router = APIRouter(tags=["calendar"])
 
@@ -20,6 +25,16 @@ def _service(request: Request) -> CalendarViewService:
     return CalendarViewService(sessionmaker, request.app.state.settings)
 
 
+def _publishing(request: Request) -> PublishingService:
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı; yayınlama kapalı.",
+        )
+    return PublishingService(sessionmaker, request.app.state.settings)
+
+
 @router.get("/calendar")
 async def calendar(
     request: Request,
@@ -31,3 +46,67 @@ async def calendar(
     resolved_year = year or now.year
     resolved_month = month or now.month
     return await _service(request).calendar(resolved_year, resolved_month)
+
+
+class CalendarRescheduleIn(BaseModel):
+    """Sürükle-bırak planlama: gizli yüklenmiş ya da stoktaki hazır
+    videonun herkese açılma anını elle ata."""
+
+    published_video_id: int | None = None
+    clip_render_id: int | None = None
+    # ISO zaman; verilmezse (null) elle planlama temizlenir.
+    scheduled_at: datetime | None = None
+    clear: bool = False
+
+
+@router.post("/calendar/reschedule")
+async def reschedule(request: Request, data: CalendarRescheduleIn) -> dict:
+    """Takvimden sürüklenen videonun yayın saatini elle yerleştir.
+
+    - Gizli yüklenmiş video (published_video_id): saat doğrudan satıra
+      yazılır; saati gelince motor herkese açar.
+    - Stoktaki hazır klip (clip_render_id): gizli yükleme işi hemen
+      açılır, saat yükleme tamamlanınca otomatik uygulanır.
+    - clear=true: elle planlamayı kaldır, video slot mantığına dönsün.
+    """
+    service = _publishing(request)
+    if (data.published_video_id is None) == (data.clip_render_id is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Tam olarak biri gerekli: published_video_id ya da clip_render_id.",
+        )
+    if data.clear:
+        scheduled_at = None
+    else:
+        if data.scheduled_at is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Yeni yayın saati (scheduled_at) gerekli.",
+            )
+        scheduled_at = data.scheduled_at
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=UTC)
+        if scheduled_at <= datetime.now(UTC).replace(microsecond=0):
+            raise HTTPException(
+                status_code=400,
+                detail="Yayın saati gelecekte olmalı.",
+            )
+    try:
+        if data.published_video_id is not None:
+            row = await service.set_manual_schedule(
+                data.published_video_id, scheduled_at
+            )
+            return {
+                "published_video_id": row.id,
+                "scheduled_at": (
+                    row.scheduled_at.isoformat()
+                    if row.scheduled_at
+                    else None
+                ),
+            }
+        result = await service.schedule_render(
+            data.clip_render_id, scheduled_at
+        )
+        return result
+    except PublishingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

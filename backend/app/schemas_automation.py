@@ -43,6 +43,9 @@ class ChannelSettingsIn(BaseModel):
     # tam kesitler ayri sayilir.
     daily_vertical_limit: int | None = Field(default=None, ge=0, le=50)
     daily_horizontal_limit: int | None = Field(default=None, ge=0, le=50)
+    # Yayin saatleri ('HH:MM' listeleri): yatay ve shorts (dikey) ayri.
+    publish_times: list[str] | None = None
+    publish_times_vertical: list[str] | None = None
     title_mode: str | None = None
     description_mode: str | None = None
     tags_mode: str | None = None
@@ -65,6 +68,8 @@ class ChannelSettingsOut(BaseModel):
     horizontal_stock_target: int
     daily_vertical_limit: int
     daily_horizontal_limit: int
+    publish_times: list[str] | None = None
+    publish_times_vertical: list[str] | None = None
     title_mode: str
     description_mode: str
     tags_mode: str

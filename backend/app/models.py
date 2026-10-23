@@ -1031,6 +1031,11 @@ class PublishedVideo(Base):
     # Herkese acik yapilma ani: gizli yukleme ile yayin anini ayirir;
     # medya temizligi (retention) bu andan sayilir.
     public_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Kullanicinin takvimden surukleyip yerlestirdigi yayin ani. NULL:
+    # video slot mantigina uyar (yon bazli prime time saatleri).
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

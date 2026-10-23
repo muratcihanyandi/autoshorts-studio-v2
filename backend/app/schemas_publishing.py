@@ -46,6 +46,9 @@ class PublishingProfileIn(BaseModel):
     daily_clip_target: int | None = None
     timezone: str | None = None
     publish_times: list[str] | None = None
+    # Shorts (dikey) yayınların kendi prime time saatleri; verilmezse
+    # site varsayılanı (12:00/17:00/21:00) kullanılır.
+    publish_times_vertical: list[str] | None = None
     auto_approve_metadata: bool | None = None
     paused: bool | None = None
 
@@ -55,5 +58,6 @@ class PublishingProfileOut(BaseModel):
     daily_clip_target: int
     timezone: str
     publish_times: list[str] | None
+    publish_times_vertical: list[str] | None = None
     auto_approve_metadata: bool
     paused: bool

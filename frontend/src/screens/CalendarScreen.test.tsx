@@ -17,11 +17,13 @@ function entry(overrides: Record<string, unknown>) {
     local_date: today,
     title: 'Klip',
     clip_render_id: null,
+    published_video_id: null,
     thumbnail_url: null,
     youtube_video_id: null,
     youtube_url: null,
     metadata: null,
     note: 'Stokta hazır; onay/yükleme sonrası bu dilime düşer.',
+    manual: false,
     ...overrides,
   }
 }
@@ -36,6 +38,7 @@ const calendarPayload = {
       status: 'scheduled',
       title: 'Saat Bekleyen Klip',
       clip_render_id: 9,
+      published_video_id: 101,
       youtube_video_id: 'yt-sch',
       youtube_url: 'https://www.youtube.com/watch?v=yt-sch',
       metadata: {
@@ -99,6 +102,7 @@ const calendarPayload = {
       ribbon_color: '#123456',
       timezone: 'Europe/Istanbul',
       publish_times: ['09:00', '14:00', '20:00'],
+      publish_times_vertical: ['12:00', '17:00', '21:00'],
       automation_state: 'running',
       daily_vertical_limit: 3,
       daily_horizontal_limit: 1,
@@ -108,12 +112,14 @@ const calendarPayload = {
 }
 
 function stubFetch() {
-  const fetchMock = vi.fn(async (_input: RequestInfo | URL) => {
-    return new Response(JSON.stringify(calendarPayload), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  })
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify(calendarPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    },
+  )
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
@@ -203,6 +209,51 @@ describe('CalendarScreen', () => {
           ),
         ),
       ).toBe(true)
+    })
+  })
+
+  it('schedules a video by dragging it onto a day cell', async () => {
+    const fetchMock = stubFetch()
+    render(<CalendarScreen />)
+
+    // Suruklenebilir kayit: saat bekleyen (gizli yuklu) klip.
+    const chip = await screen.findByRole('button', {
+      name: /Saat Bekleyen Klip/,
+    })
+    fireEvent.dragStart(chip, {
+      dataTransfer: { setData: vi.fn(), effectAllowed: 'move' },
+    })
+    const cell = screen.getByRole('gridcell', { name: today })
+    fireEvent.dragOver(cell, { dataTransfer: {} })
+    fireEvent.drop(cell, { dataTransfer: {} })
+
+    // Saat secici acilir; kaydin mevcut saati varsayilan.
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByRole('heading', { name: 'Saat Bekleyen Klip' }),
+    ).toBeInTheDocument()
+    const timeInput = within(dialog).getByLabelText('Saat') as HTMLInputElement
+    fireEvent.change(timeInput, { target: { value: '21:30' } })
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Bu saate planla' }),
+    )
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) =>
+        String(c[0]).includes('/api/calendar/reschedule'),
+      )
+      expect(call).toBeDefined()
+      const init = call?.[1] as RequestInit
+      expect(init.method).toBe('POST')
+      const body = JSON.parse(String(init.body)) as {
+        published_video_id?: number
+        scheduled_at?: string
+      }
+      expect(body.published_video_id).toBe(101)
+      // Secilen yerel saat ISO'ya cevrilmis olarak gider.
+      expect(body.scheduled_at).toBe(
+        new Date(`${today}T21:30:00`).toISOString(),
+      )
     })
   })
 })

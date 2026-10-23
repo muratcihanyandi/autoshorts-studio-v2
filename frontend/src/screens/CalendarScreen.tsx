@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import {
   fetchCalendar,
+  rescheduleCalendar,
   type CalendarEntry,
   type CalendarData,
 } from '../api/calendar'
@@ -62,12 +63,43 @@ function shiftMonth(year: number, month: number, delta: number) {
   return { year: Math.floor(total / 12), month: (total % 12 + 12) % 12 + 1 }
 }
 
+/** Elle planlanabilir mi: saat bekleyen ya da stoktaki hazır video. */
+function canSchedule(entry: CalendarEntry): boolean {
+  if (entry.status !== 'scheduled' && entry.status !== 'planned') return false
+  return entry.published_video_id !== null || entry.clip_render_id !== null
+}
+
+function scheduleTarget(
+  entry: CalendarEntry,
+): { publishedVideoId?: number; clipRenderId?: number } | null {
+  if (entry.published_video_id !== null) {
+    return { publishedVideoId: entry.published_video_id }
+  }
+  if (entry.clip_render_id !== null) {
+    return { clipRenderId: entry.clip_render_id }
+  }
+  return null
+}
+
+function localDateToday(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
 function CalendarChip({
   entry,
+  draggable,
   onOpen,
+  onDragStart,
+  onDragEnd,
 }: {
   entry: CalendarEntry
+  draggable: boolean
   onOpen: (entry: CalendarEntry) => void
+  onDragStart: (entry: CalendarEntry) => void
+  onDragEnd: () => void
 }) {
   const view = STATUS_VIEW[entry.status] ?? {
     tone: 'idle',
@@ -81,9 +113,19 @@ function CalendarChip({
   return (
     <button
       type="button"
+      draggable={draggable}
+      onDragStart={(event) => {
+        if (!draggable) return
+        onDragStart(entry)
+        event.dataTransfer.setData('text/plain', String(entry.id))
+        event.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragEnd={onDragEnd}
       className={`cal-chip ${orientationClass}${
         entry.status === 'empty' ? ' cal-chip--empty' : ''
-      }${clickable ? '' : ' cal-chip--static'}`}
+      }${clickable ? '' : ' cal-chip--static'}${
+        entry.manual ? ' cal-chip--manual' : ''
+      }${draggable ? ' cal-chip--draggable' : ''}`}
       onClick={() => onOpen(entry)}
       title={
         entry.title
@@ -97,8 +139,8 @@ function CalendarChip({
       ) : (
         <>
           <span className="cal-chip-title">{entry.title ?? 'Video'}</span>
-          <span className={`cal-chip-status pill pill--${view.tone}`}>
-            {view.label}
+          <span className={`pill pill--${view.tone}`}>
+            {entry.manual ? 'Elle' : view.label}
           </span>
         </>
       )}
@@ -106,12 +148,136 @@ function CalendarChip({
   )
 }
 
+/** Sürükle-bırak sonrası saat seçici: video, seçilen güne yerleşir. */
+function ScheduleModal({
+  entry,
+  initialDate,
+  onClose,
+  onSaved,
+}: {
+  entry: CalendarEntry
+  initialDate: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const target = scheduleTarget(entry)
+  const [date, setDate] = useState(initialDate)
+  const [time, setTime] = useState(() => {
+    if (entry.status === 'scheduled' || entry.manual) {
+      const current = entryTime(entry.scheduled_at)
+      if (/^\d{2}:\d{2}$/.test(current)) return current
+    }
+    return '18:00'
+  })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save() {
+    if (!target) return
+    setBusy(true)
+    setError(null)
+    try {
+      const moment = new Date(`${date}T${time}`)
+      if (Number.isNaN(moment.getTime())) {
+        throw new Error('Geçersiz tarih veya saat.')
+      }
+      if (moment.getTime() <= Date.now()) {
+        throw new Error('Yayın saati gelecekte olmalı.')
+      }
+      await rescheduleCalendar(target, moment.toISOString())
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Planlama başarısız.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cal-schedule-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div>
+            <span className="clip-eyebrow">
+              {entry.channel_name} ·{' '}
+              {entry.orientation === 'horizontal' ? 'Yatay' : 'Dikey'} ·{' '}
+              {entry.status === 'planned' ? 'Stoktaki klip' : 'Gizli yüklü'}
+            </span>
+            <h2 id="cal-schedule-title">{entry.title ?? 'Video'}</h2>
+          </div>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Kapat"
+          >
+            ×
+          </button>
+        </div>
+        <div className="modal-body">
+          <p className="detail-note">
+            Video bu saatte herkese açılacak. Elle planlanan videolar günlük
+            limit ve yayın saatlerinden bağımsız çıkar.
+            {entry.status === 'planned' &&
+              ' Stoktaki klip önce gizli yüklenir; saat yüklenince uygulanır.'}
+          </p>
+          <div className="schedule-form">
+            <label className="field">
+              <span>Gün</span>
+              <input
+                type="date"
+                value={date}
+                min={localDateToday()}
+                onChange={(event) => setDate(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Saat</span>
+              <input
+                type="time"
+                value={time}
+                onChange={(event) => setTime(event.target.value)}
+              />
+            </label>
+          </div>
+          {error && (
+            <p className="action-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={!target || busy}
+            onClick={() => void save()}
+          >
+            {busy ? 'Planlanıyor…' : 'Bu saate planla'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EntryDetailModal({
   entry,
   onClose,
+  onReschedule,
 }: {
   entry: CalendarEntry
   onClose: () => void
+  onReschedule: (entry: CalendarEntry) => void
 }) {
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -184,6 +350,17 @@ function EntryDetailModal({
             </a>
           )}
         </div>
+        {canSchedule(entry) && (
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => onReschedule(entry)}
+            >
+              Yayın saatini değiştir
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -197,6 +374,12 @@ export function CalendarScreen() {
   })
   const [openRenderId, setOpenRenderId] = useState<number | null>(null)
   const [openEntry, setOpenEntry] = useState<CalendarEntry | null>(null)
+  const [schedule, setSchedule] = useState<{
+    entry: CalendarEntry
+    date: string
+  } | null>(null)
+  const [dragEntry, setDragEntry] = useState<CalendarEntry | null>(null)
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null)
 
   const fetchCb = useCallback(
     () => fetchCalendar(cursor.year, cursor.month),
@@ -241,13 +424,20 @@ export function CalendarScreen() {
     }
   }
 
+  function openReschedule(entry: CalendarEntry, date: string) {
+    if (!canSchedule(entry)) return
+    setOpenEntry(null)
+    setSchedule({ entry, date })
+  }
+
   return (
     <>
       <div className="screen-head">
         <div>
           <h1>Takvim</h1>
           <span className="screen-sub">
-            Planlanan ve gerçekleşen yayınlar — tıkla, videonun metaverisini gör
+            Planlanan ve gerçekleşen yayınlar — videoyu sürükleyip istediğin
+            saate koy
           </span>
         </div>
         <div className="cal-nav" role="group" aria-label="Ay gezinme">
@@ -354,9 +544,32 @@ export function CalendarScreen() {
                           key={cell.date}
                           className={`cal-cell${
                             cell.inMonth ? '' : ' cal-cell--out'
-                          }${cell.isToday ? ' cal-cell--today' : ''}`}
+                          }${cell.isToday ? ' cal-cell--today' : ''}${
+                            dragOverDate === cell.date
+                              ? ' cal-cell--dragover'
+                              : ''
+                          }`}
                           role="gridcell"
                           aria-label={cell.date}
+                          onDragOver={(event) => {
+                            if (!dragEntry) return
+                            event.preventDefault()
+                            setDragOverDate(cell.date)
+                          }}
+                          onDragLeave={() =>
+                            setDragOverDate((current) =>
+                              current === cell.date ? null : current,
+                            )
+                          }
+                          onDrop={(event) => {
+                            event.preventDefault()
+                            const entry = dragEntry
+                            setDragEntry(null)
+                            setDragOverDate(null)
+                            if (entry && canSchedule(entry)) {
+                              openReschedule(entry, cell.date)
+                            }
+                          }}
                         >
                           <span className="cal-daynum nums">
                             {Number(cell.date.slice(-2))}
@@ -365,7 +578,10 @@ export function CalendarScreen() {
                             <CalendarChip
                               key={entry.id}
                               entry={entry}
+                              draggable={canSchedule(entry)}
                               onOpen={openDetail}
+                              onDragStart={setDragEntry}
+                              onDragEnd={() => setDragEntry(null)}
                             />
                           ))}
                         </div>
@@ -383,7 +599,8 @@ export function CalendarScreen() {
                   <thead>
                     <tr>
                       <th>Kanal</th>
-                      <th>Yayın saatleri</th>
+                      <th>Shorts saatleri</th>
+                      <th>Yatay saatleri</th>
                       <th>Günlük dikey</th>
                       <th>Günlük yatay</th>
                     </tr>
@@ -403,8 +620,11 @@ export function CalendarScreen() {
                           </span>
                         </td>
                         <td className="nums">
-                          {channel.publish_times.join(' · ')}
+                          {channel.publish_times_vertical.join(' · ')}
                           <small className="cal-tz"> ({channel.timezone})</small>
+                        </td>
+                        <td className="nums">
+                          {channel.publish_times.join(' · ')}
                         </td>
                         <td className="nums">{channel.daily_vertical_limit}</td>
                         <td className="nums">{channel.daily_horizontal_limit}</td>
@@ -426,7 +646,25 @@ export function CalendarScreen() {
         />
       )}
       {openEntry !== null && (
-        <EntryDetailModal entry={openEntry} onClose={() => setOpenEntry(null)} />
+        <EntryDetailModal
+          entry={openEntry}
+          onClose={() => setOpenEntry(null)}
+          onReschedule={(entry) =>
+            openReschedule(entry, entry.local_date || localDateToday())
+          }
+        />
+      )}
+      {schedule !== null && (
+        <ScheduleModal
+          key={schedule.entry.id}
+          entry={schedule.entry}
+          initialDate={schedule.date}
+          onClose={() => setSchedule(null)}
+          onSaved={() => {
+            setSchedule(null)
+            calendar.retry()
+          }}
+        />
       )}
     </>
   )

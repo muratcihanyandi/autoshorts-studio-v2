@@ -34,3 +34,13 @@ async def logs(
         channel_id=channel_id,
         category=category,
     )
+
+
+@router.get("/logs/errors")
+async def log_errors(
+    request: Request,
+    limit: int = Query(60, ge=1, le=200),
+) -> dict:
+    """Birleşik hata akışı: başarısız işler, medya varlıkları ve
+    yükleme satırları — tam hata metni ve düzeltme eylemiyle."""
+    return await _service(request).errors(limit=limit)

@@ -345,12 +345,20 @@ def build_handlers(
         channel_id = payload.get("channel_id")
         if not isinstance(channel_id, int):
             raise ValueError("payload.channel_id gerekli.")
+        # Yon bazli due: worker (channel, orientation) ciftleriyle kuyruk
+        # acar; yon verilmezse (eski isler) her iki yon denenir.
+        orientation = payload.get("orientation")
+        if orientation is not None and orientation not in (
+            "vertical",
+            "horizontal",
+        ):
+            raise ValueError("payload.orientation gecersiz.")
         # make_public yolu da OAuth anahtarina uzanir: efektif ayarlar.
         effective = await SettingsService(
             sessionmaker, settings
         ).effective_settings()
         service = AutomationService(sessionmaker, effective)
-        return await service.publish_for_channel(channel_id)
+        return await service.publish_for_channel(channel_id, orientation)
 
     async def ops_summary(payload: dict[str, Any]) -> dict:
         from app.services.automation_service import AutomationService
@@ -444,7 +452,12 @@ class JobWorker:
             terminal = (
                 job is not None and job.attempts >= job.max_attempts
             )
-            await self._jobs.fail(job_id, f"{type(exc).__name__}: {exc}")
+            # Bos mesajli hatalar ("TimeoutError: ") anlamsizdir: is
+            # turu ve ipucu mesaja tasir (2026-10-23 kullanci sikayeti).
+            detail = str(exc).strip() or "(ayrinti yok)"
+            await self._jobs.fail(
+                job_id, f"{type(exc).__name__}: {detail}"
+            )
             if terminal and job is not None:
                 # Kullanici istegi (2026-10-19): kalici is hatasi kanali
                 # 'error'a dusurup tum uretimi durdurmaz. Basarisiz
@@ -987,9 +1000,10 @@ class JobWorker:
 
     async def enqueue_publish_jobs(self) -> int:
         """Schedule-aware publishing: one publish_due job per connected,
-        running channel whose slot arrived. The job itself picks the
-        best ready candidate; nothing publishes without the
-        rights/approval guards."""
+        running channel AND orientation whose slot arrived (shorts kendi
+        prime time'ında, yatay videolar kendi dilimlerinde). The job
+        itself picks the best ready candidate; nothing publishes without
+        the rights/approval guards."""
         interval = self._effective.publish_check_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -1001,11 +1015,13 @@ class JobWorker:
         from app.services.publishing_service import PublishingService
 
         service = PublishingService(self._sessionmaker, self._effective)
-        channel_ids = await service.due_channels()
+        dues = await service.due_channels()
         added = 0
-        for channel_id in channel_ids:
+        for channel_id, orientation in dues:
             job = await self._jobs.enqueue(
-                "publish_due", {"channel_id": channel_id}, priority=6
+                "publish_due",
+                {"channel_id": channel_id, "orientation": orientation},
+                priority=6,
             )
             if job.status == "queued" and job.attempts == 0:
                 added += 1

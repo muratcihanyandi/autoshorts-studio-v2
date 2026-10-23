@@ -96,6 +96,104 @@ async def remove_source_video(
         ) from exc
 
 
+@router.post("/media/videos/{source_video_id}/resume")
+async def resume_source_video(
+    request: Request, source_video_id: int
+) -> dict:
+    """Hata veren videoyu KALDIĞI AŞAMADAN sürdür (2026-10-23 kullanıcı
+    isteği): varlık 'failed' işaretini temizler, media_process işi elle
+    (manuel) kuyruğa alınır — boru hattı indirmeden, kaldığı aşamadan
+    devam eder. Video zaten tamamlanmışsa veya işlem sürüyorsa reddedilir."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Veritabanı yapılandırılmadı.",
+        )
+    import sqlalchemy as sa
+
+    from app.models import Job, MediaAsset, SourceVideo
+    from app.services.job_service import JobService
+
+    async with sessionmaker() as session:
+        video = await session.get(SourceVideo, source_video_id)
+        if video is None:
+            raise HTTPException(status_code=404, detail="Video bulunamadı.")
+        if video.status == "excluded":
+            raise HTTPException(
+                status_code=409,
+                detail="Video hariç tutulmuş; önce işleme geri alınmalı.",
+            )
+        if video.status == "processed":
+            raise HTTPException(
+                status_code=409,
+                detail="Video zaten tamamlandı; sürdürülecek iş yok.",
+            )
+        asset = (
+            (
+                await session.execute(
+                    sa.select(MediaAsset).where(
+                        MediaAsset.source_video_id == source_video_id
+                    )
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if asset is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Video henüz işlem görmedi (indirme başlamamış).",
+            )
+        # Aktif media_process isleri azdir; payload JSON'u SQL yerine
+        # Python tarafinda eslestir (SQLite/PostgreSQL tasinabilirligi).
+        active_rows = (
+            (
+                await session.execute(
+                    sa.select(Job.id, Job.payload).where(
+                        Job.job_type == "media_process",
+                        Job.status.in_(("queued", "running", "cancelling")),
+                    )
+                )
+            )
+            .all()
+        )
+        running = any(
+            (payload or {}).get("source_video_id") == source_video_id
+            for _jid, payload in active_rows
+        )
+        if running:
+            raise HTTPException(
+                status_code=409,
+                detail="Bu videonun işi zaten kuyrukta/sürüyor.",
+            )
+        if asset.status == "failed":
+            # 'failed' işaretini kaldır: aşamanın çalışma durumu geri gelir,
+            # stok beslemesi ve kütüphane etiketi tekrar aker.
+            stage_status = {
+                "download": "downloading",
+                "inspect": "downloaded",
+                "transcript": "inspected",
+                "analysis": "transcribed",
+                "candidates": "analyzed",
+            }
+            asset.status = stage_status.get(asset.stage, "downloading")
+            await session.commit()
+
+    jobs = JobService(sessionmaker, request.app.state.settings)
+    job = await jobs.enqueue(
+        "media_process",
+        {"source_video_id": source_video_id, "manual": True},
+        priority=6,
+    )
+    return {
+        "source_video_id": source_video_id,
+        "job_id": job.id,
+        "stage": asset.stage,
+        "resumed": True,
+    }
+
+
 @router.delete("/media/clips/{render_id}")
 async def remove_clip(request: Request, render_id: int) -> dict:
     """Hazır klibi kaldır (kullanıcı isteği 2026-10-21): gizli yüklenmişse

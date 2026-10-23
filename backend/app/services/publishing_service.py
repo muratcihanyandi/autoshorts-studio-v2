@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.models import (
+    AppMeta,
     Channel,
     ClipCandidate,
     ClipMetadata,
@@ -44,6 +45,7 @@ from app.services.publishing_schedule import (
     ScheduleError,
     is_due,
     next_due_time,
+    slots_for_orientation,
 )
 from app.services.thumbnail import ThumbnailError, compose
 from app.services.youtube_upload import (
@@ -54,6 +56,16 @@ from app.services.youtube_upload import (
 
 class PublishingError(Exception):
     """Publishing failure with a user-facing Turkish message."""
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """SQLite naif datetime'leri UTC kabul et; tz farki due hesabini
+    kaydirmasin (2026-10-23 canli olayin testleri de bunu dogruluyor)."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class PublishingService:
@@ -409,10 +421,19 @@ class PublishingService:
             row.thumbnail_path = rel_path
             await session.commit()
 
-    async def due_channels(self) -> list[int]:
-        """Connected channels whose schedule slot has arrived."""
+    async def due_channels(self) -> list[tuple[int, str]]:
+        """(channel_id, orientation) pairs whose slot has arrived.
+
+        Yön bazlı çalışır: shorts kendi prime time dilimlerinde, yatay
+        videolar kendi dilimlerinde due olur. Elle planlanmış ve saati
+        gelmiş bir yayın kanalı her yönde due sayar. published_at NULL
+        satırlar (gizli yüklenmiş, henüz açılmamış) yok sayılır — yoksa
+        "hiç yayınlanmamış" sanılır ve motor her turda üst üste yayın
+        açardı (2026-10-23 canlı olay: üç shorts gece 03:02-03:22
+        arka arkaya yayına çıktı).
+        """
         now = datetime.now(UTC)
-        channel_ids: list[int] = []
+        dues: list[tuple[int, str]] = []
         async with self._sessionmaker() as session:
             profiles = (
                 (
@@ -432,26 +453,278 @@ class PublishingService:
                 continue
             if (profile.settings or {}).get("paused"):
                 continue  # M11: duraklatilmis kanal due sayilmaz
-            async with self._sessionmaker() as session:
-                last = (
-                    await session.execute(
-                        sa.select(PublishedVideo.published_at)
-                        .where(PublishedVideo.channel_id == profile.channel_id)
-                        .order_by(PublishedVideo.published_at.desc())
-                        .limit(1)
+            for orientation in ("vertical", "horizontal"):
+                if await self._manual_due(profile.channel_id, orientation):
+                    dues.append((profile.channel_id, orientation))
+                    continue
+                async with self._sessionmaker() as session:
+                    last = _as_utc(
+                        (
+                            await session.execute(
+                                sa.select(PublishedVideo.published_at)
+                                .where(
+                                    PublishedVideo.channel_id
+                                    == profile.channel_id,
+                                    PublishedVideo.orientation == orientation,
+                                    PublishedVideo.published_at.is_not(None),
+                                )
+                                .order_by(PublishedVideo.published_at.desc())
+                                .limit(1)
+                            )
+                        ).scalar_one_or_none()
                     )
-                ).scalar_one_or_none()
-            try:
-                if is_due(
-                    now_utc=now,
-                    timezone_name=profile.timezone,
-                    publish_times=profile.settings.get("publish_times"),
-                    last_published_at=last,
-                ):
-                    channel_ids.append(profile.channel_id)
-            except ScheduleError:
-                continue  # bozuk saat yapilandirmasi: kanali atla
-        return channel_ids
+                try:
+                    slots = slots_for_orientation(profile.settings, orientation)
+                    if is_due(
+                        now_utc=now,
+                        timezone_name=profile.timezone,
+                        publish_times=slots,
+                        last_published_at=last,
+                    ):
+                        dues.append((profile.channel_id, orientation))
+                except ScheduleError:
+                    continue  # bozuk saat yapilandirmasi: yonu atla
+        return dues
+
+    async def _manual_due(
+        self, channel_id: int, orientation: str
+    ) -> bool:
+        """Elle planlanmış ve saati gelmiş gizli yayın var mı?"""
+        return (
+            await self.next_manual_due(channel_id, orientation) is not None
+        )
+
+    async def next_manual_due(
+        self, channel_id: int, orientation: str
+    ) -> int | None:
+        """Elle planlanmış, saati gelmiş (scheduled_at <= now) kayıt.
+        SQLite naif datetime'leri Python tarafında UTC'ye normalize
+        edilir; SQL karşılaştırması ortamlar arasında taşınamaz."""
+        async with self._sessionmaker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        sa.select(
+                            PublishedVideo.id, PublishedVideo.scheduled_at
+                        )
+                        .where(
+                            PublishedVideo.channel_id == channel_id,
+                            PublishedVideo.orientation == orientation,
+                            PublishedVideo.status == "verified",
+                            PublishedVideo.visibility == "private",
+                            PublishedVideo.scheduled_at.is_not(None),
+                        )
+                        .order_by(PublishedVideo.scheduled_at.asc())
+                        .limit(5)
+                    )
+                )
+                .all()
+            )
+        now = datetime.now(UTC)
+        for row_id, scheduled in rows:
+            moment = _as_utc(scheduled)
+            if moment is not None and moment <= now:
+                return row_id
+        return None
+
+    async def set_manual_schedule(
+        self, row_id: int, scheduled_at: datetime | None
+    ) -> PublishedVideo:
+        """Bir gizli yüklenmiş videonun herkese açılma anını elle ata.
+        None temizler: video tekrar slot mantığına döner."""
+        async with self._sessionmaker() as session:
+            row = await session.get(PublishedVideo, row_id)
+            if row is None:
+                raise PublishingError("Yayın kaydı bulunamadı.")
+            if row.visibility == "public":
+                raise PublishingError(
+                    "Video zaten yayında; geçmiş yayın saati değiştirilemez."
+                )
+            if row.status != "verified":
+                raise PublishingError(
+                    "Video henüz doğrulanmadı; önce gizli yükleme tamamlanmalı."
+                )
+            row.scheduled_at = scheduled_at
+            await session.commit()
+            await session.refresh(row)
+        await self._audit(
+            row.channel_id,
+            "publish.rescheduled",
+            {
+                "published_video_id": row.id,
+                "scheduled_at": (
+                    scheduled_at.isoformat() if scheduled_at else None
+                ),
+            },
+        )
+        return row
+
+    # --- stok klibi planlama: yükleme niyeti ---
+
+    SCHEDULE_INTENTS_KEY = "schedule_intents"
+
+    @staticmethod
+    def _intent_key(orientation: str, candidate_id: int | None, video_id: int | None) -> str:
+        """_ensure_row ile aynı anahtar üretir: yönlendirilmiş planlama
+        niyeti yükleme satırı oluşunca otomatik uygulanır."""
+        if candidate_id is not None:
+            return f"{orientation}:c{candidate_id}"
+        return f"{orientation}:v{video_id}"
+
+    async def _store_intent(
+        self, key: str, scheduled_at: datetime | None
+    ) -> None:
+        """app_meta.schedule_intents sözlüğüne niyet yaz/sil."""
+        async with self._sessionmaker() as session:
+            row = await session.get(AppMeta, self.SCHEDULE_INTENTS_KEY)
+            intents = dict(row.value) if row is not None else {}
+            if scheduled_at is None:
+                intents.pop(key, None)
+            else:
+                intents[key] = scheduled_at.isoformat()
+            if row is None:
+                session.add(
+                    AppMeta(key=self.SCHEDULE_INTENTS_KEY, value=intents)
+                )
+            else:
+                row.value = intents
+            await session.commit()
+
+    async def _pop_intent(
+        self,
+        orientation: str,
+        candidate_id: int | None,
+        video_id: int | None,
+    ) -> datetime | None:
+        """Niyeti oku ve temizle; yoksa None."""
+        key = self._intent_key(orientation, candidate_id, video_id)
+        async with self._sessionmaker() as session:
+            row = await session.get(AppMeta, self.SCHEDULE_INTENTS_KEY)
+            intents = dict(row.value) if row is not None else {}
+            raw = intents.pop(key, None)
+            if raw is None:
+                return None
+            if row is None:
+                session.add(
+                    AppMeta(key=self.SCHEDULE_INTENTS_KEY, value=intents)
+                )
+            else:
+                row.value = intents
+            await session.commit()
+        try:
+            return datetime.fromisoformat(raw)
+        except (TypeError, ValueError):
+            return None
+
+    async def schedule_render(
+        self, render_id: int, scheduled_at: datetime | None
+    ) -> dict:
+        """Stoktaki hazır klibi planla: gizli yükleme işini hemen açar
+        (manuel işaretli), saati de yükleme satırına niyet olarak yazar.
+        Yükleme tamamlanınca scheduled_at otomatik uygulanır."""
+        from app.services.job_service import JobService
+
+        async with self._sessionmaker() as session:
+            render = await session.get(RenderedClip, render_id)
+            if render is None:
+                raise PublishingError("Klip bulunamadı.")
+            if render.status != "rendered":
+                raise PublishingError(
+                    "Klip henüz hazır değil; render tamamlandığında "
+                    "planlanabilir."
+                )
+            candidate = (
+                await session.get(ClipCandidate, render.clip_candidate_id)
+                if render.clip_candidate_id is not None
+                else None
+            )
+            if render.clip_candidate_id is not None and candidate is None:
+                raise PublishingError("Klip adayı bulunamadı.")
+            source = (
+                await session.get(
+                    SourceVideo,
+                    candidate.source_video_id
+                    if candidate is not None
+                    else render.source_video_id,
+                )
+            )
+            source_channel = (
+                await session.get(
+                    SourceChannel, source.source_channel_id
+                )
+                if source is not None
+                else None
+            )
+        if source_channel is None:
+            raise PublishingError("Kaynak kanal bulunamadı.")
+        channel_id = source_channel.channel_id
+        orientation = render.orientation
+        candidate_id = render.clip_candidate_id
+        video_id = (
+            candidate.source_video_id
+            if candidate is not None
+            else render.source_video_id
+        )
+        # Video zaten gizli yuklenmisse saati dogrudan satira yaz; yeni
+        # yukleme islemi acmaya gerek yok (niyet uygulanmazdi).
+        async with self._sessionmaker() as session:
+            if candidate_id is not None:
+                existing = await session.execute(
+                    sa.select(PublishedVideo).where(
+                        PublishedVideo.clip_candidate_id == candidate_id,
+                        PublishedVideo.orientation == orientation,
+                    )
+                )
+            else:
+                existing = await session.execute(
+                    sa.select(PublishedVideo).where(
+                        PublishedVideo.source_video_id == video_id,
+                        PublishedVideo.orientation == orientation,
+                        PublishedVideo.clip_candidate_id.is_(None),
+                    )
+                )
+            existing_row = existing.scalars().one_or_none()
+        if existing_row is not None:
+            # Satir dogrulanmadiysa set_manual_schedule anlasilir hata
+            # verir; sessizce kaybolan planlama olmasin.
+            await self.set_manual_schedule(existing_row.id, scheduled_at)
+            return {
+                "clip_render_id": render_id,
+                "published_video_id": existing_row.id,
+                "scheduled_at": (
+                    scheduled_at.isoformat() if scheduled_at else None
+                ),
+            }
+        await self._store_intent(
+            self._intent_key(orientation, candidate_id, video_id),
+            scheduled_at,
+        )
+        # Gizli yükleme işini hemen kuyruğa al (motor sırasını beklemeden).
+        jobs = JobService(self._sessionmaker, self._settings)
+        if candidate_id is not None:
+            job_type, payload = "publish_clip", {"clip_candidate_id": candidate_id}
+        else:
+            job_type, payload = "publish_full_cut", {"source_video_id": video_id}
+        payload = {**payload, "manual": True}
+        job = await jobs.enqueue(job_type, payload, priority=6)
+        await self._audit(
+            channel_id,
+            "publish.rescheduled",
+            {
+                "clip_render_id": render_id,
+                "scheduled_at": (
+                    scheduled_at.isoformat() if scheduled_at else None
+                ),
+                "upload_job_id": job.id,
+            },
+        )
+        return {
+            "clip_render_id": render_id,
+            "scheduled_at": (
+                scheduled_at.isoformat() if scheduled_at else None
+            ),
+            "upload_job_id": job.id,
+        }
 
     async def next_ready_candidate(self, channel_id: int) -> int | None:
         """Best unpublished candidate for a channel (render ok)."""
@@ -670,17 +943,18 @@ class PublishingService:
         row = context["published_row"]
         if row is None:
             async with self._sessionmaker() as session:
+                candidate = context["candidate"]
+                candidate_id = (
+                    candidate.id if candidate is not None else None
+                )
+                video_id = (
+                    candidate.source_video_id
+                    if candidate is not None
+                    else context.get("source_video_id")
+                )
                 row = PublishedVideo(
-                    clip_candidate_id=(
-                        context["candidate"].id
-                        if context["candidate"] is not None
-                        else None
-                    ),
-                    source_video_id=(
-                        context["candidate"].source_video_id
-                        if context["candidate"] is not None
-                        else context.get("source_video_id")
-                    ),
+                    clip_candidate_id=candidate_id,
+                    source_video_id=video_id,
                     orientation=context["orientation"],
                     channel_id=context["channel_id"],
                     title=context["metadata"].title,
@@ -688,6 +962,15 @@ class PublishingService:
                 session.add(row)
                 await session.commit()
                 await session.refresh(row)
+            # Stok klibi takvimden planlandıysa saati satıra uygula.
+            scheduled_at = await self._pop_intent(
+                context["orientation"], candidate_id, video_id
+            )
+            if scheduled_at is not None:
+                async with self._sessionmaker() as session:
+                    fresh = await session.get(PublishedVideo, row.id)
+                    fresh.scheduled_at = scheduled_at
+                    await session.commit()
         return row
 
     async def _save_session_uri(self, row_id: int, session_uri: str) -> None:

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { fetchClipDetail, type ClipDetail } from '../api/media'
+import { rescheduleCalendar } from '../api/calendar'
 import { formatBytes, formatClock, formatDuration, formatTimeShort } from '../format'
 
 const UPLOAD_LABEL: Record<string, string> = {
@@ -59,6 +60,10 @@ export function ClipDetailModal({
 }) {
   const [detail, setDetail] = useState<ClipDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [planDate, setPlanDate] = useState('')
+  const [planTime, setPlanTime] = useState('')
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -76,6 +81,27 @@ export function ClipDetailModal({
       cancelled = true
     }
   }, [clipId])
+
+  async function savePlan() {
+    setPlanBusy(true)
+    setPlanError(null)
+    try {
+      const moment = new Date(`${planDate}T${planTime}`)
+      if (Number.isNaN(moment.getTime())) {
+        throw new Error('Geçersiz tarih veya saat.')
+      }
+      if (moment.getTime() <= Date.now()) {
+        throw new Error('Yayın saati gelecekte olmalı.')
+      }
+      await rescheduleCalendar({ clipRenderId: clipId }, moment.toISOString())
+      const payload = await fetchClipDetail(clipId)
+      setDetail(payload)
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : 'Planlama başarısız.')
+    } finally {
+      setPlanBusy(false)
+    }
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -211,6 +237,46 @@ export function ClipDetailModal({
                         : ''}
                     </span>
                   </div>
+                  {detail.publishing.scheduled_at && (
+                    <p className="detail-note">
+                      <b>Elle planlandı:</b>{' '}
+                      {formatTimeShort(detail.publishing.scheduled_at)}
+                    </p>
+                  )}
+                  {detail.publishing.visibility !== 'public' && (
+                    <div className="schedule-form">
+                      <label className="field">
+                        <span>Yayın günü</span>
+                        <input
+                          type="date"
+                          value={planDate}
+                          onChange={(event) => setPlanDate(event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Yayın saati</span>
+                        <input
+                          type="time"
+                          value={planTime}
+                          onChange={(event) => setPlanTime(event.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        disabled={planBusy || !planDate || !planTime}
+                        onClick={() => void savePlan()}
+                        title="Video bu saatte herkese açılacak."
+                      >
+                        {planBusy ? 'Planlanıyor…' : 'Bu saate planla'}
+                      </button>
+                    </div>
+                  )}
+                  {planError && (
+                    <p className="action-error" role="alert">
+                      {planError}
+                    </p>
+                  )}
                   {detail.publishing.youtube_url && (
                     <a
                       href={detail.publishing.youtube_url}

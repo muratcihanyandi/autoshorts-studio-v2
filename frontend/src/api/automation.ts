@@ -83,6 +83,10 @@ export interface ChannelSettings {
   horizontal_stock_target: number
   daily_vertical_limit: number
   daily_horizontal_limit: number
+  /** Yatay yayın saatleri ('HH:MM'); null = site varsayılanı. */
+  publish_times: string[] | null
+  /** Shorts (dikey) yayın saatleri; null = shorts prime time varsayılanı. */
+  publish_times_vertical: string[] | null
   title_mode: SettingMode
   description_mode: SettingMode
   tags_mode: SettingMode
@@ -96,6 +100,8 @@ export interface ChannelSettingsInput {
   horizontal_stock_target?: number
   daily_vertical_limit?: number
   daily_horizontal_limit?: number
+  publish_times?: string[]
+  publish_times_vertical?: string[]
   title_mode?: SettingMode
   description_mode?: SettingMode
   tags_mode?: SettingMode

@@ -1,19 +1,20 @@
 """Takvim görünümü (Görev 1): planlanan ve gerçekleşen yayınlar.
 
-Her çalışan kanalın yayın dilimleri (publish_times + saat dilimi) ay
-bazında listelenir. Gelecek dilimler mevcut stokla simüle edilir:
+Her çalışan kanalın yayın dilimleri (yön bazlı prime time saatleri +
+saat dilimi) ay bazında listelenir. Gelecek dilimler mevcut stokla
+simüle edilir:
 
 - ``scheduled`` — gizli yüklenmiş (verified) video, saat bekliyor. Bu
-  dilimlere kesin olarak bu video düşer.
+  dilimlere kesin olarak bu video düşer. Elle planlananlar
+  (``scheduled_at``) kendi saatlerinde, ``manual`` işaretli durur.
 - ``planned``   — stoktaki hazır klip (render edilmiş, henüz yüklenmemiş).
   Onay/yükleme sonrası bu dilime düşmesi beklenir.
 - ``empty``     — dilim boş: hazır video yok ya da günlük limit doldu.
 - ``published`` — gerçekleşen yayın (public_at ay içinde).
 
 Her kayıt tıklanabilir detay taşır: klip render kimliği (detay penceresi
-için), başlık, kapak, YouTube bağlantısı ve metaveri özeti. Simülasyon
-``publish_for_channel`` ile aynı tercihi uygular: her dilimde önce dikey,
-limit doluysa yatay; günlük limitler yön bazında ayrı tutulur.
+için), başlık, kapak, YouTube bağlantısı ve metaveri özeti. Dikey ve
+yatay videolar KENDİ slot setlerinde simüle edilir (shorts prime time).
 """
 from __future__ import annotations
 
@@ -38,8 +39,11 @@ from app.models import (
 )
 from app.services.library_view import LibraryViewService
 from app.services.publishing_schedule import (
+    DEFAULT_PUBLISH_TIMES,
     DEFAULT_TIMEZONE,
+    DEFAULT_VERTICAL_PUBLISH_TIMES,
     parse_publish_times,
+    slots_for_orientation,
 )
 
 MONTH_NAMES = (
@@ -85,23 +89,46 @@ class CalendarViewService:
                 .all()
             )
             channels_meta = []
+            slot_map: dict[int, dict[str, list]] = {}
             queues: dict[int, dict[str, list[dict]]] = {}
             for profile, channel in profiles:
-                slots = parse_publish_times(
-                    (profile.settings or {}).get("publish_times")
-                )
+                # Bozuk saat yapilandirmasi takvimi patratmam: varsayilana
+                # dus ve kanali listele.
+                try:
+                    v_slots = list(
+                        slots_for_orientation(profile.settings, "vertical")
+                    )
+                    h_slots = list(
+                        slots_for_orientation(profile.settings, "horizontal")
+                    )
+                except Exception:  # noqa: BLE001 - ScheduleError varsayilan
+                    v_slots = list(
+                        parse_publish_times(
+                            list(DEFAULT_VERTICAL_PUBLISH_TIMES)
+                        )
+                    )
+                    h_slots = list(parse_publish_times(list(DEFAULT_PUBLISH_TIMES)))
                 channels_meta.append(
                     {
                         "id": channel.id,
                         "name": channel.name,
                         "ribbon_color": channel.ribbon_color,
                         "timezone": profile.timezone or DEFAULT_TIMEZONE,
-                        "publish_times": [s.strftime("%H:%M") for s in slots],
+                        "publish_times": [
+                            s.strftime("%H:%M") for s in h_slots
+                        ],
+                        "publish_times_vertical": [
+                            s.strftime("%H:%M") for s in v_slots
+                        ],
                         "automation_state": profile.automation_state,
                         "daily_vertical_limit": profile.daily_clip_target,
                         "daily_horizontal_limit": profile.daily_horizontal_limit,
                     }
                 )
+                slot_map[channel.id] = {
+                    "vertical": v_slots,
+                    "horizontal": h_slots,
+                }
                 queues[channel.id] = {
                     "vertical": await self._ready_queue(
                         session, channel.id, "vertical"
@@ -119,32 +146,88 @@ class CalendarViewService:
 
         entry_id = 1000
         for profile_row in channels_meta:
-            queue = queues[profile_row["id"]]
+            channel_id = profile_row["id"]
+            queue = queues[channel_id]
+            slots = slot_map[channel_id]
             tz = ZoneInfo(profile_row["timezone"])
             today_local = now.astimezone(tz).date()
+
+            # Elle planlanmis videolar slot simulasyonundan ayri: kendi
+            # saatlerinde, kendi günlerinde dururlar.
+            manual_items: dict[str, list[dict]] = {
+                "vertical": [],
+                "horizontal": [],
+            }
+            for orientation in ("vertical", "horizontal"):
+                unscheduled = []
+                for item in queue[orientation]:
+                    raw = item.get("scheduled_at")
+                    if raw is None:
+                        unscheduled.append(item)
+                        continue
+                    try:
+                        moment = _as_utc(datetime.fromisoformat(raw))
+                    except (TypeError, ValueError):
+                        moment = None
+                    if moment is None:
+                        unscheduled.append(item)
+                        continue
+                    if moment <= now:
+                        continue  # saati gecmis: kisa surede yayina cikar
+                    local_day = moment.astimezone(tz).date()
+                    if not (month_start <= local_day <= month_end):
+                        continue
+                    entry_id += 1
+                    entries.append(
+                        {
+                            "id": entry_id,
+                            "channel_id": channel_id,
+                            "channel_name": profile_row["name"],
+                            "ribbon_color": profile_row["ribbon_color"],
+                            "orientation": orientation,
+                            "status": item["status"],
+                            "scheduled_at": moment.isoformat(),
+                            "local_date": local_day.isoformat(),
+                            "title": item["title"],
+                            "clip_render_id": item["clip_render_id"],
+                            "published_video_id": item.get(
+                                "published_video_id"
+                            ),
+                            "thumbnail_url": item["thumbnail_url"],
+                            "youtube_video_id": item.get("youtube_video_id"),
+                            "youtube_url": item.get("youtube_url"),
+                            "metadata": item["metadata"],
+                            "note": "Elle planlandı; bu saatte herkese açılacak.",
+                            "manual": True,
+                        }
+                    )
+                queue[orientation] = unscheduled
+
             day = max(month_start, today_local)
             while day <= month_end:
                 counts = self._todays_counts(
-                    entries, profile_row["id"], day, tz
+                    entries, channel_id, day, tz
                 )
-                for slot in parse_publish_times(profile_row["publish_times"]):
-                    slot_utc = (
-                        datetime.combine(day, slot, tzinfo=tz)
-                        .astimezone(UTC)
-                    )
-                    if slot_utc <= now:
-                        continue
-                    entry_id += 1
-                    entry = self._slot_entry(
-                        entry_id,
-                        profile_row,
-                        slot_utc,
-                        day,
-                        counts,
-                        queue,
-                    )
-                    if entry is not None:
-                        entries.append(entry)
+                for orientation in ("vertical", "horizontal"):
+                    for slot in slots[orientation]:
+                        slot_utc = (
+                            datetime.combine(day, slot, tzinfo=tz)
+                            .astimezone(UTC)
+                        )
+                        if slot_utc <= now:
+                            continue
+                        entry_id += 1
+                        entry = self._slot_entry(
+                            entry_id,
+                            profile_row,
+                            orientation,
+                            slot_utc,
+                            day,
+                            counts,
+                            queue,
+                        )
+                        if entry is not None:
+                            entries.append(entry)
                 day += timedelta(days=1)
 
         entries.sort(key=lambda e: (e["scheduled_at"], e["channel_id"]))
@@ -163,12 +246,14 @@ class CalendarViewService:
     def _todays_counts(
         entries: list[dict], channel_id: int, day, tz: ZoneInfo
     ) -> dict[str, int]:
-        """Kanal-yerel bugune dusen yayinlar (gerceklesen + simulasyon)."""
+        """Kanal-yerel bugune dusen yayinlar (gerceklesen + simulasyon).
+        Elle planlananlar gunluk limit sayimina girmez: motor da onlari
+        limit disinda yayina acar."""
         counts = {"vertical": 0, "horizontal": 0}
         for entry in entries:
             if entry["channel_id"] != channel_id:
                 continue
-            if entry.get("status") == "empty":
+            if entry.get("status") == "empty" or entry.get("manual"):
                 continue
             try:
                 moment = datetime.fromisoformat(entry["scheduled_at"])
@@ -185,12 +270,14 @@ class CalendarViewService:
         self,
         entry_id: int,
         channel: dict,
+        orientation: str,
         slot_utc: datetime,
         day,
         counts: dict[str, int],
         queue: dict[str, list[dict]],
     ) -> dict[str, Any] | None:
-        """Bir dilimi doldur: önce dikey, limit doluysa yatay."""
+        """Bir yonun dilimini kendi kuyrugundan doldurur; limit doluysa
+        ya da stok yoksa dilim bos kalir."""
         base = {
             "id": entry_id,
             "channel_id": channel["id"],
@@ -199,48 +286,57 @@ class CalendarViewService:
             "scheduled_at": slot_utc.isoformat(),
             "local_date": day.isoformat(),
         }
-        orientations = (
-            ("vertical", channel["daily_vertical_limit"]),
-            ("horizontal", channel["daily_horizontal_limit"]),
+        limit = (
+            channel["daily_vertical_limit"]
+            if orientation == "vertical"
+            else channel["daily_horizontal_limit"]
         )
-        for orientation, limit in orientations:
-            if limit and counts[orientation] >= limit:
-                continue
-            items = queue.get(orientation) or []
-            if not items:
-                continue
-            item = items.pop(0)
-            counts[orientation] += 1
+        items = queue.get(orientation) or []
+        if limit and counts[orientation] >= limit:
             return {
                 **base,
                 "orientation": orientation,
-                "status": item["status"],
-                "title": item["title"],
-                "clip_render_id": item["clip_render_id"],
-                "thumbnail_url": item["thumbnail_url"],
-                "youtube_video_id": item.get("youtube_video_id"),
-                "youtube_url": item.get("youtube_url"),
-                "metadata": item["metadata"],
-                "note": item["note"],
+                "status": "empty",
+                "title": None,
+                "clip_render_id": None,
+                "published_video_id": None,
+                "thumbnail_url": None,
+                "youtube_video_id": None,
+                "youtube_url": None,
+                "metadata": None,
+                "manual": False,
+                "note": "Günlük limit doldu",
             }
+        if not items:
+            return {
+                **base,
+                "orientation": orientation,
+                "status": "empty",
+                "title": None,
+                "clip_render_id": None,
+                "published_video_id": None,
+                "thumbnail_url": None,
+                "youtube_video_id": None,
+                "youtube_url": None,
+                "metadata": None,
+                "manual": False,
+                "note": "Bu dilim için hazır video yok",
+            }
+        item = items.pop(0)
+        counts[orientation] += 1
         return {
             **base,
-            "orientation": None,
-            "status": "empty",
-            "title": None,
-            "clip_render_id": None,
-            "thumbnail_url": None,
-            "youtube_video_id": None,
-            "youtube_url": None,
-            "metadata": None,
-            "note": (
-                "Günlük limit doldu"
-                if any(
-                    limit and counts[o] >= limit
-                    for o, limit in orientations
-                )
-                else "Bu dilim için hazır video yok"
-            ),
+            "orientation": orientation,
+            "status": item["status"],
+            "title": item["title"],
+            "clip_render_id": item["clip_render_id"],
+            "published_video_id": item.get("published_video_id"),
+            "thumbnail_url": item["thumbnail_url"],
+            "youtube_video_id": item.get("youtube_video_id"),
+            "youtube_url": item.get("youtube_url"),
+            "metadata": item["metadata"],
+            "manual": False,
+            "note": item["note"],
         }
 
     async def _ready_queue(
@@ -290,6 +386,12 @@ class CalendarViewService:
                     if metadata
                     else (row.title or "Hazır video"),
                     "clip_render_id": render.id if render is not None else None,
+                    "published_video_id": row.id,
+                    "scheduled_at": (
+                        row.scheduled_at.isoformat()
+                        if row.scheduled_at
+                        else None
+                    ),
                     "thumbnail_url": (
                         LibraryViewService._thumbnail_url(
                             render,
@@ -391,6 +493,8 @@ class CalendarViewService:
                     if metadata
                     else (video.title if video is not None else "Hazır klip"),
                     "clip_render_id": render.id,
+                    "published_video_id": None,
+                    "scheduled_at": None,
                     "thumbnail_url": LibraryViewService._thumbnail_url(
                         render, video, source
                     ),
@@ -441,6 +545,7 @@ class CalendarViewService:
                     if metadata
                     else (row.title or "Yayınlanan video"),
                     "clip_render_id": render.id if render is not None else None,
+                    "published_video_id": row.id,
                     "thumbnail_url": (
                         LibraryViewService._thumbnail_url(
                             render,
@@ -457,6 +562,7 @@ class CalendarViewService:
                         else None
                     ),
                     "metadata": metadata,
+                    "manual": False,
                     "note": "Yayına verildi.",
                 }
             )

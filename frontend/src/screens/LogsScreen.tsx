@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchLogs, type LogEntry } from '../api/logs'
+import {
+  fetchLogErrors,
+  fetchLogs,
+  retryJob,
+  type ErrorEntry,
+  type LogEntry,
+} from '../api/logs'
+import { resumeSourceVideo } from '../api/media'
 import { usePolling } from '../hooks/usePolling'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
 
@@ -118,11 +125,88 @@ function LogRow({ entry }: { entry: LogEntry }) {
   )
 }
 
+const STAGE_LABEL: Record<string, string> = {
+  download: 'İndirme',
+  inspect: 'İnceleme',
+  transcript: 'Altyazı',
+  analysis: 'Analiz',
+  candidates: 'Adaylar',
+}
+
+/** Hata akışı satırı: tam hata metni + operatörün düzeltme düğmesi. */
+function ErrorRow({
+  entry,
+  busy,
+  onRetry,
+  onResume,
+}: {
+  entry: ErrorEntry
+  busy: boolean
+  onRetry: (entry: ErrorEntry) => void
+  onResume: (entry: ErrorEntry) => void
+}) {
+  const action =
+    entry.kind === 'job' ? (
+      <button
+        type="button"
+        className="btn--ghost"
+        disabled={busy}
+        onClick={() => onRetry(entry)}
+        title="İşi taze deneme bütçeyle yeniden kuyruğa alır."
+      >
+        {busy ? 'Alınıyor…' : 'Tekrar dene'}
+      </button>
+    ) : entry.kind === 'asset' ? (
+      <button
+        type="button"
+        className="btn--ghost"
+        disabled={busy}
+        onClick={() => onResume(entry)}
+        title="Videoyu kaldığı aşamadan sürdürür."
+      >
+        {busy ? 'Sürdürülüyor…' : 'Kaldığı yerden sürdür'}
+      </button>
+    ) : null
+  return (
+    <tr>
+      <td className="nums">{formatLogTime(entry.ts)}</td>
+      <td>
+        <div className="lib-title">
+          <b>{entry.what}</b>
+          {entry.stage && (
+            <small>· {STAGE_LABEL[entry.stage] ?? entry.stage}</small>
+          )}
+          {entry.attempts !== null && entry.max_attempts !== null && (
+            <small className="nums">
+              {' '}
+              ({entry.attempts}/{entry.max_attempts} deneme)
+            </small>
+          )}
+        </div>
+      </td>
+      <td>
+        {entry.title ?? '—'}
+        {entry.channel_name && (
+          <small className="log-channel">
+            {' '}
+            · {entry.channel_name}
+          </small>
+        )}
+      </td>
+      <td className="log-detail log-error">{entry.error}</td>
+      <td>{action}</td>
+    </tr>
+  )
+}
+
 export function LogsScreen() {
+  const [tab, setTab] = useState<'events' | 'errors'>('events')
   const [category, setCategory] = useState<string | null>(null)
   const [channelId, setChannelId] = useState<number | null>(null)
   const [older, setOlder] = useState<LogEntry[]>([])
   const [loadingMore, setLoadingMore] = useState(false)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [actionNote, setActionNote] = useState<string | null>(null)
 
   const fetchCb = useCallback(
     () =>
@@ -134,6 +218,7 @@ export function LogsScreen() {
     [category, channelId],
   )
   const view = usePolling(fetchCb, 5000)
+  const errorsView = usePolling(() => fetchLogErrors(60), 15000)
 
   // Filtre değişince yüklenmiş geçmiş sayfalar anlamsızlaşır: sıfırla.
   useEffect(() => {
@@ -142,6 +227,8 @@ export function LogsScreen() {
 
   const data = view.state.status === 'ok' ? view.state.data : null
   const entries = data ? [...data.entries, ...older] : []
+  const errors =
+    errorsView.state.status === 'ok' ? errorsView.state.data.errors : []
 
   async function loadMore() {
     if (!data || loadingMore) return
@@ -162,35 +249,74 @@ export function LogsScreen() {
     }
   }
 
+  async function retryErrorEntry(entry: ErrorEntry) {
+    if (entry.retry_job_id === null) return
+    setBusyKey(`${entry.kind}:${entry.id}`)
+    setActionNote(null)
+    try {
+      await retryJob(entry.retry_job_id)
+      setActionNote('İş yeniden kuyruğa alındı.')
+      errorsView.retry()
+    } catch (err) {
+      setActionNote(
+        err instanceof Error ? err.message : 'İş alınamadı.',
+      )
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  async function resumeErrorEntry(entry: ErrorEntry) {
+    if (entry.resume_video_id === null) return
+    setBusyKey(`${entry.kind}:${entry.id}`)
+    setActionNote(null)
+    try {
+      await resumeSourceVideo(entry.resume_video_id)
+      setActionNote('Video kaldığı aşamadan sürdürülüyor.')
+      errorsView.retry()
+    } catch (err) {
+      setActionNote(
+        err instanceof Error ? err.message : 'Video sürdürülemedi.',
+      )
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   return (
     <>
       <div className="screen-head">
         <h1>Günlükler</h1>
         <span className="screen-sub">
-          Yapılandırılmış olay günlüğü · her işlem kayda geçer
+          Sistemin olay akışı ve hatalar — her işlem kayda geçer
         </span>
       </div>
 
-      {view.state.status === 'loading' && (
-        <LoadingState label="Günlükler sorgulanıyor…" />
-      )}
-      {view.state.status === 'error' && (
+      {view.state.status === 'error' && tab === 'events' && (
         <ErrorState
           title="Günlükler alınamadı"
           message={`Arka uca ulaşılamadı: ${view.state.message}.`}
           onRetry={view.retry}
         />
       )}
+      {errorsView.state.status === 'error' && tab === 'errors' && (
+        <ErrorState
+          title="Hata akışı alınamadı"
+          message={`Arka uca ulaşılamadı: ${errorsView.state.message}.`}
+          onRetry={errorsView.retry}
+        />
+      )}
+      {actionNote && (
+        <p className="bulk-result" role="status">
+          {actionNote}
+        </p>
+      )}
 
-      {data && (
-        <>
-          {view.state.status === 'ok' && view.state.stale && (
-            <StaleNote onRetry={view.retry} />
-          )}
-
-          <section className="ink-panel" aria-label="Olay günlüğü">
-            <h2>
-              Olay akışı
+      <section className="ink-panel" aria-label="Günlük görünümü">
+        <div className="panel-head-row">
+          <h2>
+            {tab === 'events' ? 'Olay akışı' : 'Hatalar'}
+            {tab === 'events' && (
               <span
                 className={`log-live nums${view.state.status === 'ok' && view.state.stale ? ' off' : ''}`}
               >
@@ -198,85 +324,157 @@ export function LogsScreen() {
                   ? 'sinyal yok'
                   : 'canlı · 5 sn'}
               </span>
-            </h2>
-            <div className="filter-row" role="group" aria-label="Kategori filtresi">
-              <button
-                className={`filter-pill${category === null ? ' active' : ''}`}
-                onClick={() => setCategory(null)}
-              >
-                Tümü
-              </button>
-              {data.categories.map((cat) => (
-                <button
-                  key={cat}
-                  className={`filter-pill${category === cat ? ' active' : ''}`}
-                  onClick={() => setCategory(cat)}
-                >
-                  {CATEGORY_LABEL[cat] ?? cat}
-                </button>
-              ))}
-              {data.channels.length > 0 && (
-                <label className="filter-select">
-                  <span>Kanal</span>
-                  <select
-                    value={channelId ?? ''}
-                    onChange={(e) =>
-                      setChannelId(e.target.value === '' ? null : Number(e.target.value))
-                    }
-                  >
-                    <option value="">tümü</option>
-                    {data.channels.map((ch) => (
-                      <option key={ch.id} value={ch.id}>
-                        {ch.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-            {entries.length === 0 ? (
-              <p className="plate-note">
-                Bu filtrede olay yok — filtreleri gevşetip yeniden dene.
-                Sistem çalışırken her indirme, kurgu, altyazı ve yayın
-                işlemi buraya düşer.
-              </p>
-            ) : (
+            )}
+            {tab === 'errors' && errors.length > 0 && (
+              <span className="panel-count nums">{errors.length} kayıt</span>
+            )}
+          </h2>
+          <div className="filter-row" role="group" aria-label="Görünüm seçimi">
+            <button
+              className={`filter-pill${tab === 'events' ? ' active' : ''}`}
+              onClick={() => setTab('events')}
+            >
+              Olay akışı
+            </button>
+            <button
+              className={`filter-pill${tab === 'errors' ? ' active' : ''}`}
+              onClick={() => setTab('errors')}
+            >
+              Hatalar
+            </button>
+          </div>
+        </div>
+
+        {tab === 'events' && (
+          <>
+            {view.state.status === 'loading' && (
+              <LoadingState label="Günlükler sorgulanıyor…" />
+            )}
+            {data && (
               <>
-                <div className="log-scroll">
-                  <table className="info-table">
-                    <thead>
-                      <tr>
-                        <th>Zaman</th>
-                        <th>Kanal</th>
-                        <th>Olay</th>
-                        <th>Detay</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entries.map((entry) => (
-                        <LogRow key={entry.id} entry={entry} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {(data.has_more || older.length > 0) && (
+                {view.state.status === 'ok' && view.state.stale && (
+                  <StaleNote onRetry={view.retry} />
+                )}
+                <div className="filter-row" role="group" aria-label="Kategori filtresi">
                   <button
-                    className="btn btn--ghost more-button"
-                    disabled={loadingMore || !data.has_more}
-                    onClick={() => void loadMore()}
+                    className={`filter-pill${category === null ? ' active' : ''}`}
+                    onClick={() => setCategory(null)}
                   >
-                    {loadingMore
-                      ? 'Yükleniyor…'
-                      : data.has_more
-                        ? 'Daha eski olayları yükle'
-                        : 'Kayıt sonu'}
+                    Tümü
                   </button>
+                  {data.categories.map((cat) => (
+                    <button
+                      key={cat}
+                      className={`filter-pill${category === cat ? ' active' : ''}`}
+                      onClick={() => setCategory(cat)}
+                    >
+                      {CATEGORY_LABEL[cat] ?? cat}
+                    </button>
+                  ))}
+                  {data.channels.length > 0 && (
+                    <label className="filter-select">
+                      <span>Kanal</span>
+                      <select
+                        value={channelId ?? ''}
+                        onChange={(e) =>
+                          setChannelId(e.target.value === '' ? null : Number(e.target.value))
+                        }
+                      >
+                        <option value="">tümü</option>
+                        {data.channels.map((ch) => (
+                          <option key={ch.id} value={ch.id}>
+                            {ch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {entries.length === 0 ? (
+                  <p className="plate-note">
+                    Bu filtrede olay yok — filtreleri gevşetip yeniden dene.
+                    Sistem çalışırken her indirme, kurgu, altyazı ve yayın
+                    işlemi buraya düşer.
+                  </p>
+                ) : (
+                  <>
+                    <div className="log-scroll">
+                      <table className="info-table">
+                        <thead>
+                          <tr>
+                            <th>Zaman</th>
+                            <th>Kanal</th>
+                            <th>Olay</th>
+                            <th>Detay</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {entries.map((entry) => (
+                            <LogRow key={entry.id} entry={entry} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {(data.has_more || older.length > 0) && (
+                      <button
+                        className="btn btn--ghost more-button"
+                        disabled={loadingMore || !data.has_more}
+                        onClick={() => void loadMore()}
+                      >
+                        {loadingMore
+                          ? 'Yükleniyor…'
+                          : data.has_more
+                            ? 'Daha eski olayları yükle'
+                            : 'Kayıt sonu'}
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
-          </section>
-        </>
-      )}
+          </>
+        )}
+
+        {tab === 'errors' && (
+          <>
+            {errorsView.state.status === 'loading' && (
+              <LoadingState label="Hata kayıtları sorgulanıyor…" />
+            )}
+            {errors.length === 0 &&
+            errorsView.state.status !== 'loading' ? (
+              <p className="plate-note">
+                Bekleyen hata yok — başarısız iş, medya veya yükleme
+                kaydı bulunamadı.
+              </p>
+            ) : errors.length > 0 ? (
+              <div className="log-scroll">
+                <table className="info-table">
+                  <thead>
+                    <tr>
+                      <th>Zaman</th>
+                      <th>İş</th>
+                      <th>Video</th>
+                      <th>Hata</th>
+                      <th>Eylem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {errors.map((entry) => (
+                      <ErrorRow
+                        key={`${entry.kind}:${entry.id}`}
+                        entry={entry}
+                        busy={busyKey === `${entry.kind}:${entry.id}`}
+                        onRetry={(e) => void retryErrorEntry(e)}
+                        onResume={(e) => void resumeErrorEntry(e)}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
     </>
   )
 }

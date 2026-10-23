@@ -183,7 +183,6 @@ export function AppShell({
                   )}
                 </div>
               )}
-              <div>Raspberry Pi 5 · CasaOS</div>
             </div>
           </aside>
           <nav className="tabbar" aria-label="Stüdyo kısayolları">
@@ -219,7 +218,6 @@ export function AppShell({
                 )}
               </div>
             )}
-            <div>Raspberry Pi 5 · CasaOS</div>
           </div>
         </aside>
       )}

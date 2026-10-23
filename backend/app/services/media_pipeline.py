@@ -71,6 +71,16 @@ class MediaPipelineError(Exception):
 
 DOWNLOAD_PROGRESS_KEY = "download_progress"
 
+# Asama anahtarlarinin operator sozlugu: hata mesajlarinda baglam
+# tasiyor ("Altyazı aşaması hata verdi — ...").
+STAGE_LABELS = {
+    "download": "İndirme",
+    "inspect": "İnceleme",
+    "transcript": "Altyazı (transkript)",
+    "analysis": "Analiz",
+    "candidates": "Adaylar",
+}
+
 
 async def _write_download_progress(
     sessionmaker: async_sessionmaker[AsyncSession],
@@ -164,8 +174,13 @@ class MediaPipelineService:
                 raise
             except Exception as exc:
                 await self._mark_failed(asset_id, exc)
+                # Asama baglamini mesaja yaz: bos "TimeoutError: " gibi
+                # anlamsiz kayitlar yerine kullanicinin okuyabilecegi
+                # hata metni uretilir (2026-10-23 kullanci sikayeti).
+                detail = str(exc).strip() or "(ayrinti yok)"
                 raise MediaPipelineError(
-                    f"{type(exc).__name__}: {exc}"
+                    f"{STAGE_LABELS.get(stage, stage)} asamasi hata verdi — "
+                    f"{type(exc).__name__}: {detail}"
                 ) from exc
             import_path = None  # yalnizca ilk denemede kullanilir
 

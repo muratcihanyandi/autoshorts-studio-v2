@@ -693,7 +693,8 @@ export function SettingsScreen() {
                           <option value="small">small</option>
                         </select>
                         <span className="field-help">
-                          Pi 5 için tiny önerilir; büyük modeller RAM'i zorlar.
+                          Küçük sunucularda tiny önerilir; büyük modeller
+                          RAM'i zorlar.
                         </span>
                       </div>
                       <div className="field">
@@ -1054,8 +1055,8 @@ export function SettingsScreen() {
                     <tr>
                       <th>Güncelleme</th>
                       <td>
-                        main dalına push edildiğinde GHCR imajları otomatik
-                        derlenir; CasaOS’ta uygulamayı yeniden başlatmak yeterli.
+                        main dalına push edildiğinde imajlar otomatik
+                        derlenir; uygulamayı yeniden başlatmak yeterli.
                       </td>
                     </tr>
                   </tbody>

@@ -282,6 +282,8 @@ class AutomationService:
         horizontal_stock_target: int | None = None,
         daily_vertical_limit: int | None = None,
         daily_horizontal_limit: int | None = None,
+        publish_times: list[str] | None = None,
+        publish_times_vertical: list[str] | None = None,
         title_mode: str | None = None,
         description_mode: str | None = None,
         tags_mode: str | None = None,
@@ -289,6 +291,11 @@ class AutomationService:
         ai_disclosure_mode: str | None = None,
         channel_system_prompt: str | None = None,
     ) -> PublishingProfile:
+        from app.services.publishing_schedule import (
+            ScheduleError,
+            parse_publish_times,
+        )
+
         profile = await self.profile(channel_id)
         modes = {
             "title_mode": title_mode,
@@ -314,6 +321,18 @@ class AutomationService:
         ):
             if value is not None and not (0 <= value <= 50):
                 raise AutomationError(f"{label} 0..50 arasinda olmali.")
+        # Yayin saatleri: 'HH:MM' listeleri, yon bazli ayri.
+        for field, value in (
+            ("publish_times", publish_times),
+            ("publish_times_vertical", publish_times_vertical),
+        ):
+            if value is not None:
+                try:
+                    parse_publish_times(value)
+                except ScheduleError as exc:
+                    raise AutomationError(
+                        f"Yayin saatleri gecersiz: {exc}"
+                    ) from exc
         async with self._sessionmaker() as session:
             row = await session.get(PublishingProfile, profile.id)
             if horizontal_stock_target is not None:
@@ -322,6 +341,12 @@ class AutomationService:
                 row.daily_clip_target = daily_vertical_limit
             if daily_horizontal_limit is not None:
                 row.daily_horizontal_limit = daily_horizontal_limit
+            settings = dict(row.settings or {})
+            if publish_times is not None:
+                settings["publish_times"] = publish_times
+            if publish_times_vertical is not None:
+                settings["publish_times_vertical"] = publish_times_vertical
+            row.settings = settings
             for field, value in modes.items():
                 if value is not None:
                     setattr(row, field, value)
@@ -399,12 +424,15 @@ class AutomationService:
             )
         )
 
-    async def publish_for_channel(self, channel_id: int) -> dict:
+    async def publish_for_channel(
+        self, channel_id: int, orientation: str | None = None
+    ) -> dict:
         """Scheduled-public publish decision: this step only flips an
         already-uploaded (verified, private) video to public — uploads
         happen when metadata is approved. Daily limits are per
         orientation (vertical: daily_clip_target, horizontal:
-        daily_horizontal_limit)."""
+        daily_horizontal_limit). Orientation parametresi verilirse
+        yalnızca o yön denenir (worker yön bazlı due hesaplar)."""
         profile = await self.profile(channel_id)
         settings = profile.settings or {}
         if profile.automation_state == "stopped":
@@ -425,31 +453,81 @@ class AutomationService:
                 "published": 0,
                 "reason": "kanal duraklatildi",
             }
-        counts = await self._publishing.today_published_counts(channel_id)
-        for orientation, limit in (
-            ("vertical", max(0, profile.daily_clip_target)),
-            ("horizontal", max(0, profile.daily_horizontal_limit)),
+        if orientation is not None and orientation not in (
+            "vertical",
+            "horizontal",
         ):
-            if limit and counts[orientation] >= limit:
+            raise AutomationError("Gecersiz yon: 'vertical' ya da 'horizontal'.")
+        orientations = (
+            (orientation,) if orientation else ("vertical", "horizontal")
+        )
+        # 1) Elle planlanmış ve saati gelmiş videolar once: kullanicinin
+        # takvimde yerlestirdigi saat, gunluk limit ve slot oncelikli.
+        for item in orientations:
+            row_id = await self._publishing.next_manual_due(
+                channel_id, item
+            )
+            if row_id is not None:
+                result = await self._publishing.make_public(row_id)
+                return {
+                    "channel_id": channel_id,
+                    "published": 1,
+                    "manual": True,
+                    **result,
+                }
+        # 2) Slot mantigi: yon bazli saatler ve gunluk limitler.
+        counts = await self._publishing.today_published_counts(channel_id)
+        for item in orientations:
+            limit = (
+                profile.daily_clip_target
+                if item == "vertical"
+                else profile.daily_horizontal_limit
+            )
+            if limit and counts[item] >= max(0, limit):
                 continue
             row_id = await self._publishing.next_ready_public(
-                channel_id, orientation
+                channel_id, item
             )
             if row_id is None:
                 continue
             result = await self._publishing.make_public(row_id)
             return {"channel_id": channel_id, "published": 1, **result}
-        await self._audit(
-            channel_id,
-            "publish.no_ready",
-            {"today": counts},
-        )
+        await self._audit_no_ready(channel_id, counts)
         return {
             "channel_id": channel_id,
             "published": 0,
             "reason": "yayina hazir video yok veya gunluk limitler dolu",
             "today": counts,
         }
+
+    async def _audit_no_ready(self, channel_id: int, counts: dict) -> None:
+        """'Yayina hazir video yok' durumu saatte bir kez loglanir.
+
+        Bu olay her yayin denetiminde (yaklasik 10 dakikada bir)
+        tekrarlaniyordu ve gunde 100+ kayitla gercek hatalari
+        gomuyordu (2026-10-23 kullanci sikayeti). Ayni durum icin son
+        kayittan bir saat gecmeden yenisi yazilmaz."""
+        from datetime import UTC, datetime
+
+        from app.models import AuditEvent
+
+        async with self._sessionmaker() as session:
+            last = (
+                await session.execute(
+                    sa.select(AuditEvent.created_at)
+                    .where(
+                        AuditEvent.channel_id == channel_id,
+                        AuditEvent.event_type == "publish.no_ready",
+                    )
+                    .order_by(AuditEvent.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        if last is not None:
+            age = (datetime.now(UTC) - last).total_seconds()
+            if age < 3600:
+                return
+        await self._audit(channel_id, "publish.no_ready", {"today": counts})
 
     async def operational_summary(self, channel_id: int) -> dict:
         """Stage counts + today's publishing state; audited."""

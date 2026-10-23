@@ -43,6 +43,8 @@ export interface LibrarySource {
   asset_stage: string | null
   asset_stage_label: string | null
   asset_status: string | null
+  /** Hata veren videoda tam hata metni; sağlıklıdaysa null. */
+  last_error: string | null
   file_bytes: number
   origin: string | null
   stages: StageStep[]
@@ -176,6 +178,8 @@ export interface ClipDetail {
     next_slot: string | null
     timezone: string
     publish_times: string[]
+    /** Takvimden elle planlanan yayın anı; yoksa null. */
+    scheduled_at: string | null
     automation_state: string
     metadata_approved: boolean
     auto_approve: boolean
@@ -254,6 +258,29 @@ export function removeSourceVideo(
   ).then((body) => {
     if (body === null) {
       throw new ApiError(204, 'Kaldırma yanıtı boş döndü')
+    }
+    return body
+  })
+}
+
+/** Hata veren videoyu KALDIĞI AŞAMADAN sürdür: media_process işi elle
+ * kuyruğa alınır; indirme yeniden başlamaz. */
+export interface VideoResumeResult {
+  source_video_id: number
+  job_id: number
+  stage: string
+  resumed: boolean
+}
+
+export function resumeSourceVideo(
+  sourceVideoId: number,
+): Promise<VideoResumeResult> {
+  return sendJson<VideoResumeResult>(
+    `/api/media/videos/${sourceVideoId}/resume`,
+    'POST',
+  ).then((body) => {
+    if (body === null) {
+      throw new ApiError(204, 'Sürdürme yanıtı boş döndü')
     }
     return body
   })

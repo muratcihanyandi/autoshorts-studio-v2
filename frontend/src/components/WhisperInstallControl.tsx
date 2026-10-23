@@ -11,7 +11,7 @@ function platformLabel(status: WhisperStatus | null): string {
   if (!status) return ''
   if (status.platform === 'Linux') {
     return status.machine === 'aarch64' || status.machine === 'arm64'
-      ? 'Raspberry Pi (ARM64)'
+      ? 'Bu sunucu (ARM64)'
       : 'Linux'
   }
   if (status.platform === 'Windows') return 'Windows'

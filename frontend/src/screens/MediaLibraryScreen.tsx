@@ -7,6 +7,7 @@ import {
   fetchMedia,
   removeClip,
   removeSourceVideo,
+  resumeSourceVideo,
   type BulkClipActionResult,
   type LibraryClip,
   type LibrarySource,
@@ -93,10 +94,14 @@ function SourceCard({
   source,
   featured = false,
   onRemove,
+  onResume,
+  resuming,
 }: {
   source: LibrarySource
   featured?: boolean
   onRemove: (source: LibrarySource) => void
+  onResume: (source: LibrarySource) => void
+  resuming: boolean
 }) {
   const view = sourceView(source.tag)
   const thumb = youtubeThumb(source.youtube_video_id)
@@ -153,6 +158,20 @@ function SourceCard({
           {source.source_channel_title ?? 'Kaynak kanal'}
           <span aria-hidden="true"> ↗</span>
         </a>
+        {source.last_error && source.tag === '#error' && (
+          <div className="source-error" role="alert">
+            <b>Hata:</b> {source.last_error}
+            <button
+              type="button"
+              className="btn--ghost"
+              disabled={resuming}
+              onClick={() => onResume(source)}
+              title="Videoyu kaldığı aşamadan sürdürür; indirme yeniden başlamaz."
+            >
+              {resuming ? 'Sürdürülüyor…' : 'Kaldığı yerden sürdür'}
+            </button>
+          </div>
+        )}
         <StageTrack steps={source.stages} />
         <SelectedMoments source={source} />
         <div className="source-foot">
@@ -335,6 +354,7 @@ export function MediaLibraryScreen() {
   const [showExcluded, setShowExcluded] = useState(false)
   const [reincludeBusy, setReincludeBusy] = useState(false)
   const [reincludeNote, setReincludeNote] = useState<string | null>(null)
+  const [resumeId, setResumeId] = useState<number | null>(null)
 
   const fetchCb = useCallback(
     () => fetchMedia(60, 0, false, false, true, true),
@@ -461,6 +481,27 @@ export function MediaLibraryScreen() {
     [retryLibrary],
   )
 
+  /** Hata veren videoyu kaldığı aşamadan sürdür (2026-10-23 kullanıcı
+   * isteği): indirme yeniden başlamaz, işlem kaldığı aşamadan devam eder. */
+  const handleResume = useCallback(
+    async (source: LibrarySource) => {
+      setRemoveError(null)
+      setResumeId(source.id)
+      try {
+        await resumeSourceVideo(source.id)
+      } catch (err) {
+        setRemoveError(
+          err instanceof Error ? err.message : 'Video sürdürülemedi.',
+        )
+        return
+      } finally {
+        setResumeId(null)
+      }
+      retryLibrary()
+    },
+    [retryLibrary],
+  )
+
   return (
     <>
       <div className="screen-head">
@@ -519,7 +560,13 @@ export function MediaLibraryScreen() {
                 <h2>Şu an motorda</h2>
                 <span className="live-dot">canlı</span>
               </div>
-              <SourceCard source={current} featured onRemove={handleRemove} />
+              <SourceCard
+                source={current}
+                featured
+                onRemove={handleRemove}
+                onResume={handleResume}
+                resuming={resumeId === current.id}
+              />
             </section>
           )}
 
@@ -538,6 +585,8 @@ export function MediaLibraryScreen() {
                     key={source.id}
                     source={source}
                     onRemove={handleRemove}
+                    onResume={handleResume}
+                    resuming={resumeId === source.id}
                   />
                 ))}
               </div>

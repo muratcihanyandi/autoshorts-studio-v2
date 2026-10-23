@@ -282,9 +282,27 @@ class WhisperTranscriber:
         )
         # Whisper kucuk modellerde bile yavastir; uzun video icin bol
         # zaman taninir (is kuyrugu zaten sirali).
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), 14400.0)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), 14400.0)
+        except TimeoutError as exc:
+            # Bos mesajli "TimeoutError: " kayitlarini engelle (2026-10-23
+            # canli olay:RRaenee videosu, kullanic hatayi hic goremedi).
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            raise TranscriptError(
+                "whisper 4 saatte tamamlanamadi (zaman asimi); video cok "
+                "uzun olabilir — sistem YouTube altyazisina dusecek"
+            ) from exc
         if proc.returncode != 0:
             tail = stderr.decode("utf-8", "replace").strip()[-500:]
+            if not tail:
+                raise TranscriptError(
+                    "whisper hata ciktisi yazmadan kapandi (genellikle "
+                    "bellek yetersizligi); sistem YouTube altyazisina "
+                    "dusecek"
+                )
             raise TranscriptError(f"whisper basarisiz: {tail}")
         return proc.returncode
 

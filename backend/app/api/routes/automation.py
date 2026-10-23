@@ -125,12 +125,15 @@ async def get_channel_settings(
     service = _service(request)
     profile = await service.profile(channel_id)
     characters = await service.followed_characters(channel_id)
+    settings = profile.settings or {}
     return ChannelSettingsOut(
         channel_id=channel_id,
         automation_state=profile.automation_state,
         horizontal_stock_target=profile.horizontal_stock_target,
         daily_vertical_limit=profile.daily_clip_target,
         daily_horizontal_limit=profile.daily_horizontal_limit,
+        publish_times=settings.get("publish_times"),
+        publish_times_vertical=settings.get("publish_times_vertical"),
         title_mode=profile.title_mode,
         description_mode=profile.description_mode,
         tags_mode=profile.tags_mode,
@@ -162,6 +165,8 @@ async def update_channel_settings(
             horizontal_stock_target=data.horizontal_stock_target,
             daily_vertical_limit=data.daily_vertical_limit,
             daily_horizontal_limit=data.daily_horizontal_limit,
+            publish_times=data.publish_times,
+            publish_times_vertical=data.publish_times_vertical,
             title_mode=data.title_mode,
             description_mode=data.description_mode,
             tags_mode=data.tags_mode,
@@ -368,6 +373,7 @@ def _out(profile) -> PublishingProfileOut:
         daily_clip_target=profile.daily_clip_target,
         timezone=profile.timezone,
         publish_times=settings.get("publish_times"),
+        publish_times_vertical=settings.get("publish_times_vertical"),
         auto_approve_metadata=bool(settings.get("auto_approve_metadata")),
         paused=bool(settings.get("paused")),
     )
@@ -399,6 +405,13 @@ async def update_publishing_profile(
             parse_publish_times(data.publish_times)
         except ScheduleError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if data.publish_times_vertical is not None:
+        try:
+            from app.services.publishing_schedule import parse_publish_times
+
+            parse_publish_times(data.publish_times_vertical)
+        except ScheduleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if data.daily_clip_target is not None and data.daily_clip_target < 0:
         raise HTTPException(status_code=400, detail="Hedef negatif olamaz.")
 
@@ -416,6 +429,8 @@ async def update_publishing_profile(
         settings = dict(row.settings or {})
         if data.publish_times is not None:
             settings["publish_times"] = data.publish_times
+        if data.publish_times_vertical is not None:
+            settings["publish_times_vertical"] = data.publish_times_vertical
         if data.auto_approve_metadata is not None:
             settings["auto_approve_metadata"] = data.auto_approve_metadata
         if data.paused is not None:

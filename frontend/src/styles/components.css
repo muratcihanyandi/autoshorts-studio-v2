@@ -2719,6 +2719,79 @@
   cursor: default;
 }
 
+/* Sürükle-bırak: planlanabilir çipler tutulabilir, elle planlananlar
+   kesikli kenar + vurgu ile ayrılır. */
+.cal-chip--draggable {
+  cursor: grab;
+}
+
+.cal-chip--draggable:active {
+  cursor: grabbing;
+}
+
+.cal-chip--manual {
+  border-style: dashed;
+  border-color: var(--accent-deep);
+}
+
+.cal-cell--dragover {
+  outline: 2px dashed var(--accent-deep);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+}
+
+/* Takvim/klip detayındaki satır içi planlama formu. */
+.schedule-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+
+.schedule-form .field {
+  min-width: 130px;
+  flex: 0 1 auto;
+}
+
+.schedule-form .btn {
+  flex: 0 0 auto;
+}
+
+/* Medya kartındaki hata kutusu: tam hata metni + sürdür düğmesi. */
+.source-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--red-on-plate);
+  border-left: 3px solid var(--red-on-plate);
+  border-radius: 6px;
+  background: var(--red-soft);
+  font-size: 12px;
+  color: var(--red-on-plate);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.source-error .btn--ghost {
+  flex: 0 0 auto;
+}
+
+/* Günlükler hata sekmesi: uzun hata metinleri sararak okunur kalır. */
+.log-error {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 420px;
+  color: var(--red-on-plate);
+}
+
+.log-channel {
+  color: var(--plate-muted);
+}
+
 .cal-chip-time {
   font-size: 10.5px;
   font-weight: 700;

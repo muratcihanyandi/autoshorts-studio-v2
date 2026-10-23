@@ -13,6 +13,9 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 DEFAULT_PUBLISH_TIMES = ("09:00", "14:00", "20:00")
+# Shorts (dikey) yayınlar kendi prime time'ında çıkar: öğle, ikindi ve
+# akşam zirvesi. Yatay videolar klasik dilimlerde kalır.
+DEFAULT_VERTICAL_PUBLISH_TIMES = ("12:00", "17:00", "21:00")
 DEFAULT_TIMEZONE = "Europe/Istanbul"
 
 
@@ -33,12 +36,29 @@ def parse_publish_times(raw) -> tuple[time, ...]:
 
 
 def _parse_slot(value) -> time:
+    if isinstance(value, time):
+        return value  # hazir time nesnesi (slots_for_orientation ciktisi)
     try:
         text = str(value).strip()
         hours, minutes = text.split(":")
         return time(int(hours), int(minutes))
     except (ValueError, AttributeError) as exc:
         raise ScheduleError(f"Gecersiz saat dilimi: {value!r}") from exc
+
+
+def slots_for_orientation(
+    settings: dict | None, orientation: str
+) -> tuple[time, ...]:
+    """Yön bazlı yayın saatleri: dikey (shorts) saatleri profil
+    ayarından, ayarlanmamışsa shorts prime time varsayılanından gelir;
+    yatay videolar klasik publish_times dilimlerini kullanır."""
+    raw = settings or {}
+    if orientation == "vertical":
+        source = raw.get("publish_times_vertical")
+        if source is None:
+            source = list(DEFAULT_VERTICAL_PUBLISH_TIMES)
+        return parse_publish_times(source)
+    return parse_publish_times(raw.get("publish_times"))
 
 
 def next_due_time(
