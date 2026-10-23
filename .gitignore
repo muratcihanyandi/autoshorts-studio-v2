@@ -7,9 +7,21 @@
 deploy/casaos/docker-compose.generated.yml
 deploy/casaos/.generated-password
 
-# --- Impeccable process artifacts (decision mocks, payloads); briefs stay tracked ---
-.impeccable/*
-!.impeccable/surfaces/
+# --- Developer-only material: GitHub carries production files only.
+# Docs, agent contracts, design/process notes, tests and dev tooling
+# stay on the dev machine (user request 2026-10-23). ---
+AGENTS.md
+DESIGN.md
+PRODUCT.md
+docs/
+.impeccable/
+backend/tests/
+backend/pytest.ini
+backend/requirements-dev.txt
+frontend/src/**/*.test.tsx
+frontend/src/**/*.test.ts
+frontend/src/setupTests.ts
+tools/
 
 # --- Transfer bundle (build artifact) ---
 /autoshorts-studio-src.zip

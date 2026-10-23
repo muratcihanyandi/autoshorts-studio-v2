@@ -689,10 +689,14 @@ class TestPublishFlow:
                 await engine.dispose()
 
         added, added_again, jobs = _run(scenario())
-        # Hic yayinlanmamis bagli kanal: ilk kontrolde due.
-        assert added == 1
+        # Hic yayinlanmamis bagli kanal: ilk kontrolde HER YON due
+        # (shorts prime time + yatay saatleri ayri beslenir).
+        assert added == 2
         assert added_again == 0
-        assert jobs == [("publish_due", {"channel_id": 1})]
+        assert sorted(jobs, key=lambda j: j[1]["orientation"]) == [
+            ("publish_due", {"channel_id": 1, "orientation": "horizontal"}),
+            ("publish_due", {"channel_id": 1, "orientation": "vertical"}),
+        ]
 
 
 class TestPublishingApi:
