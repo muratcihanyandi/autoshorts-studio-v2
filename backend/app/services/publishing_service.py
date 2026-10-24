@@ -12,10 +12,11 @@ reconciled. Failures mark the row 'failed' with a Turkish reason and
 the job can retry.
 
 M13: publishing is per orientation — vertical candidates publish via
-publish_clip, the horizontal full cut of a reaction source via
-publish_full_cut (once per source video, code-guarded). Approving
-metadata (either orientation) also composes the 1280x720 thumbnail
-and stores its path on the rendered row.
+publish_clip, the horizontal full cut via publish_full_cut (once per
+source video, code-guarded). Every source that is not explicitly
+vertical-only produces both orientations. Approving metadata (either
+orientation) also composes the 1280x720 thumbnail and stores its path
+on the rendered row.
 """
 from __future__ import annotations
 
@@ -207,10 +208,11 @@ class PublishingService:
     async def publish_full_cut(
         self, source_video_id: int, *, http: httpx.AsyncClient | None = None
     ) -> dict:
-        """Publish the horizontal full cut of a reaction source video.
+        """Publish the horizontal full cut of a source video.
 
-        Yatay yayin yalnizca reaksiyon kaynaklarina aciktir; kaynak
-        basina tek PublishedVideo satiri kod guvenligiyle sinirlidir.
+        Yatay yayin dikey yonlu OLMAYAN kaynaklara aciktir (auto ve
+        horizontal); kaynak basina tek PublishedVideo satiri kod
+        guvenligiyle sinirlidir.
         """
         async with self._sessionmaker() as session:
             context = await self._load_full_cut_context(
@@ -237,8 +239,8 @@ class PublishingService:
             )
         if context["is_horizontal"] and not context["full_cut_source"]:
             raise PublishingError(
-                "Yatay tam kesit yayini yalnızca yatay/reaksiyon "
-                "kaynaklarında açıktır."
+                "Yatay tam kesit yayını dikey yönlü kaynaklarda açık "
+                "değildir."
             )
         if context["already_published"]:
             # Kabul kriteri: yinelenen yukleme engellenir (idempotent).

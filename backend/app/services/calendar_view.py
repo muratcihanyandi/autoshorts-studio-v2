@@ -89,23 +89,17 @@ class CalendarViewService:
                 .all()
             )
             # Yatay uretim yetenegi: kanalda en az bir yetkili kaynak yatay
-            # tam kesit uretiyor mu (output_orientation='horizontal' ya da
-            # 'auto' + reaction_source). Yeteneksiz kanalda yatay dilim
-            # simule EDILMEZ: yoksa takvim ayda onlarca hic dolmayacak
-            # turuncu dilimle dolar (2026-10-24 canli bildirimi).
+            # tam kesit uretiyor mu? 2026-10-24 kurali: acikca dikey
+            # secilmemis her kaynak (auto ve horizontal) hem budanmis
+            # yatay tam kesit hem dikey klip uretir. Yatay uretimi
+            # kapatmak icin kaynak "Yon: Dikey video" yapilir.
             horizontal_capable: set[int] = set(
                 (
                     await session.execute(
                         sa.select(SourceChannel.channel_id)
                         .where(
                             SourceChannel.permission_status == "authorized",
-                            sa.or_(
-                                SourceChannel.output_orientation == "horizontal",
-                                sa.and_(
-                                    SourceChannel.output_orientation == "auto",
-                                    SourceChannel.reaction_source.is_(True),
-                                ),
-                            ),
+                            SourceChannel.output_orientation != "vertical",
                         )
                         .distinct()
                     )

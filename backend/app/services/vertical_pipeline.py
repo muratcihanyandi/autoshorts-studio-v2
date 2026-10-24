@@ -308,11 +308,13 @@ class VerticalPipelineService:
         return {"clip_candidate_id": clip_candidate_id, "rendered": True}
 
     async def run_full_cut(self, source_video_id: int) -> dict[str, Any]:
-        """Reaksiyon kaynagi videonun yatay tam kesidi (M13).
+        """Videonun budanmis yatay tam kesidi (M13).
 
         Tek satir RenderedClip: clip_candidate_id NULL, source_video_id
-        dolu, orientation 'horizontal'. Kaynak reaksiyon degilse sert
-        guvenlik reddeder; satir kaynak basina tektir (kod guvenligi).
+        dolu, orientation 'horizontal'. Acikca dikey yonlu (yalniz
+        Shorts) kaynaklar sert guvenlikle reddedilir; diger tum
+        kaynaklar (auto ve horizontal) hem tam kesit hem dikey klipler
+        uretir (2026-10-24). Satir kaynak basina tektir (kod guvenligi).
         Dikey aday akisi bu yontemden etkilenmez.
         """
         async with self._sessionmaker() as session:
@@ -325,11 +327,10 @@ class VerticalPipelineService:
             if source is None:
                 raise VerticalPipelineError("Kaynak kanal bulunamadi.")
             if not produces_full_cut(source):
-                # Hak kuralı: yatay tam kesit üretmeyen yön hiçbir koşulda
-                # yatay satır üretmez (Görev 2: vertical yönü).
+                # Acikca dikey secilmis kaynak hicbir kosulda yatay satir
+                # uretmez (Gorev 2: vertical yonu).
                 raise VerticalPipelineError(
-                    "Yatay tam kesit yalnızca yatay/reaksiyon kaynaklarında "
-                    "üretilir."
+                    "Yatay tam kesit dikey yonlu kaynaklarda uretilmez."
                 )
             channel_id = source.channel_id
             asset = (

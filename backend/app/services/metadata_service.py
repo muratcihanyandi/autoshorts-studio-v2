@@ -39,6 +39,7 @@ from app.models import (
 from app.services.channel_service import record_event
 from app.services.llm_service import LlmProviderService, LlmServiceError
 from app.services.media_transcript import transcript_text_in_range
+from app.services.source_orientation import produces_full_cut
 
 logger = logging.getLogger(__name__)
 
@@ -477,8 +478,9 @@ class MetadataService:
     ) -> dict:
         """Yatay tam kesit metaverisi (M13): aday NULL, video dolu.
 
-        Revizyon zinciri kaynak basina tektir (kod guvenligi); yalnizca
-        reaksiyon kaynaklarinda uretilir.
+        Revizyon zinciri kaynak basina tektir (kod guvenligi); acikca
+        dikey secilmemis her kaynakta uretilir (auto ve horizontal
+        kaynaklar yatay tam kesit uretir — 2026-10-24).
         """
         async with self._sessionmaker() as session:
             video = await session.get(SourceVideo, source_video_id)
@@ -489,10 +491,10 @@ class MetadataService:
             )
             if source is None:
                 raise MetadataError("Kaynak kanal bulunamadi.")
-            if not source.reaction_source:
+            if not produces_full_cut(source):
                 raise MetadataError(
-                    "Yatay tam kesit metaverisi yalnizca reaksiyon "
-                    "kaynaklarinda uretilir."
+                    "Yatay tam kesit metaverisi dikey yonlu kaynaklarda "
+                    "uretilmez."
                 )
             existing = (
                 (
@@ -519,7 +521,7 @@ class MetadataService:
         provider_name = ""
         if self._llm_needed(modes):
             prompt = PROMPT.format(
-                kind="bir reaksiyon videosunun tam kesitinin",
+                kind="bir videonun tam kesitinin",
                 video_title=context["video_title"],
                 transcript=context["transcript"],
             )

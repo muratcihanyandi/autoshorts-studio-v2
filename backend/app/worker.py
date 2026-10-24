@@ -65,6 +65,10 @@ PROCESSING_JOB_TYPES = (
 
 WORKER_STATE_KEY = "worker_state"
 
+# Yatay tam kesit render'lari uzun ve pahali: ayni anda bu kadar is
+# bekliyorsa feed yeni is acmaz (disk/CPU korumasi, 2026-10-24).
+FULLCUT_QUEUE_AHEAD = 2
+
 
 async def resolve_job_channel(
     sessionmaker: async_sessionmaker[AsyncSession],
@@ -712,8 +716,9 @@ class JobWorker:
     async def enqueue_render_jobs(self) -> int:
         """Periodic render feed: one clip_render job per SELECTED
         candidate (hype evaluation picks them) that is not rendered
-        yet; reaction sources additionally feed one horizontal full-cut
-        render job per source video without such a row."""
+        yet; every source that is not explicitly vertical-only also
+        feeds one horizontal full-cut render job per source video
+        without such a row (auto = full cut + shorts, 2026-10-24)."""
         interval = self._effective.planned_poll_interval_minutes * 60
         now = time.monotonic()
         if (
@@ -755,21 +760,60 @@ class JobWorker:
                             " ON sv.source_channel_id = sc.id"
                             " JOIN publishing_profiles pp"
                             " ON pp.channel_id = sc.channel_id"
-                            " WHERE (sc.output_orientation = 'horizontal'"
-                            "  OR (sc.output_orientation = 'auto'"
-                            "      AND sc.reaction_source = TRUE))"
+                            " WHERE sc.output_orientation != 'vertical'"
+                            " AND sv.status IN ('processed','confirmed')"
+                            " AND EXISTS ("
+                            " SELECT 1 FROM media_assets ma"
+                            " WHERE ma.source_video_id = sv.id"
+                            " AND ma.status = 'processed'"
+                            " AND ma.file_path != '')"
+                            # Zaten dikey (Shorts) olan kaynak videodan
+                            # yatay tam kesit uretmek anlamsiz: letterbox
+                            # kopya olur. Inspeksiyon yoksa uretilir.
+                            " AND NOT EXISTS ("
+                            " SELECT 1 FROM media_inspections mi"
+                            " JOIN media_assets ma2"
+                            " ON ma2.id = mi.media_asset_id"
+                            " WHERE ma2.source_video_id = sv.id"
+                            " AND mi.height > mi.width)"
                             " AND pp.automation_state IN ('running','paused')"
                             " AND NOT EXISTS ("
                             " SELECT 1 FROM rendered_clips rc"
                             " WHERE rc.source_video_id = sv.id"
                             " AND rc.orientation = 'horizontal')"
                             " ORDER BY sv.id"
-                        )
+                            " LIMIT :limit"
+                        ),
+                        {"limit": FULLCUT_QUEUE_AHEAD},
                     )
                 )
                 .scalars()
                 .all()
             )
+            # Tam kesit render'i uzun VOD'larda saatler surer ve cikti
+            # buyuktur: ayni anda bu kadar is bekliyorsa yeni is acilmaz,
+            # disk/CPU yuku kuyruk tarafindan kendiliginden sinirlanir
+            # (2026-10-24 auto=hem yatay hem dikey gecisinde geri
+            # doldurma dalgasini kontrol altinda tutar).
+            if fullcut_video_ids:
+                outstanding = int(
+                    (
+                        await session.execute(
+                            sa.text(
+                                "SELECT COUNT(*) FROM jobs"
+                                " WHERE job_type = 'clip_render_full_cut'"
+                                " AND status IN ('queued','running','cancelling')"
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+                if outstanding >= FULLCUT_QUEUE_AHEAD:
+                    fullcut_video_ids = []
+                else:
+                    fullcut_video_ids = fullcut_video_ids[
+                        : FULLCUT_QUEUE_AHEAD - outstanding
+                    ]
         for candidate_id in candidate_ids:
             job = await self._jobs.enqueue(
                 "clip_render", {"clip_candidate_id": candidate_id}, priority=8

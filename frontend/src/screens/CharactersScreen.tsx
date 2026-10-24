@@ -46,11 +46,13 @@ const EMPTY_SOURCE_FORM = {
   trim_end: '',
 }
 
-/** Görev 2: kaynağın çıktı yönü etiketleri. */
+/** Görev 2 (2026-10-24): kaynağın çıktı yönü etiketleri. auto ve
+ * horizontal aynı işi yapar (yatay tam kesit + dikey Shorts); yalnızca
+ * vertical yatay çıktıyı kapatır. */
 const ORIENTATION_LABEL: Record<SourceOrientation, string> = {
-  auto: 'Otomatik',
-  vertical: 'Dikey video',
-  horizontal: 'Yatay video',
+  auto: 'Otomatik (yatay + dikey)',
+  vertical: 'Yalnız dikey',
+  horizontal: 'Yatay + dikey',
 }
 
 function hataMesaji(err: unknown): string {
@@ -222,11 +224,11 @@ function SourceRow({
           onChange={(e) =>
             void changeOrientation(e.target.value as SourceOrientation)
           }
-          title="Bu kaynaktan ne üretilecek: Otomatik (reaksiyon bayrağına göre), Dikey (yalnız Shorts; yatay dosya işin sonunda silinir) veya Yatay (budanmış tam kesit)."
+          title="Bu kaynaktan ne üretilecek: Otomatik ve Yatay → budanmış yatay tam kesit + dikey Shorts birlikte. Yalnız dikey → Shorts üretilir; yatay dosya işin sonunda silinir."
         >
-          <option value="auto">Yön: Otomatik</option>
-          <option value="vertical">Yön: Dikey video</option>
-          <option value="horizontal">Yön: Yatay video</option>
+          <option value="auto">Yön: Otomatik (yatay + dikey)</option>
+          <option value="vertical">Yön: Yalnız dikey</option>
+          <option value="horizontal">Yön: Yatay + dikey</option>
         </select>
         <select
           aria-label={`${source.title} güncellik penceresi`}
@@ -371,6 +373,9 @@ function SourceAddForm({
     }
     if (form.reaction) {
       input.reaction_source = true
+    }
+    // Budama yatay tam kesiti etkiler; yalnız dikey seçilmediyse gönderilir.
+    if (form.orientation !== 'vertical') {
       input.trim_start_seconds = Number(form.trim_start) || 0
       input.trim_end_seconds = Number(form.trim_end) || 0
     }
@@ -438,14 +443,14 @@ function SourceAddForm({
               }))
             }
           >
-            <option value="auto">Otomatik</option>
-            <option value="vertical">Dikey video</option>
-            <option value="horizontal">Yatay video</option>
+            <option value="auto">Otomatik (yatay + dikey)</option>
+            <option value="vertical">Yalnız dikey (Shorts)</option>
+            <option value="horizontal">Yatay + dikey</option>
           </select>
           <span className="field-help">
-            Otomatik: reaksiyon bayrağına göre. Dikey: yatay video indirilip
-            işlenir, dikeyler çıkar, yatay dosya silinir. Yatay: budanmış
-            yatay tam kesit üretilir.
+            Otomatik: budanmış yatay tam kesit + dikey Shorts birlikte
+            üretilir. Yalnız dikey: yatay video indirilip işlenir, Shorts
+            çıkar, yatay dosya silinir. Yatay + dikey: Otomatik ile aynı.
           </span>
         </div>
         <div className="field">
@@ -470,7 +475,8 @@ function SourceAddForm({
             <span>Reaksiyon kaynağı</span>
           </label>
           <span className="field-help">
-            Reaksiyon videoları: budanmış yatay + dikey short üretilir.
+            Yayıncının tepki verdiği kaynak. Bilgi etiketi: üretilen yönü
+            artık çıktı yönü belirler (Otomatik yatay + dikey üretir).
           </span>
         </div>
         <div className="field">
@@ -491,7 +497,8 @@ function SourceAddForm({
             funny moments olsa bile — serbest kalır.
           </span>
         </div>
-        {form.reaction && (
+        {/* Budama yatay tam kesiti etkiler: yalnız dikey seçilmediyse anlamlı. */}
+        {form.orientation !== 'vertical' && (
           <>
             <div className="field">
               <label htmlFor={`src-trim-start-${characterId}`}>
