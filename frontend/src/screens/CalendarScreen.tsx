@@ -416,6 +416,26 @@ export function CalendarScreen() {
     return result
   }, [data])
 
+  // Yön göstergeleri yalnız gerçekten var olan yönler için: kanalda yatay
+  // üretim yeteneği yoksa (tüm kaynaklar dikey) yatay dilim de yoktur.
+  // Geçmişte yayınlanmış yatay video varsa turuncu çip görünür, göstergesi
+  // de kalmalı.
+  const { showsVertical, showsHorizontal } = useMemo(() => {
+    const channels = data?.channels ?? []
+    const entries = data?.entries ?? []
+    const supported = (orientation: 'vertical' | 'horizontal') =>
+      channels.some((channel) =>
+        channel.orientations
+          ? channel.orientations.includes(orientation)
+          : true,
+      ) ||
+      entries.some((entry) => entry.orientation === orientation)
+    return {
+      showsVertical: supported('vertical'),
+      showsHorizontal: supported('horizontal'),
+    }
+  }, [data])
+
   function openDetail(entry: CalendarEntry) {
     if (entry.clip_render_id !== null) {
       setOpenRenderId(entry.clip_render_id)
@@ -504,14 +524,24 @@ export function CalendarScreen() {
           ) : (
             <>
               <div className="cal-legend" aria-label="Yayın durumu göstergesi">
-                <span className="cal-legend-item">
-                  <i className="cal-dot cal-dot--vertical" aria-hidden="true" />
-                  Dikey
-                </span>
-                <span className="cal-legend-item">
-                  <i className="cal-dot cal-dot--horizontal" aria-hidden="true" />
-                  Yatay
-                </span>
+                {showsVertical && (
+                  <span className="cal-legend-item">
+                    <i
+                      className="cal-dot cal-dot--vertical"
+                      aria-hidden="true"
+                    />
+                    Dikey
+                  </span>
+                )}
+                {showsHorizontal && (
+                  <span className="cal-legend-item">
+                    <i
+                      className="cal-dot cal-dot--horizontal"
+                      aria-hidden="true"
+                    />
+                    Yatay
+                  </span>
+                )}
                 <span className="cal-legend-item nums">
                   {counts.scheduled} saat bekliyor
                 </span>
@@ -600,36 +630,60 @@ export function CalendarScreen() {
                     <tr>
                       <th>Kanal</th>
                       <th>Shorts saatleri</th>
-                      <th>Yatay saatleri</th>
+                      {showsHorizontal && <th>Yatay saatleri</th>}
                       <th>Günlük dikey</th>
-                      <th>Günlük yatay</th>
+                      {showsHorizontal && <th>Günlük yatay</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {data.channels.map((channel) => (
-                      <tr key={channel.id}>
-                        <td>
-                          <span className="lib-channel">
-                            {channel.ribbon_color && (
-                              <i
-                                style={{ background: channel.ribbon_color }}
-                                aria-hidden="true"
-                              />
-                            )}
-                            {channel.name}
-                          </span>
-                        </td>
-                        <td className="nums">
-                          {channel.publish_times_vertical.join(' · ')}
-                          <small className="cal-tz"> ({channel.timezone})</small>
-                        </td>
-                        <td className="nums">
-                          {channel.publish_times.join(' · ')}
-                        </td>
-                        <td className="nums">{channel.daily_vertical_limit}</td>
-                        <td className="nums">{channel.daily_horizontal_limit}</td>
-                      </tr>
-                    ))}
+                    {data.channels.map((channel) => {
+                      // Alan yoksa (eski API) yatay destekli varsayilir.
+                      const hasHorizontal =
+                        channel.orientations?.includes('horizontal') ?? true
+                      return (
+                        <tr key={channel.id}>
+                          <td>
+                            <span className="lib-channel">
+                              {channel.ribbon_color && (
+                                <i
+                                  style={{ background: channel.ribbon_color }}
+                                  aria-hidden="true"
+                                />
+                              )}
+                              {channel.name}
+                            </span>
+                          </td>
+                          <td className="nums">
+                            {channel.publish_times_vertical.join(' · ')}
+                            <small className="cal-tz">
+                              {' '}
+                              ({channel.timezone})
+                            </small>
+                          </td>
+                          {showsHorizontal && (
+                            <td className="nums">
+                              {hasHorizontal ? (
+                                channel.publish_times.join(' · ')
+                              ) : (
+                                <span className="cal-tz">
+                                  Bu kanalda yatay üretim yok
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          <td className="nums">
+                            {channel.daily_vertical_limit}
+                          </td>
+                          {showsHorizontal && (
+                            <td className="nums">
+                              {hasHorizontal
+                                ? channel.daily_horizontal_limit
+                                : '—'}
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </section>

@@ -46,6 +46,9 @@ export interface CalendarChannel {
   automation_state: string
   daily_vertical_limit: number
   daily_horizontal_limit: number
+  /** Bu kanalda takvimde gösterilen yönler: yatay üretim yeteneği yoksa
+   * (tüm kaynaklar dikey) yalnız 'vertical' gelir. */
+  orientations: ('vertical' | 'horizontal')[]
 }
 
 export interface CalendarData {

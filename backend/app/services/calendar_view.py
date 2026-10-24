@@ -88,6 +88,31 @@ class CalendarViewService:
                 )
                 .all()
             )
+            # Yatay uretim yetenegi: kanalda en az bir yetkili kaynak yatay
+            # tam kesit uretiyor mu (output_orientation='horizontal' ya da
+            # 'auto' + reaction_source). Yeteneksiz kanalda yatay dilim
+            # simule EDILMEZ: yoksa takvim ayda onlarca hic dolmayacak
+            # turuncu dilimle dolar (2026-10-24 canli bildirimi).
+            horizontal_capable: set[int] = set(
+                (
+                    await session.execute(
+                        sa.select(SourceChannel.channel_id)
+                        .where(
+                            SourceChannel.permission_status == "authorized",
+                            sa.or_(
+                                SourceChannel.output_orientation == "horizontal",
+                                sa.and_(
+                                    SourceChannel.output_orientation == "auto",
+                                    SourceChannel.reaction_source.is_(True),
+                                ),
+                            ),
+                        )
+                        .distinct()
+                    )
+                )
+                .scalars()
+                .all()
+            )
             channels_meta = []
             slot_map: dict[int, dict[str, list]] = {}
             queues: dict[int, dict[str, list[dict]]] = {}
@@ -137,6 +162,15 @@ class CalendarViewService:
                         session, channel.id, "horizontal"
                     ),
                 }
+                # Stokta/sirada yatay video varsa kaynak ayari degisse bile
+                # yatay dilimler gosterilir (mevcut yatay stok yayinlanabilir).
+                active = ["vertical"]
+                if (
+                    channel.id in horizontal_capable
+                    or queues[channel.id]["horizontal"]
+                ):
+                    active.append("horizontal")
+                channels_meta[-1]["orientations"] = active
 
             published = await self._published_entries(session, year, month)
 
@@ -154,11 +188,8 @@ class CalendarViewService:
 
             # Elle planlanmis videolar slot simulasyonundan ayri: kendi
             # saatlerinde, kendi günlerinde dururlar.
-            manual_items: dict[str, list[dict]] = {
-                "vertical": [],
-                "horizontal": [],
-            }
-            for orientation in ("vertical", "horizontal"):
+            active_orientations = profile_row["orientations"]
+            for orientation in active_orientations:
                 unscheduled = []
                 for item in queue[orientation]:
                     raw = item.get("scheduled_at")
@@ -208,7 +239,7 @@ class CalendarViewService:
                 counts = self._todays_counts(
                     entries, channel_id, day, tz
                 )
-                for orientation in ("vertical", "horizontal"):
+                for orientation in active_orientations:
                     for slot in slots[orientation]:
                         slot_utc = (
                             datetime.combine(day, slot, tzinfo=tz)
