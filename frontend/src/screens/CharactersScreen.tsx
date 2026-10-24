@@ -173,6 +173,22 @@ function SourceRow({
 
   const recencyDays = source.filter_rules?.max_age_days ?? 0
 
+  // Yatay tam kesit intro/outro budaması: değer yalnız SONRAKİ
+  // render'larda etkilidir (mevcut tam kesit dosyası yeniden üretilmez).
+  const changeTrim = (
+    field: 'trim_start_seconds' | 'trim_end_seconds',
+    raw: string,
+  ) =>
+    run(async () => {
+      const value = Math.max(0, Number(raw) || 0)
+      await updateSource(source.id, { [field]: value })
+      setNote(
+        field === 'trim_start_seconds'
+          ? `Baştan budama ${value} sn olarak kaydedildi.`
+          : `Sondan budama ${value} sn olarak kaydedildi.`,
+      )
+    })
+
   const changeRecency = (days: number) =>
     run(async () => {
       await updateSource(source.id, {
@@ -242,6 +258,46 @@ function SourceRow({
           <option value={15}>Son 15 gün</option>
           <option value={30}>Son 30 gün</option>
         </select>
+        {source.output_orientation !== 'vertical' && (
+          <>
+            <label
+              className="source-trim"
+              title="Yatay tam kesitte baştan kesilecek saniye (intro)."
+            >
+              <span>Baştan</span>
+              <input
+                aria-label={`${source.title} baştan budama`}
+                className="nums"
+                type="number"
+                min={0}
+                step={1}
+                disabled={busy}
+                value={String(source.trim_start_seconds ?? 0)}
+                onChange={(e) =>
+                  void changeTrim('trim_start_seconds', e.target.value)
+                }
+              />
+            </label>
+            <label
+              className="source-trim"
+              title="Yatay tam kesitte sondan kesilecek saniye (outro)."
+            >
+              <span>Sondan</span>
+              <input
+                aria-label={`${source.title} sondan budama`}
+                className="nums"
+                type="number"
+                min={0}
+                step={1}
+                disabled={busy}
+                value={String(source.trim_end_seconds ?? 0)}
+                onChange={(e) =>
+                  void changeTrim('trim_end_seconds', e.target.value)
+                }
+              />
+            </label>
+          </>
+        )}
         {source.permission_status === 'authorized' ? (
           <button
             type="button"
