@@ -44,9 +44,6 @@ const EMPTY_SOURCE_FORM = {
   reaction_only: false,
 }
 
-/** Görev 2 (2026-10-24): kaynağın çıktı yönü etiketleri. auto ve
- * horizontal aynı işi yapar (yatay tam kesit + dikey Shorts); yalnızca
- * vertical yatay çıktıyı kapatır. */
 const ORIENTATION_LABEL: Record<SourceOrientation, string> = {
   auto: 'Otomatik (yatay + dikey)',
   vertical: 'Yalnız dikey',
@@ -57,7 +54,6 @@ function hataMesaji(err: unknown): string {
   return err instanceof Error ? err.message : 'Bilinmeyen hata'
 }
 
-/** Platform anahtarı etiketi: YouTube'da UC kimliği, diğerlerinde kanal adresi. */
 function platformKeyHints(platform: SourcePlatform): {
   label: string
   placeholder: string
@@ -71,7 +67,7 @@ function platformKeyHints(platform: SourcePlatform): {
   return { label: 'Kanal Adresi', placeholder: 'örn. https://kick.com/kullanici' }
 }
 
-/** Kaynak satırı: izin kaydı, keşif/VOD eylemleri ve silme. */
+/** Kaynak kartı: platform kimliği, yetki durumu, net kurallar ve eylemler. */
 function SourceRow({
   source,
   channelId,
@@ -176,7 +172,6 @@ function SourceRow({
       await updateSource(source.id, {
         filter_rules: {
           ...source.filter_rules,
-          // 0 = sınırsız: anahtar gövdeden düşer, kural kapanır.
           max_age_days: days > 0 ? days : undefined,
         },
       })
@@ -188,139 +183,204 @@ function SourceRow({
     })
 
   return (
-    <div className="source-row">
-      <span className="source-badge">{PLATFORM_LABEL[source.platform]}</span>
-      <strong>{source.title}</strong>
-      <small>{source.character_name ?? 'karakter yok'}</small>
-      <span className={`pill ${pillTone}`}>
-        {PERMISSION_LABEL[source.permission_status]}
-      </span>
-      {source.reaction_source && <span className="source-badge">reaksiyon</span>}
-      {source.output_orientation !== 'auto' && (
-        <span className="source-badge">
-          {ORIENTATION_LABEL[source.output_orientation]}
-        </span>
-      )}
-      {reactionOnly && <span className="source-badge">yalnız tepki</span>}
-      {recencyDays > 0 && (
-        <span className="source-badge">son {recencyDays} gün</span>
-      )}
-      <span className="channel-actions">
-        <button
-          type="button"
-          className="btn--ghost"
-          disabled={busy}
-          onClick={() => void toggleReactionOnly()}
-          title="Katı kural: yalnız tepki/reaksiyon başlıklı videolar işlenir; değişince mevcut videolar yeniden değerlendirilir."
-        >
-          {reactionOnly ? 'Tepki Kuralını Kapat' : 'Yalnız Tepki'}
-        </button>
-        <select
-          aria-label={`${source.title} çıktı yönü`}
-          value={source.output_orientation}
-          disabled={busy}
-          onChange={(e) =>
-            void changeOrientation(e.target.value as SourceOrientation)
-          }
-          title="Bu kaynaktan ne üretilecek: Otomatik ve Yatay → budanmış yatay tam kesit + dikey Shorts birlikte. Yalnız dikey → Shorts üretilir; yatay dosya işin sonunda silinir."
-        >
-          <option value="auto">Yön: Otomatik (yatay + dikey)</option>
-          <option value="vertical">Yön: Yalnız dikey</option>
-          <option value="horizontal">Yön: Yatay + dikey</option>
-        </select>
-        <select
-          aria-label={`${source.title} güncellik penceresi`}
-          value={recencyDays}
-          disabled={busy}
-          onChange={(e) => void changeRecency(Number(e.target.value))}
-          title="Bu kaynaktan yalnızca son N gün içinde yayınlanan videolar işlenir; pencere genişletilince eski hariçler geri değerlendirilir."
-        >
-          <option value={0}>Güncellik: sınırsız</option>
-          <option value={7}>Son 7 gün</option>
-          <option value={15}>Son 15 gün</option>
-          <option value={30}>Son 30 gün</option>
-        </select>
-        {source.output_orientation !== 'vertical' && (
-          <span
-            className="source-trim"
-            title="Intro/outro otomatik tespit edilir: konuşma boşluğu, sessizlik, siyah kare ve sahne kesmesi sinyalleri birleştirilir; yatay tam kesit bu kadar saniye budanarak paylaşılır."
-          >
-            {source.trim_start_seconds || source.trim_end_seconds
-              ? `Budama: ${source.trim_start_seconds}s / ${source.trim_end_seconds}s (elle)`
-              : 'Budama: otomatik'}
+    <div className="source-card">
+      <div className="source-card-header">
+        <div className="source-primary-info">
+          <span className={`source-platform-chip platform--${source.platform}`}>
+            {PLATFORM_LABEL[source.platform]}
           </span>
-        )}
-        {source.permission_status === 'authorized' ? (
-          <button
-            type="button"
-            className="btn--ghost"
-            disabled={busy}
-            onClick={() => void setPermission('pending')}
-          >
-            İzni Geri Çek
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn--ghost"
-            disabled={busy}
-            onClick={() => void setPermission('authorized')}
-          >
-            İzni Ver
-          </button>
-        )}
-        {source.platform === 'youtube' ? (
-          <button
-            type="button"
-            className="btn--ghost"
-            disabled={busy}
-            onClick={() => void discover()}
-          >
-            Keşfet
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn--ghost"
-            disabled={busy}
-            onClick={() => setVodOpen((open) => !open)}
-          >
-            VOD Ekle
-          </button>
-        )}
-        {confirmDelete ? (
-          <>
+          <div className="source-title-group">
+            <strong className="source-title-text">{source.title}</strong>
+            <small className="source-char-link">{source.character_name ?? 'karakter yok'}</small>
+          </div>
+          <span className={`pill ${pillTone}`}>
+            <span className="pill-dot" aria-hidden="true" />
+            {PERMISSION_LABEL[source.permission_status]}
+          </span>
+          {source.reaction_source && (
+            <span className="source-badge badge--reaction">reaksiyon</span>
+          )}
+          {source.output_orientation !== 'auto' && (
+            <span className="source-badge badge--orientation">
+              {ORIENTATION_LABEL[source.output_orientation]}
+            </span>
+          )}
+          {reactionOnly && <span className="source-badge badge--reaction-only">yalnız tepki</span>}
+          {recencyDays > 0 && (
+            <span className="source-badge badge--recency">son {recencyDays} gün</span>
+          )}
+        </div>
+
+        <div className="source-quick-actions">
+          {source.platform === 'youtube' ? (
             <button
               type="button"
-              className="btn--danger"
+              className="btn btn--primary btn-sm"
               disabled={busy}
-              onClick={() => void run(() => deleteSource(source.id))}
+              onClick={() => void discover()}
+              title="Kanalı tara ve yeni videoları kütüphaneye al"
             >
-              Emin misin?
+              Keşfet
             </button>
+          ) : (
             <button
               type="button"
-              className="btn--ghost"
-              onClick={() => setConfirmDelete(false)}
+              className="btn btn--primary btn-sm"
+              disabled={busy}
+              onClick={() => setVodOpen((open) => !open)}
             >
-              Vazgeç
+              VOD Ekle
             </button>
-          </>
-        ) : (
+          )}
+
+          {source.permission_status === 'authorized' ? (
+            <button
+              type="button"
+              className="btn--ghost btn-sm"
+              disabled={busy}
+              onClick={() => void setPermission('pending')}
+              title="İzni geçici olarak geri çek"
+            >
+              İzni Geri Çek
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn--ghost btn-sm"
+              disabled={busy}
+              onClick={() => void setPermission('authorized')}
+              title="İçerik işleme izni ver"
+            >
+              İzni Ver
+            </button>
+          )}
+
+          {confirmDelete ? (
+            <div className="delete-confirm-group">
+              <button
+                type="button"
+                className="btn--danger btn-sm"
+                disabled={busy}
+                onClick={() => void run(() => deleteSource(source.id))}
+              >
+                Emin misin?
+              </button>
+              <button
+                type="button"
+                className="btn--ghost btn-sm"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Vazgeç
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn--danger btn-sm"
+              onClick={() => setConfirmDelete(true)}
+              title="Kaynağı stüdyodan sil"
+            >
+              Sil
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Yapılandırma ve Otomasyon Kuralları Izgarası */}
+      <div className="source-config-grid">
+        <div className="config-block">
+          <label htmlFor={`src-orient-${source.id}`} className="config-label">
+            Çıktı Formatı
+          </label>
+          <select
+            id={`src-orient-${source.id}`}
+            aria-label={`${source.title} çıktı yönü`}
+            value={source.output_orientation}
+            disabled={busy}
+            onChange={(e) =>
+              void changeOrientation(e.target.value as SourceOrientation)
+            }
+            className="config-select"
+          >
+            <option value="auto">Yön: Otomatik (yatay + dikey)</option>
+            <option value="vertical">Yön: Yalnız dikey</option>
+            <option value="horizontal">Yön: Yatay + dikey</option>
+          </select>
+          <span className="config-desc">
+            {source.output_orientation === 'vertical'
+              ? 'Yalnızca Shorts üretilir; yatay dosya iş bitince silinir.'
+              : 'Budanmış yatay video ve dikey Shorts birlikte üretilir.'}
+          </span>
+        </div>
+
+        <div className="config-block">
+          <label htmlFor={`src-recency-${source.id}`} className="config-label">
+            Güncellik Penceresi
+          </label>
+          <select
+            id={`src-recency-${source.id}`}
+            aria-label={`${source.title} güncellik penceresi`}
+            value={recencyDays}
+            disabled={busy}
+            onChange={(e) => void changeRecency(Number(e.target.value))}
+            className="config-select"
+          >
+            <option value={0}>Güncellik: sınırsız</option>
+            <option value={7}>Son 7 gün</option>
+            <option value={15}>Son 15 gün</option>
+            <option value={30}>Son 30 gün</option>
+          </select>
+          <span className="config-desc">
+            {recencyDays > 0
+              ? `Yalnız son ${recencyDays} gün içinde yüklenen videolar taranır.`
+              : 'Tüm geçmiş ve yeni videolar işleme dahil edilir.'}
+          </span>
+        </div>
+
+        <div className="config-block">
+          <span className="config-label">Tepki Kuralı</span>
           <button
             type="button"
-            className="btn--danger"
-            onClick={() => setConfirmDelete(true)}
+            className={`btn--ghost config-rule-btn${reactionOnly ? ' active' : ''}`}
+            disabled={busy}
+            onClick={() => void toggleReactionOnly()}
+            title="Katı kural: yalnız tepki/reaksiyon başlıklı videolar işlenir."
           >
-            Sil
+            {reactionOnly ? 'Tepki Kuralını Kapat' : 'Yalnız Tepki'}
           </button>
+          <span className="config-desc">
+            {reactionOnly
+              ? 'Yalnız "Reacting" veya "Tepki" içeren videolar işlenir.'
+              : 'Tüm video türleri içeriğe bakılmaksızın taranır.'}
+          </span>
+        </div>
+
+        {source.output_orientation !== 'vertical' && (
+          <div className="config-block">
+            <span className="config-label">Giriş / Çıkış Budama</span>
+            <div className="source-trim-box">
+              <span
+                className="source-trim"
+                title="Intro/outro otomatik tespit edilir: konuşma boşluğu, sessizlik, siyah kare ve sahne kesmesi sinyalleri birleştirilir."
+              >
+                {source.trim_start_seconds || source.trim_end_seconds
+                  ? `Budama: ${source.trim_start_seconds}s / ${source.trim_end_seconds}s (elle)`
+                  : 'Budama: otomatik'}
+              </span>
+            </div>
+            <span className="config-desc">
+              Konuşma boşluğu ve sessizlik yapay zekâ ile otomatik kesilir.
+            </span>
+          </div>
         )}
-      </span>
+      </div>
+
       {note && (
-        <span className="save-ok" role="status">
-          {note}
-        </span>
+        <div className="save-ok" role="status">
+          ✓ {note}
+        </div>
       )}
+
       {vodOpen && (
         <form className="vod-form" onSubmit={submitVod}>
           <div className="field">
@@ -339,19 +399,29 @@ function SourceRow({
               id={`vod-title-${source.id}`}
               value={vodTitle}
               onChange={(e) => setVodTitle(e.target.value)}
+              placeholder="Video başlığı veya yayın konusu"
               required
             />
           </div>
-          <button type="submit" className="btn--ghost" disabled={busy}>
-            Ekle
-          </button>
+          <div className="vod-actions">
+            <button type="submit" className="btn btn--primary btn-sm" disabled={busy}>
+              Ekle
+            </button>
+            <button
+              type="button"
+              className="btn--ghost btn-sm"
+              onClick={() => setVodOpen(false)}
+            >
+              İptal
+            </button>
+          </div>
         </form>
       )}
     </div>
   )
 }
 
-/** Karaktere kaynak ekleme formu: platform, anahtar, başlık, reaksiyon ve budama. */
+/** Karaktere kaynak ekleme formu: platform, anahtar, başlık, reaksiyon ve yön. */
 function SourceAddForm({
   channelId,
   characterId,
@@ -399,6 +469,10 @@ function SourceAddForm({
 
   return (
     <form className="source-add-form" onSubmit={submit}>
+      <div className="form-subhead">
+        <strong>Yeni Kaynak Kanalı Ekle</strong>
+        <span className="screen-sub">Bu karaktere bağlı videoların taranacağı kanal</span>
+      </div>
       <div className="settings-grid">
         <div className="field">
           <label htmlFor={`src-platform-${characterId}`}>Platform</label>
@@ -451,9 +525,7 @@ function SourceAddForm({
             <option value="horizontal">Yatay + dikey</option>
           </select>
           <span className="field-help">
-            Otomatik: budanmış yatay tam kesit + dikey Shorts birlikte
-            üretilir. Yalnız dikey: yatay video indirilip işlenir, Shorts
-            çıkar, yatay dosya silinir. Yatay + dikey: Otomatik ile aynı.
+            Otomatik: budanmış yatay tam kesit + dikey Shorts birlikte üretilir.
           </span>
         </div>
         <div className="field">
@@ -462,6 +534,7 @@ function SourceAddForm({
             id={`src-title-${characterId}`}
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            placeholder="Örn. Pelin Twitch veya Craftest Ana Kanalı"
             required
           />
         </div>
@@ -478,8 +551,7 @@ function SourceAddForm({
             <span>Reaksiyon kaynağı</span>
           </label>
           <span className="field-help">
-            Yayıncının tepki verdiği kaynak. Bilgi etiketi: üretilen yönü
-            artık çıktı yönü belirler (Otomatik yatay + dikey üretir).
+            Yayıncının tepki verdiği kaynak içerik.
           </span>
         </div>
         <div className="field">
@@ -495,22 +567,14 @@ function SourceAddForm({
             <span>Yalnız tepki/reaksiyon videoları</span>
           </label>
           <span className="field-help">
-            Katı kural: yayıncının kendi montajları (ör. funny moments)
-            işlenmez. “Reacting to…” gibi tepki başlıkları — izlenen içerik
-            funny moments olsa bile — serbest kalır.
+            Katı kural: yayıncının kendi montajları işlenmez.
           </span>
         </div>
-        {form.orientation !== 'vertical' && (
-          <span className="field-help">
-            Intro/outro budaması otomatik: konuşma boşluğu, sessizlik, siyah
-            kare ve sahne kesmesi sinyallerinden tespit edilir.
-          </span>
-        )}
       </div>
       <div className="settings-actions">
         <button
           type="submit"
-          className="btn"
+          className="btn btn--primary"
           disabled={busy || !form.platform_key.trim() || !form.title.trim()}
         >
           Kaynak Ekle
@@ -523,7 +587,7 @@ function SourceAddForm({
   )
 }
 
-/** Karakter kartı: fotoğraf, rozetler, notlar ve bağlı kaynaklar. */
+/** Karakter kartı: profil avatarı, rozetler, notlar ve bağlı kaynaklar. */
 function CharacterCard({
   character,
   sources,
@@ -561,39 +625,45 @@ function CharacterCard({
   return (
     <div className="character-card">
       <div className="character-head">
-        {character.photo_configured ? (
-          <img
-            className="character-photo"
-            src={characterPhotoUrl(character.id)}
-            alt={`${character.name} fotoğrafı`}
-          />
-        ) : (
-          <span
-            className="character-photo character-photo--empty"
-            aria-hidden="true"
-          >
-            {character.name.slice(0, 1).toLocaleUpperCase('tr-TR')}
-          </span>
-        )}
-        <div className="character-title">
-          <strong>{character.name}</strong>
-          <span className="character-badges">
-            <span className="source-badge">
-              {character.reference_face ? 'referans yüz var' : 'referans yüz yok'}
+        <div className="character-profile-info">
+          {character.photo_configured ? (
+            <img
+              className="character-photo"
+              src={characterPhotoUrl(character.id)}
+              alt={`${character.name} fotoğrafı`}
+            />
+          ) : (
+            <span
+              className="character-photo character-photo--empty"
+              aria-hidden="true"
+            >
+              {character.name.slice(0, 1).toLocaleUpperCase('tr-TR')}
             </span>
-            <span className="source-badge">
-              {character.system_prompt_set ? 'prompt var' : 'prompt yok'}
-            </span>
-          </span>
+          )}
+          <div className="character-title">
+            <strong className="character-name-text">{character.name}</strong>
+            <div className="character-badges">
+              <span className="source-badge">
+                {character.reference_face ? 'referans yüz var' : 'referans yüz yok'}
+              </span>
+              <span className="source-badge">
+                {character.system_prompt_set ? 'prompt var' : 'prompt yok'}
+              </span>
+              <span className="source-badge badge--sources-count">
+                {sources.length} kaynak bağlı
+              </span>
+            </div>
+          </div>
         </div>
-        <span className="channel-actions">
-          <button type="button" className="btn--ghost" onClick={onEdit}>
+
+        <div className="channel-actions">
+          <button type="button" className="btn--ghost btn-sm" onClick={onEdit}>
             Düzenle
           </button>
           {character.system_prompt_set && (
             <button
               type="button"
-              className="btn--ghost"
+              className="btn--ghost btn-sm"
               disabled={busy}
               onClick={() =>
                 void run(() => updateCharacter(character.id, { system_prompt: '' }))
@@ -604,16 +674,16 @@ function CharacterCard({
           )}
           <button
             type="button"
-            className="btn--ghost"
+            className="btn btn--primary btn-sm"
             onClick={onToggleSourceForm}
           >
             {sourceFormOpen ? 'Formu Kapat' : 'Kaynak Ekle'}
           </button>
           {confirmDelete ? (
-            <>
+            <div className="delete-confirm-group">
               <button
                 type="button"
-                className="btn--danger"
+                className="btn--danger btn-sm"
                 disabled={busy}
                 onClick={() => void run(() => deleteCharacter(character.id))}
               >
@@ -621,27 +691,43 @@ function CharacterCard({
               </button>
               <button
                 type="button"
-                className="btn--ghost"
+                className="btn--ghost btn-sm"
                 onClick={() => setConfirmDelete(false)}
               >
                 Vazgeç
               </button>
-            </>
+            </div>
           ) : (
             <button
               type="button"
-              className="btn--danger"
+              className="btn--danger btn-sm"
               onClick={() => setConfirmDelete(true)}
             >
               Sil
             </button>
           )}
-        </span>
+        </div>
       </div>
-      {character.notes && <p className="plate-note">{character.notes}</p>}
+
+      {character.notes && (
+        <div className="character-notes-callout">
+          <span className="quote-mark" aria-hidden="true">“</span>
+          <p className="plate-note">{character.notes}</p>
+        </div>
+      )}
+
       <div className="character-sources">
         {sources.length === 0 ? (
-          <p className="plate-note">Bu karaktere bağlı kaynak yok.</p>
+          <div className="empty-sources-notice">
+            <p className="plate-note">Bu karaktere bağlı kaynak yok.</p>
+            <button
+              type="button"
+              className="btn--ghost btn-sm"
+              onClick={onToggleSourceForm}
+            >
+              + Kaynak Ekle
+            </button>
+          </div>
         ) : (
           sources.map((source) => (
             <SourceRow
@@ -654,6 +740,7 @@ function CharacterCard({
           ))
         )}
       </div>
+
       {sourceFormOpen && (
         <SourceAddForm
           channelId={channelId}
@@ -786,33 +873,49 @@ export function CharactersScreen() {
       ? sources.state.data.sources.filter((s) => s.character_id === null)
       : []
 
+  const selectedChannel = channelList.find((c) => c.id === selectedChannelId)
+
   return (
     <>
       <div className="screen-head">
-        <h1>Karakterler</h1>
-        <span className="screen-sub">
-          Yayıncı karakterleri, kaynak kanalları ve izin kayıtları
-        </span>
+        <div>
+          <h1>Karakterler</h1>
+          <span className="screen-sub">
+            Yayıncı karakterleri, kaynak kanalları ve içerik filtre kuralları
+          </span>
+        </div>
       </div>
 
       <div className="stack">
-        <section className="plate" aria-label="Stüdyo kanalı seçimi">
-          <h2 className="panel-title">Stüdyo Kanalı</h2>
-          <p className="plate-note">
-            Kaynaklar seçili stüdyo kanalına eklenir; her karakter o kanalın
-            kaynak listesine bağlanır.
-          </p>
+        {/* Aktif Stüdyo Kanalı Seçimi Bannerı */}
+        <section className="plate channel-selection-banner" aria-label="Stüdyo kanalı seçimi">
+          <div className="banner-channel-meta">
+            <div className="banner-channel-title">
+              <span
+                className="banner-ribbon-badge"
+                style={{ background: selectedChannel?.ribbon_color ?? '#3550c4' }}
+                aria-hidden="true"
+              />
+              <span className="banner-heading">Aktif Stüdyo Kanalı</span>
+            </div>
+            <p className="plate-note">
+              Kaynaklar seçili stüdyo kanalına eklenir; her karakter o kanalın
+              kaynak listesine bağlanır.
+            </p>
+          </div>
+
           {channelList.length === 0 ? (
             <p className="plate-note">
               Stüdyo kanalı yok — önce Kanallar ekranından bir kanal ekleyin.
             </p>
           ) : (
-            <div className="field">
+            <div className="field channel-select-field">
               <label htmlFor="char-channel">Stüdyo kanalı</label>
               <select
                 id="char-channel"
                 value={selectedChannelId ?? ''}
                 onChange={(e) => setChannelChoice(Number(e.target.value))}
+                className="channel-select-input"
               >
                 {channelList.map((channel) => (
                   <option key={channel.id} value={channel.id}>
@@ -852,39 +955,54 @@ export function CharactersScreen() {
                 karakterinizi ekleyin.
               </EmptyState>
             ) : (
-              <section className="ink-panel" aria-label="Kayıtlı karakterler">
-                <h2 className="panel-title">Kayıtlı Karakterler</h2>
-                {characters.state.data.characters.map((character) => (
-                  <CharacterCard
-                    key={character.id}
-                    character={character}
-                    sources={boundSources(character.id)}
-                    channelId={selectedChannelId ?? 0}
-                    onChanged={refresh}
-                    onActionError={setActionError}
-                    onEdit={() => startEdit(character)}
-                    sourceFormOpen={sourceFormFor === character.id}
-                    onToggleSourceForm={() =>
-                      setSourceFormFor((prev) =>
-                        prev === character.id ? null : character.id,
-                      )
-                    }
-                  />
-                ))}
+              <section className="ink-panel characters-list-panel" aria-label="Kayıtlı karakterler">
+                <div className="panel-header-with-badge">
+                  <h2 className="panel-title">Kayıtlı Karakterler</h2>
+                  <span className="badge-subtle">
+                    {characters.state.data.total} karakter ·{' '}
+                    {sources.state.status === 'ok' ? sources.state.data.total : 0} kaynak ·{' '}
+                    {sources.state.status === 'ok' ? sources.state.data.authorized : 0} yetkili
+                  </span>
+                </div>
+
+                <div className="character-cards-grid">
+                  {characters.state.data.characters.map((character) => (
+                    <CharacterCard
+                      key={character.id}
+                      character={character}
+                      sources={boundSources(character.id)}
+                      channelId={selectedChannelId ?? 0}
+                      onChanged={refresh}
+                      onActionError={setActionError}
+                      onEdit={() => startEdit(character)}
+                      sourceFormOpen={sourceFormFor === character.id}
+                      onToggleSourceForm={() =>
+                        setSourceFormFor((prev) =>
+                          prev === character.id ? null : character.id,
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+
                 {unboundSources.length > 0 && (
-                  <div className="character-card">
+                  <div className="character-card unbound-sources-card">
                     <div className="character-head">
-                      <span
-                        className="character-photo character-photo--empty"
-                        aria-hidden="true"
-                      >
-                        ?
-                      </span>
-                      <div className="character-title">
-                        <strong>Karaktere bağlı olmayan kaynaklar</strong>
-                        <span className="character-badges">
-                          <span className="source-badge">karakter atanmamış</span>
+                      <div className="character-profile-info">
+                        <span
+                          className="character-photo character-photo--empty"
+                          aria-hidden="true"
+                        >
+                          ?
                         </span>
+                        <div className="character-title">
+                          <strong className="character-name-text">
+                            Karaktere bağlı olmayan kaynaklar
+                          </strong>
+                          <span className="character-badges">
+                            <span className="source-badge">karakter atanmamış</span>
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="character-sources">
@@ -900,15 +1018,6 @@ export function CharactersScreen() {
                     </div>
                   </div>
                 )}
-                <p className="plate-note">
-                  {characters.state.data.total} karakter ·{' '}
-                  {sources.state.status === 'ok' ? sources.state.data.total : 0}{' '}
-                  kaynak ·{' '}
-                  {sources.state.status === 'ok'
-                    ? sources.state.data.authorized
-                    : 0}{' '}
-                  yetkili
-                </p>
               </section>
             )}
 
@@ -916,7 +1025,7 @@ export function CharactersScreen() {
               <h2 className="panel-title">
                 {editing
                   ? `Karakter Düzenle — ${editing.name}`
-                  : 'Yeni Karakter'}
+                  : 'Yeni Karakter Ekle'}
               </h2>
               {formError && (
                 <div className="action-error" role="alert">
@@ -943,6 +1052,7 @@ export function CharactersScreen() {
                       id="char-name"
                       value={form.name}
                       onChange={(e) => set('name', e.target.value)}
+                      placeholder="Örn. Pelin Yayıncı veya Craftest"
                       maxLength={120}
                       required
                     />
@@ -951,17 +1061,17 @@ export function CharactersScreen() {
                     <label htmlFor="char-prompt">Sistem Promptu</label>
                     <textarea
                       id="char-prompt"
-                      rows={4}
+                      rows={3}
                       value={form.system_prompt}
                       onChange={(e) => set('system_prompt', e.target.value)}
                       placeholder={
                         editing
                           ? 'Değiştirmek istemiyorsanız boş bırakın'
-                          : undefined
+                          : 'Karakterin ses tonu, klip seçim tercihleri veya odak noktası'
                       }
                     />
                     <span className="field-help">
-                      Boş bırakılırsa genel prompt kullanılır.
+                      Boş bırakılırsa genel stüdyo promptu kullanılır.
                     </span>
                   </div>
                   <div className="field">
@@ -971,6 +1081,7 @@ export function CharactersScreen() {
                       rows={3}
                       value={form.notes}
                       onChange={(e) => set('notes', e.target.value)}
+                      placeholder="Yayın saatleri, içerik türü veya hatırlatıcılar"
                     />
                   </div>
                   {editing && (
@@ -992,7 +1103,7 @@ export function CharactersScreen() {
                       {photoFile && (
                         <button
                           type="button"
-                          className="btn--ghost"
+                          className="btn--ghost btn-sm"
                           disabled={saving}
                           onClick={() => void uploadPhoto()}
                         >
@@ -1003,7 +1114,7 @@ export function CharactersScreen() {
                   )}
                 </div>
                 <div className="settings-actions">
-                  <button type="submit" className="btn" disabled={saving}>
+                  <button type="submit" className="btn btn--primary" disabled={saving}>
                     {saving
                       ? 'Kaydediliyor…'
                       : editing

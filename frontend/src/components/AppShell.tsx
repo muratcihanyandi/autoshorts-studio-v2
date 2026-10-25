@@ -209,35 +209,55 @@ export function AppShell({
           </nav>
         </>
       ) : (
-        <aside className="rail">
-          <div className="rail-brand">
-            <img src={logoUrl} alt="AutoShorts Studio" />
-          </div>
-          <StudioNav />
-          <div className="rail-foot">
-            <ActivityBell />
-            {username && (
-              <div className="rail-user">
-                <span title="Oturum açan yönetici">{username}</span>
-                <div className="rail-user-actions">
-                  <Link to="/hesap">Hesap</Link>
-                  {onLogout && (
-                    <button type="button" onClick={onLogout}>
-                      Çıkış
-                    </button>
-                  )}
+        <>
+          <aside className="rail">
+            <div className="rail-brand">
+              <img src={logoUrl} alt="AutoShorts Studio" />
+            </div>
+            <StudioNav />
+            <div className="rail-foot">
+              {username && (
+                <div className="rail-user">
+                  <span title="Oturum açan yönetici">{username}</span>
+                  <div className="rail-user-actions">
+                    <Link to="/hesap">Hesap</Link>
+                    {onLogout && (
+                      <button type="button" onClick={onLogout}>
+                        Çıkış
+                      </button>
+                    )}
+                  </div>
                 </div>
+              )}
+            </div>
+          </aside>
+          <div className="shell-main">
+            <header className="desktop-topbar">
+              <div className="topbar-context">
+                <span className="topbar-status-pulse" aria-hidden="true" />
+                <span className="topbar-studio-title">AutoShorts Stüdyo</span>
               </div>
-            )}
+              <div className="topbar-right">
+                <ActivityBell />
+              </div>
+            </header>
+            <main className="content" id="main-content">
+              {/* key, rota degistiginde giris animasyonunu yeniden baslatir. */}
+              <div className="route-view" key={location.pathname}>
+                <Outlet />
+              </div>
+            </main>
           </div>
-        </aside>
+        </>
       )}
-      <main className="content" id="main-content">
-        {/* key, rota degistiginde giris animasyonunu yeniden baslatir. */}
-        <div className="route-view" key={location.pathname}>
-          <Outlet />
-        </div>
-      </main>
+      {isMobile && (
+        <main className="content" id="main-content">
+          {/* key, rota degistiginde giris animasyonunu yeniden baslatir. */}
+          <div className="route-view" key={location.pathname}>
+            <Outlet />
+          </div>
+        </main>
+      )}
     </div>
   )
 }
