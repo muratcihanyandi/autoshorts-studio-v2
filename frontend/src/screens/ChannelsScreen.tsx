@@ -12,6 +12,8 @@ import {
 } from '../api/channels'
 import { usePolling } from '../hooks/usePolling'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
+import { GateNotice } from '../components/GateNotice'
+import { gateFromError, type GateInfo } from '../gates'
 
 function hataMesaji(err: unknown): string {
   return err instanceof Error ? err.message : 'Bilinmeyen hata'
@@ -108,6 +110,7 @@ function NewChannelForm({
   const [name, setName] = useState('')
   const [ribbon, setRibbon] = useState<string>(RIBBON_COLORS[0].value)
   const [busy, setBusy] = useState(false)
+  const [gate, setGate] = useState<GateInfo | null>(null)
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -116,12 +119,19 @@ function NewChannelForm({
       return
     }
     setBusy(true)
+    setGate(null)
     try {
       await createChannel({ name: trimmed, ribbon_color: ribbon })
       setName('')
       onCreated()
     } catch (err) {
-      onError(hataMesaji(err))
+      // Free plan tek kanal sınırına takıldıysa hata değil, plan notu.
+      const gateInfo = gateFromError(err)
+      if (gateInfo) {
+        setGate(gateInfo)
+      } else {
+        onError(hataMesaji(err))
+      }
     } finally {
       setBusy(false)
     }
@@ -167,6 +177,7 @@ function NewChannelForm({
         <button type="submit" className="btn" disabled={busy || !name.trim()}>
           Kanalı Ekle
         </button>
+        {gate && <GateNotice gate={gate} />}
       </form>
     </section>
   )

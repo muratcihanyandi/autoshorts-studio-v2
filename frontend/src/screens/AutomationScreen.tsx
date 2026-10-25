@@ -6,10 +6,40 @@ import {
   retryJob,
   type Job,
 } from '../api/jobs'
+import type { StageStep } from '../api/media'
 import { usePolling } from '../hooks/usePolling'
 import { formatDuration, formatTimeShort } from '../format'
-import { jobAction } from '../jobNarrative'
+import { jobAction, jobStageDetail } from '../jobNarrative'
+import { notifyPulse } from '../pulse/bus'
 import { ErrorState, LoadingState, StaleNote } from '../components/States'
+import { StageTrack } from '../components/StageTrack'
+
+/** media_process işinin beş aşaması — çalışan işin kartında canlı
+ * ilerleme çubuğu olarak gösterilir (madde 4 otomasyon canlandırması). */
+const MEDIA_STAGES: { key: string; label: string }[] = [
+  { key: 'download', label: 'İndirme' },
+  { key: 'inspect', label: 'İnceleme' },
+  { key: 'transcript', label: 'Altyazı' },
+  { key: 'analysis', label: 'Analiz' },
+  { key: 'candidates', label: 'Adaylar' },
+]
+
+function mediaStageSteps(stage: string | null): StageStep[] {
+  const currentIndex = MEDIA_STAGES.findIndex((item) => item.key === stage)
+  return MEDIA_STAGES.map((item, index) => ({
+    key: item.key,
+    label: item.label,
+    state:
+      stage === null || currentIndex === -1
+        ? ('pending' as const)
+        : index < currentIndex
+          ? ('done' as const)
+          : index === currentIndex
+            ? ('active' as const)
+            : ('pending' as const),
+    detail: null,
+  }))
+}
 
 function statusTone(status: Job['status']): string {
   if (status === 'running') return 'run'
@@ -38,8 +68,21 @@ function jobDuration(job: Job, now: number): number | null {
   return Math.max(0, Math.round((finished - started) / 1000))
 }
 
+function isToday(iso: string | null): boolean {
+  if (!iso) return false
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return false
+  const now = new Date()
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  )
+}
+
 /** Tek işin anlatım satırı: durum, video, olup biten, kanal ve süre —
- * sade bir cümle okuyuşu; teknik ayrıntılar yalnız hata varsa girer. */
+ * sade bir cümle okuyuşu; çalışan media_process işi aşama çubuğunu da
+ * taşır. Teknik ayrıntılar yalnız hata varsa girer. */
 function JobRow({
   job,
   now,
@@ -59,10 +102,14 @@ function JobRow({
   const canRetry = job.status === 'failed' || job.status === 'cancelled'
   const duration = jobDuration(job, now)
   const action = jobAction(job)
+  const running = job.status === 'running' || job.status === 'cancelling'
+  const showTrack =
+    running && job.job_type === 'media_process' && job.stage !== null
   return (
-    <div className="flow-row">
+    <div className={`flow-row${running ? ' flow-row--live' : ''}`}>
       {position !== null && <span className="flow-pos nums">{position}.</span>}
       <span className={`pill pill--${statusTone(job.status)}`}>
+        {running && <i className="live-dot live-dot--inline" aria-hidden="true" />}
         {JOB_STATUS_LABEL[job.status]}
       </span>
       {job.title ? <b>{job.title}</b> : <b>{action}</b>}
@@ -125,6 +172,12 @@ function JobRow({
           )}
         </span>
       )}
+      {showTrack && (
+        <div className="flow-track">
+          <StageTrack steps={mediaStageSteps(job.stage)} />
+          <p className="flow-detail">{jobStageDetail(job)}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -135,11 +188,16 @@ export function AutomationScreen() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
 
-  const act = async (id: number, fn: (id: number) => Promise<Job>) => {
+  const act = async (
+    id: number,
+    fn: (id: number) => Promise<Job>,
+    successPulse?: Parameters<typeof notifyPulse>[0],
+  ) => {
     setBusy(id)
     setActionError(null)
     try {
       await fn(id)
+      if (successPulse) notifyPulse(successPulse)
       retry()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'bilinmeyen hata')
@@ -147,6 +205,19 @@ export function AutomationScreen() {
       setBusy(null)
     }
   }
+
+  const cancelWithNote = (job: Job) =>
+    act(job.id, cancelJob, {
+      tone: 'warn',
+      sentence: `“${job.title ?? 'İş'}” iptal edildi`,
+    })
+
+  const retryWithNote = (job: Job) =>
+    act(job.id, retryJob, {
+      tone: 'run',
+      sentence: `“${job.title ?? 'İş'}” yeniden kuyruğa alındı`,
+      link: '/otomasyon',
+    })
 
   const jobs = state.status === 'ok' ? state.data.jobs : []
   const now = Date.now()
@@ -160,7 +231,12 @@ export function AutomationScreen() {
       j.status === 'failed' ||
       j.status === 'cancelled',
   )
-  const failedCount = finished.filter((j) => j.status === 'failed').length
+  const succeededToday = finished.filter(
+    (j) => j.status === 'succeeded' && isToday(j.finished_at),
+  ).length
+  const failedToday = finished.filter(
+    (j) => j.status === 'failed' && isToday(j.finished_at),
+  ).length
 
   return (
     <>
@@ -189,17 +265,15 @@ export function AutomationScreen() {
         <>
           {state.stale && <StaleNote onRetry={retry} />}
 
-          {/* Doğal Sistem Durumu Paneli */}
+          {/* Canlı sahne: sistemin ruh hali */}
           <div className="auto-hero">
             <div className="auto-hero-text">
               <h2>
-                {running.length > 0 ? (
-                  <>🚀 Sistem Aktif Çalışıyor</>
-                ) : queued.length > 0 ? (
-                  <>⏳ İşlem Sırası Bekleniyor</>
-                ) : (
-                  <>☕ Sistem Boşta ve Hazır</>
-                )}
+                {running.length > 0
+                  ? 'Sistem şimdi çalışıyor'
+                  : queued.length > 0
+                    ? 'Sıradaki video bekleniyor'
+                    : 'Sistem boşta ve hazır'}
               </h2>
               <p>
                 {running.length > 0
@@ -223,11 +297,37 @@ export function AutomationScreen() {
               {running.length === 0 && queued.length === 0 && (
                 <span className="pill pill--ok">Hazır</span>
               )}
-              {failedCount > 0 && (
+              {failedToday > 0 && (
                 <span className="pill pill--error">
-                  {failedCount} başarısız
+                  bugün {failedToday} başarısız
                 </span>
               )}
+            </div>
+          </div>
+
+          {/* Günün nabız kartları */}
+          <div className="stat-grid" aria-label="Günün iş özeti">
+            <div className="stat-card">
+              <span>Bugün tamamlanan</span>
+              <b className="nums">{succeededToday}</b>
+              <small>iş başarıyla bitti</small>
+            </div>
+            <div className={`stat-card${failedToday > 0 ? ' warn' : ''}`}>
+              <span>Bugün hatalı</span>
+              <b className="nums">{failedToday}</b>
+              <small>
+                {failedToday > 0 ? 'yeniden denenebilir' : 'aksilik yok'}
+              </small>
+            </div>
+            <div className="stat-card">
+              <span>Şu an süren</span>
+              <b className="nums">{running.length}</b>
+              <small>motor elinde</small>
+            </div>
+            <div className="stat-card">
+              <span>Kuyrukta bekleyen</span>
+              <b className="nums">{queued.length}</b>
+              <small>sıra numarasıyla</small>
             </div>
           </div>
 
@@ -261,8 +361,8 @@ export function AutomationScreen() {
                         now={now}
                         position={null}
                         busy={busy === job.id}
-                        onCancel={(j) => void act(j.id, cancelJob)}
-                        onRetry={(j) => void act(j.id, retryJob)}
+                        onCancel={cancelWithNote}
+                        onRetry={retryWithNote}
                       />
                     ))
                   )}
@@ -280,8 +380,8 @@ export function AutomationScreen() {
                         now={now}
                         position={index + 1}
                         busy={busy === job.id}
-                        onCancel={(j) => void act(j.id, cancelJob)}
-                        onRetry={(j) => void act(j.id, retryJob)}
+                        onCancel={cancelWithNote}
+                        onRetry={retryWithNote}
                       />
                     ))
                   )}
@@ -299,8 +399,8 @@ export function AutomationScreen() {
                         now={now}
                         position={null}
                         busy={busy === job.id}
-                        onCancel={(j) => void act(j.id, cancelJob)}
-                        onRetry={(j) => void act(j.id, retryJob)}
+                        onCancel={cancelWithNote}
+                        onRetry={retryWithNote}
                       />
                     ))
                   )}

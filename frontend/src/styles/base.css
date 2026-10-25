@@ -71,6 +71,20 @@ button {
   left: 0;
 }
 
+/* Dokunma hissi (madde 1): tarayicinin tap parlamasi kalkar,
+   etkilesimli o gelerde cift dokunma zum gecikmesi buyuk olcude
+   kaybolur — mobilde her basma aninda hissedilir. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+[role='button'],
+[role='tab'] {
+  touch-action: manipulation;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

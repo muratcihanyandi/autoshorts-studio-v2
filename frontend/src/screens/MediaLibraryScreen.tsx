@@ -12,9 +12,12 @@ import {
   type LibraryClip,
   type LibrarySource,
 } from '../api/media'
-import { formatClock, formatDuration } from '../format'
+import { formatClock, formatDateTime, formatDuration } from '../format'
 import { usePolling } from '../hooks/usePolling'
+import { notifyPulse } from '../pulse/bus'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
+import { GateNotice } from '../components/GateNotice'
+import { gateFromError, type GateInfo } from '../gates'
 import { ClipDetailModal } from '../components/ClipDetailModal'
 import { StageTrack } from '../components/StageTrack'
 
@@ -35,6 +38,10 @@ const RENDER_VIEW: Record<string, { tone: string; label: string }> = {
   removed: { tone: 'idle', label: 'Kaldırıldı' },
 }
 
+type LibraryTab = 'islenen' | 'hazir' | 'haric'
+
+type ClipFilter = 'tumu' | 'dikey' | 'yatay'
+
 function sourceView(tag: string) {
   return TAG_VIEW[tag] ?? { tone: 'idle', label: tag }
 }
@@ -44,21 +51,40 @@ function renderView(status: string | null) {
   return RENDER_VIEW[status] ?? { tone: 'idle', label: status }
 }
 
-function publishView(clip: LibraryClip) {
-  if (clip.visibility === 'public') return { tone: 'ok', label: 'Yayında' }
-  if (clip.published_status === 'verified') {
-    return { tone: 'run', label: 'Gizli · saat bekliyor' }
-  }
-  if (clip.published_status === 'uploaded') {
-    return { tone: 'run', label: 'Gizli yüklendi' }
+/** Klip kartının yayın özeti: durum hapı + "ne zaman bitti, ne zaman
+ * çıkacak" satırı. Detaya girmeden plan okunur (madde 4). */
+function publishView(clip: LibraryClip): { tone: string; label: string; when: string | null } {
+  if (clip.visibility === 'public') {
+    return {
+      tone: 'ok',
+      label: 'Yayında',
+      when: `Yayına çıktı: ${formatDateTime(clip.public_at ?? clip.published_at)}`,
+    }
   }
   if (clip.published_status === 'failed') {
-    return { tone: 'error', label: 'Yükleme hatası' }
+    return { tone: 'error', label: 'Yükleme hatası', when: null }
+  }
+  if (clip.scheduled_at) {
+    return {
+      tone: 'run',
+      label: 'Yayınlanacak',
+      when: `Yayın: ${formatDateTime(clip.scheduled_at)} (takvimden)`,
+    }
+  }
+  if (
+    clip.published_status === 'verified' ||
+    clip.published_status === 'uploaded'
+  ) {
+    return {
+      tone: 'run',
+      label: 'Gizli yüklendi',
+      when: 'Otomatik yayın saati bekleniyor',
+    }
   }
   if (clip.metadata_status === 'approved') {
-    return { tone: 'warn', label: 'Yüklemeye hazır' }
+    return { tone: 'warn', label: 'Yüklemeye hazır', when: null }
   }
-  return { tone: 'idle', label: 'Hazırlanıyor' }
+  return { tone: 'idle', label: 'Hazırlanıyor', when: null }
 }
 
 function youtubeThumb(videoId: string | null): string | null {
@@ -293,6 +319,11 @@ function ClipCard({
         <span className="clip-card-play" aria-hidden="true">
           ▶
         </span>
+        <span
+          className={`clip-card-duration nums clip-orient clip-orient--${clip.orientation}`}
+        >
+          {clip.orientation === 'vertical' ? 'Dikey' : 'Yatay'}
+        </span>
         <span className="clip-card-duration nums">
           {formatDuration(clip.duration_seconds)}
         </span>
@@ -301,9 +332,13 @@ function ClipCard({
         <b>{clip.title}</b>
         <small>
           {clip.channel_name ?? 'Kanal'} ·{' '}
-          {clip.orientation === 'vertical' ? 'Dikey' : 'Yatay'}
+          {clip.orientation === 'vertical' ? 'Shorts' : 'tam kesit'}
         </small>
         <span className={`pill pill--${view.tone}`}>{view.label}</span>
+        <span className="clip-when nums">
+          Tamamlandı {formatDateTime(clip.created_at)}
+        </span>
+        {view.when && <span className="clip-when clip-when--plan">{view.when}</span>}
         <span
           className="clip-card-remove"
           onClick={(event) => event.stopPropagation()}
@@ -351,10 +386,12 @@ export function MediaLibraryScreen() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkResult, setBulkResult] = useState<BulkClipActionResult | null>(null)
-  const [showExcluded, setShowExcluded] = useState(false)
+  const [bulkGate, setBulkGate] = useState<GateInfo | null>(null)
   const [reincludeBusy, setReincludeBusy] = useState(false)
   const [reincludeNote, setReincludeNote] = useState<string | null>(null)
   const [resumeId, setResumeId] = useState<number | null>(null)
+  const [tab, setTab] = useState<LibraryTab>('islenen')
+  const [clipFilter, setClipFilter] = useState<ClipFilter>('tumu')
 
   const fetchCb = useCallback(
     () => fetchMedia(60, 0, false, false, true, true),
@@ -374,7 +411,17 @@ export function MediaLibraryScreen() {
   const current =
     data?.sources.find((source) => source.id === data.current_source_id) ?? null
   const previous = data?.sources.filter((source) => source.id !== current?.id) ?? []
-  const readyCount = data ? data.summary.shorts_ready + data.summary.full_cuts_ready : 0
+  const verticalCount = data?.summary.shorts_ready ?? 0
+  const horizontalCount = data?.summary.full_cuts_ready ?? 0
+
+  const filteredClips =
+    data?.clips.filter((clip) =>
+      clipFilter === 'tumu'
+        ? true
+        : clipFilter === 'dikey'
+          ? clip.orientation === 'vertical'
+          : clip.orientation === 'horizontal',
+    ) ?? []
 
   const selectedSet = new Set(selectedIds)
   const toggleSelect = useCallback((clip: LibraryClip) => {
@@ -398,18 +445,39 @@ export function MediaLibraryScreen() {
   ) => {
     setBulkBusy(true)
     setBulkResult(null)
+    setBulkGate(null)
     try {
       const result = await bulkClipAction(action, selectedIds)
       setBulkResult(result)
+      notifyPulse({
+        tone: result.errors > 0 ? 'warn' : 'ok',
+        sentence:
+          action === 'delete'
+            ? `${result.ok} klip kalıcı olarak kaldırıldı`
+            : action === 'public'
+              ? `${result.ok} klip herkese açıldı`
+              : `${result.ok} klip gizliye alındı`,
+        note:
+          result.errors > 0
+            ? `${result.errors} kipte hata oluştu — listede işaretliler.`
+            : null,
+        link: null,
+      })
       if (action === 'delete') {
         setSelectedIds([])
         setConfirmBulkDelete(false)
       }
       retryLibrary()
     } catch (err) {
-      setRemoveError(
-        err instanceof Error ? err.message : 'Toplu eylem başarısız oldu.',
-      )
+      // Free planda toplu işlemler kapalı: hata değil plan notu.
+      const gateInfo = gateFromError(err)
+      if (gateInfo) {
+        setBulkGate(gateInfo)
+      } else {
+        setRemoveError(
+          err instanceof Error ? err.message : 'Toplu eylem başarısız oldu.',
+        )
+      }
     } finally {
       setBulkBusy(false)
     }
@@ -438,6 +506,12 @@ export function MediaLibraryScreen() {
           (result.errors > 0 ? `, ${result.errors} atlandı` : '') +
           '.',
       )
+      notifyPulse({
+        tone: 'ok',
+        sentence: `${result.updated} video işleme kuyruğuna alındı`,
+        note: 'Motor sırayla işlemeye başlayacak.',
+        link: '/otomasyon',
+      })
       retryLibrary()
       excludedList.retry()
     } catch (err) {
@@ -454,6 +528,11 @@ export function MediaLibraryScreen() {
       setRemoveError(null)
       try {
         await removeSourceVideo(source.id)
+        notifyPulse({
+          tone: 'ok',
+          sentence: `“${source.title}” sistemden kaldırıldı`,
+          note: 'Dosyalar ve kayıtlar temizlendi.',
+        })
       } catch (err) {
         setRemoveError(
           err instanceof Error ? err.message : 'Video kaldırılamadı.',
@@ -470,6 +549,11 @@ export function MediaLibraryScreen() {
       setRemoveError(null)
       try {
         await removeClip(clip.id)
+        notifyPulse({
+          tone: 'ok',
+          sentence: `“${clip.title}” kaldırıldı`,
+          note: 'YouTube’daki video ve yerel dosya silindi.',
+        })
       } catch (err) {
         setRemoveError(
           err instanceof Error ? err.message : 'Klip kaldırılamadı.',
@@ -489,6 +573,11 @@ export function MediaLibraryScreen() {
       setResumeId(source.id)
       try {
         await resumeSourceVideo(source.id)
+        notifyPulse({
+          tone: 'run',
+          sentence: `“${source.title}” kaldığı aşamadan sürdürülüyor`,
+          link: '/otomasyon',
+        })
       } catch (err) {
         setRemoveError(
           err instanceof Error ? err.message : 'Video sürdürülemedi.',
@@ -502,13 +591,27 @@ export function MediaLibraryScreen() {
     [retryLibrary],
   )
 
+  const excludedTotal =
+    excludedList.state.status === 'ok' ? excludedList.state.data.sources_total : 0
+
+  const tabs: { key: LibraryTab; label: string; count: number | null }[] = [
+    { key: 'islenen', label: 'İşlenen', count: data?.sources_total ?? null },
+    {
+      key: 'hazir',
+      label: 'Hazır videolar',
+      count: verticalCount + horizontalCount,
+    },
+    { key: 'haric', label: 'Hariç tutulanlar', count: excludedTotal },
+  ]
+
   return (
     <>
       <div className="screen-head">
         <div>
           <h1>Medya Kütüphanesi</h1>
           <span className="screen-sub">
-            Motorun seçtiği videolar ve yayına hazır klipler
+            Stüdyonun ürettiği her şey — işlenen kaynaklar ve yayına hazır
+            videolar
           </span>
         </div>
       </div>
@@ -518,6 +621,8 @@ export function MediaLibraryScreen() {
           {removeError}
         </p>
       )}
+
+      {bulkGate && <GateNotice gate={bulkGate} />}
 
       {library.state.status === 'loading' && (
         <LoadingState label="Kütüphane sorgulanıyor…" />
@@ -543,283 +648,330 @@ export function MediaLibraryScreen() {
               <small>{current ? 'video işleniyor' : 'motor beklemede'}</small>
             </div>
             <div className="stat-card">
-              <span>Motorun seçtiği</span>
-              <b className="nums">{data.sources_total}</b>
-              <small>video</small>
+              <span>Hazır dikey</span>
+              <b className="nums">{verticalCount}</b>
+              <small>Shorts klipleri</small>
             </div>
             <div className="stat-card">
-              <span>Hazır klip</span>
-              <b className="nums">{readyCount}</b>
-              <small>dikey Shorts ve tam kesit</small>
+              <span>Hazır yatay</span>
+              <b className="nums">{horizontalCount}</b>
+              <small>tam kesit videoları</small>
+            </div>
+            <div className="stat-card">
+              <span>Toplam işlenen</span>
+              <b className="nums">{data.summary.processed}</b>
+              <small>kaynak video</small>
             </div>
           </div>
 
-          {current && (
-            <section className="current-panel" aria-label="Şu an motorda">
-              <div className="current-panel-head">
-                <h2>Şu an motorda</h2>
-                <span className="live-dot">canlı</span>
-              </div>
-              <SourceCard
-                source={current}
-                featured
-                onRemove={handleRemove}
-                onResume={handleResume}
-                resuming={resumeId === current.id}
-              />
-            </section>
-          )}
+          <div className="lib-tabs" role="tablist" aria-label="Kütüphane bölümleri">
+            {tabs.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.key}
+                className={`lib-tab${tab === item.key ? ' active' : ''}`}
+                onClick={() => setTab(item.key)}
+              >
+                {item.label}
+                {item.count !== null && (
+                  <span className="nums lib-tab-count">{item.count}</span>
+                )}
+              </button>
+            ))}
+          </div>
 
-          <section className="ink-panel" aria-label="Motorun seçtiği videolar">
-            <h2>Motorun seçtiği videolar</h2>
-            {data.sources_total === 0 && data.clips.length === 0 ? (
-              <EmptyState title="Motor henüz klip seçmedi">
-                Keşif havuzundaki videolar arka planda değerlendirilir. Motor
-                bir videoyu seçtiğinde burada işlem aşamalarıyla görünür;
-                seçilmeyen videolar kütüphaneye taşınmaz.
-              </EmptyState>
-            ) : previous.length > 0 ? (
-              <div className="source-grid">
-                {previous.map((source) => (
+          {tab === 'islenen' && (
+            <>
+              {current && (
+                <section className="current-panel" aria-label="Şu an motorda">
+                  <div className="current-panel-head">
+                    <h2>Şu an motorda</h2>
+                    <span className="live-dot">canlı</span>
+                  </div>
                   <SourceCard
-                    key={source.id}
-                    source={source}
+                    source={current}
+                    featured
                     onRemove={handleRemove}
                     onResume={handleResume}
-                    resuming={resumeId === source.id}
+                    resuming={resumeId === current.id}
                   />
-                ))}
-              </div>
-            ) : (
-              <p className="product-note">
-                {current
-                  ? 'Şu an işlenen video yukarıda. Tamamlanan seçimler burada listelenecek.'
-                  : 'Henüz tamamlanmış bir seçim yok.'}
-              </p>
-            )}
-          </section>
-
-          <div className="panel-gap" />
-
-          <section className="ink-panel" aria-label="Hazır videolar">
-            <div className="panel-head-row">
-              <h2>Hazır videolar</h2>
-              <span className="panel-count">{data.clips.length} klip</span>
-              {data.clips.length > 0 && !selectMode && (
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  onClick={() => {
-                    setSelectMode(true)
-                    setSelectedIds([])
-                    setBulkResult(null)
-                  }}
-                >
-                  Toplu seç
-                </button>
+                </section>
               )}
-            </div>
 
-            {selectMode && (
-              <div className="bulk-bar" role="toolbar" aria-label="Toplu klip eylemleri">
-                <span className="bulk-count">
-                  <b className="nums">{selectedIds.length}</b> klip seçildi
-                </span>
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  onClick={() =>
-                    setSelectedIds(
-                      selectedIds.length === data.clips.length
-                        ? []
-                        : data.clips.map((clip) => clip.id),
-                    )
-                  }
-                >
-                  {selectedIds.length === data.clips.length
-                    ? 'Temizle'
-                    : 'Tümünü seç'}
-                </button>
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  disabled={selectedIds.length === 0 || bulkBusy}
-                  onClick={downloadSelected}
-                  title="Seçili klipleri bu bilgisayara indir."
-                >
-                  İndir
-                </button>
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  disabled={selectedIds.length === 0 || bulkBusy}
-                  onClick={() => void runBulk('public')}
-                  title="Seçili klipleri YouTube'da herkese açık yapar."
-                >
-                  Herkese Aç
-                </button>
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  disabled={selectedIds.length === 0 || bulkBusy}
-                  onClick={() => void runBulk('private')}
-                  title="Seçili klipleri YouTube'da gizliye alır."
-                >
-                  Gizliye Al
-                </button>
-                {confirmBulkDelete ? (
-                  <>
-                    <button
-                      type="button"
-                      className="btn--danger"
-                      disabled={selectedIds.length === 0 || bulkBusy}
-                      onClick={() => void runBulk('delete')}
-                      title="Klipleri YouTube'tan ve yerelden kalıcı olarak kaldırır."
-                    >
-                      {bulkBusy
-                        ? 'Kaldırılıyor…'
-                        : `${selectedIds.length} klibi kalıcı olarak kaldır`}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn--ghost"
-                      onClick={() => setConfirmBulkDelete(false)}
-                    >
-                      Vazgeç
-                    </button>
-                  </>
+              <section className="ink-panel" aria-label="İşlenen videolar">
+                <h2>Motorun işlediği videolar</h2>
+                {data.sources_total === 0 && data.clips.length === 0 ? (
+                  <EmptyState title="Motor henüz klip seçmedi">
+                    Keşif havuzundaki videolar arka planda değerlendirilir. Motor
+                    bir videoyu seçtiğinde burada işlem aşamalarıyla görünür;
+                    seçilmeyen videolar kütüphaneye taşınmaz.
+                  </EmptyState>
+                ) : previous.length > 0 ? (
+                  <div className="source-grid">
+                    {previous.map((source) => (
+                      <SourceCard
+                        key={source.id}
+                        source={source}
+                        onRemove={handleRemove}
+                        onResume={handleResume}
+                        resuming={resumeId === source.id}
+                      />
+                    ))}
+                  </div>
                 ) : (
+                  <p className="product-note">
+                    {current
+                      ? 'Şu an işlenen video yukarıda. Tamamlanan seçimler burada listelenecek.'
+                      : 'Henüz tamamlanmış bir seçim yok.'}
+                  </p>
+                )}
+              </section>
+            </>
+          )}
+
+          {tab === 'hazir' && (
+            <section className="ink-panel" aria-label="Hazır videolar">
+              <div className="panel-head-row">
+                <h2>Hazır videolar</h2>
+                <div
+                  className="chip-row"
+                  role="group"
+                  aria-label="Yön filtresi"
+                >
+                  {(
+                    [
+                      ['tumu', 'Tümü'],
+                      ['dikey', 'Dikey Shorts'],
+                      ['yatay', 'Yatay tam kesit'],
+                    ] as [ClipFilter, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`chip${clipFilter === key ? ' chip--on' : ''}`}
+                      aria-pressed={clipFilter === key}
+                      onClick={() => setClipFilter(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {data.clips.length > 0 && !selectMode && (
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    onClick={() => {
+                      setSelectMode(true)
+                      setSelectedIds([])
+                      setBulkResult(null)
+                    }}
+                  >
+                    Toplu seç
+                  </button>
+                )}
+              </div>
+
+              {selectMode && (
+                <div className="bulk-bar" role="toolbar" aria-label="Toplu klip eylemleri">
+                  <span className="bulk-count">
+                    <b className="nums">{selectedIds.length}</b> klip seçildi
+                  </span>
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    onClick={() =>
+                      setSelectedIds(
+                        selectedIds.length === data.clips.length
+                          ? []
+                          : data.clips.map((clip) => clip.id),
+                      )
+                    }
+                  >
+                    {selectedIds.length === data.clips.length
+                      ? 'Temizle'
+                      : 'Tümünü seç'}
+                  </button>
                   <button
                     type="button"
                     className="btn--ghost"
                     disabled={selectedIds.length === 0 || bulkBusy}
-                    onClick={() => setConfirmBulkDelete(true)}
-                    title="Klipleri kaldır: YouTube'taki videolar ve yerel dosyalar silinir."
+                    onClick={downloadSelected}
+                    title="Seçili klipleri bu bilgisayara indir."
                   >
-                    Kaldır
+                    İndir
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="btn--ghost"
-                  onClick={exitSelectMode}
-                >
-                  Bitti
-                </button>
-              </div>
-            )}
-
-            {bulkResult && (
-              <p className="bulk-result" role="status">
-                {bulkResult.ok} klip{' '}
-                {bulkResult.action === 'delete'
-                  ? 'kaldırıldı'
-                  : bulkResult.action === 'public'
-                    ? 'herkese açıldı'
-                    : 'gizliye alındı'}
-                {bulkResult.skipped > 0 && `, ${bulkResult.skipped} atlandı`}
-                {bulkResult.errors > 0 && `, ${bulkResult.errors} hata`}
-                .
-              </p>
-            )}
-
-            {data.clips.length === 0 ? (
-              <p className="product-note">
-                Hazır klip yok. Motor bir sonraki seçimi tamamladığında
-                videolar burada oynatılabilir kartlar olarak görünür.
-              </p>
-            ) : (
-              <div className="clip-grid">
-                {data.clips.map((clip) => (
-                  <ClipCard
-                    key={clip.id}
-                    clip={clip}
-                    onOpen={(selected) => setOpenClipId(selected.id)}
-                    onRemove={handleClipRemove}
-                    selectable={selectMode}
-                    selected={selectedSet.has(clip.id)}
-                    onToggleSelect={toggleSelect}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <div className="panel-gap" />
-
-          <section className="ink-panel" aria-label="Hariç tutulan videolar">
-            <div className="panel-head-row">
-              <h2>Hariç tutulanlar</h2>
-              <span className="panel-count nums">
-                {excludedList.state.status === 'ok'
-                  ? `${excludedList.state.data.sources_total} video`
-                  : '…'}
-              </span>
-              <button
-                type="button"
-                className="btn--ghost"
-                onClick={() => {
-                  setShowExcluded((open) => !open)
-                  setReincludeNote(null)
-                }}
-              >
-                {showExcluded ? 'Gizle' : 'Göster'}
-              </button>
-            </div>
-
-            {!showExcluded ? (
-              <p className="product-note">
-                Kural dışı kalan, kaldırılan ya da dosyaları silindiği için
-                temizlenen videolar. Gerekirse işleme geri alınabilir.
-              </p>
-            ) : excludedData === null ? (
-              <p className="product-note">Hariç listesi okunuyor…</p>
-            ) : excludedData.sources.length === 0 ? (
-              <p className="product-note">Hariç tutulan video yok.</p>
-            ) : (
-              <>
-                <div className="excluded-actions">
                   <button
                     type="button"
                     className="btn--ghost"
-                    disabled={reincludeBusy}
-                    onClick={() =>
-                      void reincludeAll(excludedData.sources.map((s) => s.id))
-                    }
-                    title="Listedeki tüm hariç videoları üretime geri alır."
+                    disabled={selectedIds.length === 0 || bulkBusy}
+                    onClick={() => void runBulk('public')}
+                    title="Seçili klipleri YouTube'da herkese açık yapar."
                   >
-                    {reincludeBusy
-                      ? 'Geri alınıyor…'
-                      : 'Tümünü İşleme Al'}
+                    Herkese Aç
                   </button>
-                  {reincludeNote && (
-                    <span className="bulk-result" role="status">
-                      {reincludeNote}
-                    </span>
-                  )}
-                </div>
-                <ul className="excluded-list">
-                  {excludedData.sources.map((source) => (
-                    <li key={source.id} className="excluded-row">
-                      <span className="excluded-title" title={source.title}>
-                        {source.title}
-                      </span>
-                      <small>{source.source_channel_title ?? 'Kaynak'}</small>
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    disabled={selectedIds.length === 0 || bulkBusy}
+                    onClick={() => void runBulk('private')}
+                    title="Seçili klipleri YouTube'da gizliye alır."
+                  >
+                    Gizliye Al
+                  </button>
+                  {confirmBulkDelete ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn--danger"
+                        disabled={selectedIds.length === 0 || bulkBusy}
+                        onClick={() => void runBulk('delete')}
+                        title="Klipleri YouTube'tan ve yerelden kalıcı olarak kaldırır."
+                      >
+                        {bulkBusy
+                          ? 'Kaldırılıyor…'
+                          : `${selectedIds.length} klibi kalıcı olarak kaldır`}
+                      </button>
                       <button
                         type="button"
                         className="btn--ghost"
-                        disabled={reincludeBusy}
-                        onClick={() => void reincludeAll([source.id])}
-                        title="Bu videoyu üretime geri alır."
+                        onClick={() => setConfirmBulkDelete(false)}
                       >
-                        İşleme Al
+                        Vazgeç
                       </button>
-                    </li>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn--ghost"
+                      disabled={selectedIds.length === 0 || bulkBusy}
+                      onClick={() => setConfirmBulkDelete(true)}
+                      title="Klipleri kaldır: YouTube'taki videolar ve yerel dosyalar silinir."
+                    >
+                      Kaldır
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn--ghost"
+                    onClick={exitSelectMode}
+                  >
+                    Bitti
+                  </button>
+                </div>
+              )}
+
+              {bulkResult && (
+                <p className="bulk-result" role="status">
+                  {bulkResult.ok} klip{' '}
+                  {bulkResult.action === 'delete'
+                    ? 'kaldırıldı'
+                    : bulkResult.action === 'public'
+                      ? 'herkese açıldı'
+                      : 'gizliye alındı'}
+                  {bulkResult.skipped > 0 && `, ${bulkResult.skipped} atlandı`}
+                  {bulkResult.errors > 0 && `, ${bulkResult.errors} hata`}
+                  .
+                </p>
+              )}
+
+              {filteredClips.length === 0 ? (
+                data.clips.length === 0 ? (
+                  <p className="product-note">
+                    Hazır video yok. Motor bir sonraki seçimi tamamladığında
+                    videolar burada oynatılabilir kartlar olarak görünür.
+                  </p>
+                ) : (
+                  <p className="product-note">
+                    Bu yönde hazır video yok. Diğer yönü seç ya da işlenen
+                    videolara bak.
+                  </p>
+                )
+              ) : (
+                <div className="clip-grid">
+                  {filteredClips.map((clip) => (
+                    <ClipCard
+                      key={clip.id}
+                      clip={clip}
+                      onOpen={(selected) => setOpenClipId(selected.id)}
+                      onRemove={handleClipRemove}
+                      selectable={selectMode}
+                      selected={selectedSet.has(clip.id)}
+                      onToggleSelect={toggleSelect}
+                    />
                   ))}
-                </ul>
-              </>
-            )}
-          </section>
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === 'haric' && (
+            <section className="ink-panel" aria-label="Hariç tutulan videolar">
+              <div className="panel-head-row">
+                <h2>Hariç tutulanlar</h2>
+                <span className="panel-count nums">
+                  {excludedList.state.status === 'ok'
+                    ? `${excludedList.state.data.sources_total} video`
+                    : '…'}
+                </span>
+              </div>
+
+              {excludedData === null ? (
+                <p className="product-note">Hariç listesi okunuyor…</p>
+              ) : excludedData.sources.length === 0 ? (
+                <p className="product-note">
+                  Hariç tutulan video yok. Kural dışı kalan ya da kaldırılan
+                  videolar burada listelenir ve gerekirse işleme geri
+                  alınabilir.
+                </p>
+              ) : (
+                <>
+                  <div className="excluded-actions">
+                    <button
+                      type="button"
+                      className="btn--ghost"
+                      disabled={reincludeBusy}
+                      onClick={() =>
+                        void reincludeAll(
+                          excludedData.sources.map((s) => s.id),
+                        )
+                      }
+                      title="Listedeki tüm hariç videoları üretime geri alır."
+                    >
+                      {reincludeBusy
+                        ? 'Geri alınıyor…'
+                        : 'Tümünü İşleme Al'}
+                    </button>
+                    {reincludeNote && (
+                      <span className="bulk-result" role="status">
+                        {reincludeNote}
+                      </span>
+                    )}
+                  </div>
+                  <ul className="excluded-list">
+                    {excludedData.sources.map((source) => (
+                      <li key={source.id} className="excluded-row">
+                        <span className="excluded-title" title={source.title}>
+                          {source.title}
+                        </span>
+                        <small>{source.source_channel_title ?? 'Kaynak'}</small>
+                        <button
+                          type="button"
+                          className="btn--ghost"
+                          disabled={reincludeBusy}
+                          onClick={() => void reincludeAll([source.id])}
+                          title="Bu videoyu üretime geri alır."
+                        >
+                          İşleme Al
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
         </>
       )}
 

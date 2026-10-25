@@ -78,6 +78,11 @@ export interface LibraryClip {
   visibility: string | null
   youtube_video_id: string | null
   youtube_url: string | null
+  /** Yayın planı kart üstünde görünür (madde 4): tamamlandı ve yayın
+   * anları — detaya girmeden "ne zaman bitti, ne zaman çıkacak". */
+  published_at: string | null
+  public_at: string | null
+  scheduled_at: string | null
   source_video_id: number | null
   source_youtube_video_id: string | null
   source_platform: string | null

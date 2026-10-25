@@ -242,6 +242,8 @@ async def overview(request: Request) -> dict:
     planned_videos = await _planned_videos(request, database)
     stock_clips, today_published, channel_rows = await _real_totals(request)
     worker = await _worker_health(request)
+    today_jobs = await _today_job_counts(request, database)
+    next_publish = await _next_publish(request, database)
 
     jobs_active = job_counts["active"]
     jobs_queued = job_counts["queued"]
@@ -266,6 +268,96 @@ async def overview(request: Request) -> dict:
         "stock": {"clips": stock_clips},
         "production": {"planned_videos": planned_videos},
         "today_published": today_published,
+        "today_jobs": today_jobs,
+        "next_publish": next_publish,
         "channel_rows": channel_rows,
         "worker": worker,
     }
+
+
+async def _today_job_counts(request: Request, database: str) -> dict:
+    """Bugün biten işlerin başarı/hata sayısı (Overview'un gün nabzı).
+    Gün sınırı, yayın sayımlarıyla aynı UTC gün başlangıcıdır."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return {"succeeded": 0, "failed": 0}
+    day_start = datetime.now(UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    try:
+        async with sessionmaker() as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT status, COUNT(*) FROM jobs "
+                        "WHERE finished_at IS NOT NULL "
+                        "AND finished_at >= :day_start "
+                        "AND status IN ('succeeded', 'failed') "
+                        "GROUP BY status"
+                    ),
+                    {"day_start": day_start},
+                )
+            ).all()
+        counts = {status: int(total) for status, total in rows}
+        return {
+            "succeeded": counts.get("succeeded", 0),
+            "failed": counts.get("failed", 0),
+        }
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return {"succeeded": 0, "failed": 0}
+
+
+async def _next_publish(request: Request, database: str) -> dict | None:
+    """Sıradaki yayın: takvimden elle planlanmış en yakın saat. Elle
+    plan yoksa gizli yüklenmiş klip sayısıyla 'otomatik slot bekleniyor'
+    anlatılır — uydurma saat gösterilmez."""
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if database != "reachable" or sessionmaker is None:
+        return None
+    now = datetime.now(UTC)
+    try:
+        async with sessionmaker() as session:
+            scheduled = (
+                await session.execute(
+                    text(
+                        "SELECT pv.scheduled_at, pv.title, pv.orientation, "
+                        "c.name AS channel_name "
+                        "FROM published_videos pv "
+                        "JOIN channels c ON pv.channel_id = c.id "
+                        "WHERE pv.scheduled_at IS NOT NULL "
+                        "AND pv.scheduled_at > :now "
+                        "AND pv.visibility = 'private' "
+                        "AND pv.status IN ('uploaded', 'verified') "
+                        "ORDER BY pv.scheduled_at ASC LIMIT 1"
+                    ),
+                    {"now": now},
+                )
+            ).first()
+            waiting = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM published_videos "
+                        "WHERE visibility = 'private' "
+                        "AND status IN ('uploaded', 'verified') "
+                        "AND scheduled_at IS NULL "
+                        "AND public_at IS NULL"
+                    )
+                )
+            ).scalar()
+        return {
+            "scheduled_at": (
+                scheduled.scheduled_at.isoformat()
+                if scheduled is not None and scheduled.scheduled_at
+                else None
+            ),
+            "title": scheduled.title if scheduled is not None else None,
+            "orientation": (
+                scheduled.orientation if scheduled is not None else None
+            ),
+            "channel_name": (
+                scheduled.channel_name if scheduled is not None else None
+            ),
+            "waiting_count": int(waiting or 0),
+        }
+    except Exception:  # noqa: BLE001 - migration'dan geride şema
+        return None

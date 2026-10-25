@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import logoUrl from '../assets/brand/logo-dark-bg.svg'
+import { ActivityBell } from './ActivityBell'
 import {
   BoltIcon,
   CalendarIcon,
@@ -16,6 +17,7 @@ const PRIMARY_NAV = [
   { to: '/kanallar', label: 'Kanallar' },
   { to: '/karakterler', label: 'Karakterler' },
   { to: '/medya', label: 'Medya Kütüphanesi' },
+  { to: '/youtube', label: 'YouTube' },
   { to: '/takvim', label: 'Takvim' },
   { to: '/otomasyon', label: 'Otomasyon' },
   { to: '/rehber', label: 'Rehber' },
@@ -101,6 +103,7 @@ export function AppShell({
   onLogout?: () => void
 }) {
   const isMobile = useIsMobile()
+  const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawerRef = useRef<HTMLElement | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -146,6 +149,7 @@ export function AppShell({
               alt="AutoShorts Studio"
               className="mobile-logo"
             />
+            <ActivityBell />
           </header>
           <div
             className={`drawer-backdrop${drawerOpen ? ' open' : ''}`}
@@ -176,11 +180,14 @@ export function AppShell({
               {username && (
                 <div className="rail-user">
                   <span title="Oturum açan yönetici">{username}</span>
-                  {onLogout && (
-                    <button type="button" onClick={onLogout}>
-                      Çıkış
-                    </button>
-                  )}
+                  <div className="rail-user-actions">
+                    <Link to="/hesap">Hesap</Link>
+                    {onLogout && (
+                      <button type="button" onClick={onLogout}>
+                        Çıkış
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -208,21 +215,28 @@ export function AppShell({
           </div>
           <StudioNav />
           <div className="rail-foot">
+            <ActivityBell />
             {username && (
               <div className="rail-user">
                 <span title="Oturum açan yönetici">{username}</span>
-                {onLogout && (
-                  <button type="button" onClick={onLogout}>
-                    Çıkış
-                  </button>
-                )}
+                <div className="rail-user-actions">
+                  <Link to="/hesap">Hesap</Link>
+                  {onLogout && (
+                    <button type="button" onClick={onLogout}>
+                      Çıkış
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </aside>
       )}
       <main className="content" id="main-content">
-        <Outlet />
+        {/* key, rota degistiginde giris animasyonunu yeniden baslatir. */}
+        <div className="route-view" key={location.pathname}>
+          <Outlet />
+        </div>
       </main>
     </div>
   )

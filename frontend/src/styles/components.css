@@ -3557,3 +3557,925 @@
     background: var(--paper-white);
   }
 }
+
+/* ============================================================
+   Stüdyo nabzı: toast bildirimleri + "Son olup bitenler" zili.
+   Dil: beyaz kart, 1px kontur, kart gölgesi; ton hap paletinden
+   yumuşak zeminli ikon çipiyle verilir. Hareket geri bildirimi
+   taşır: giriş 240ms doğal yavaşlama, çıkış hızlı ve sessiz.
+   ============================================================ */
+
+.toaster {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 59;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  box-shadow: var(--card-shadow);
+  pointer-events: auto;
+  animation: toast-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.toast--ok .toast-icon {
+  background: var(--green-soft);
+  color: var(--green-on-plate);
+}
+.toast--error .toast-icon {
+  background: var(--red-soft);
+  color: var(--red-on-plate);
+}
+.toast--warn .toast-icon {
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
+}
+.toast--run .toast-icon {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.toast-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-body p {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--plate-ink);
+}
+
+.toast-body small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--plate-muted);
+  word-break: break-word;
+}
+
+.toast-link {
+  margin-top: 6px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.toast-close {
+  border: none;
+  background: transparent;
+  color: var(--plate-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  color: var(--plate-ink);
+  background: var(--accent-soft);
+}
+
+/* --- Zil ve aktivite paneli --- */
+.activity-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.activity-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--ink-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-on-dark);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.activity-bell:hover,
+.activity-bell.open {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.activity-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.activity-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: min(360px, calc(100vw - 40px));
+  max-height: min(430px, 60vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  animation: activity-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes activity-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.activity-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--plate-line);
+}
+
+.activity-head b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--plate-ink);
+}
+
+.activity-head small {
+  font-size: 11px;
+  color: var(--plate-muted);
+}
+
+.activity-empty {
+  padding: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--plate-muted);
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+}
+
+.activity-item {
+  display: flex;
+  gap: 10px;
+  padding: 9px 16px;
+}
+
+.activity-item + .activity-item {
+  border-top: 1px solid #eef2f6;
+}
+
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--plate-muted);
+}
+
+.activity-item.tone--ok .activity-dot {
+  background: var(--green);
+}
+.activity-item.tone--error .activity-dot {
+  background: var(--red);
+}
+.activity-item.tone--warn .activity-dot {
+  background: var(--amber);
+}
+.activity-item.tone--run .activity-dot {
+  background: var(--accent-deep);
+}
+
+.activity-item p {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--plate-ink);
+}
+
+.activity-item small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--plate-muted);
+}
+
+.activity-item .activity-note {
+  color: var(--red-on-plate);
+}
+
+/* Mobil: toast üstten iner (alt sekme çubuğu ile çakışmaz), aktivite
+   paneli üst çubuğun altına sabitlenir. */
+@media (max-width: 900px) {
+  .toaster {
+    right: 10px;
+    left: 10px;
+    bottom: auto;
+    top: calc(64px + env(safe-area-inset-top));
+    width: auto;
+  }
+
+  .toast {
+    animation-name: toast-in-mobile;
+  }
+
+  @keyframes toast-in-mobile {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .activity-wrap {
+    justify-self: end;
+    margin-bottom: 0;
+  }
+
+  .activity-panel {
+    position: fixed;
+    top: calc(56px + env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-height: 64vh;
+    z-index: 59;
+  }
+}
+
+/* ============================================================
+   Medya Kütüphanesi (madde 4 yeniden yapılandırma): sekme dili +
+   klip kartı tarih satırları + yön filtresi çipleri.
+   Sekmeler alt sekme çubuğunun dilini konuşur: aktif sekme okyanus
+   hap + geceyarısı metin; sayaç hap içinde nums ile.
+   ============================================================ */
+
+.lib-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: var(--space-4) 0 var(--space-4);
+}
+
+.lib-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--plate-line);
+  border-radius: 999px;
+  background: var(--plate);
+  color: var(--plate-body-ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.lib-tab:hover {
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.lib-tab:active {
+  transform: scale(0.97);
+}
+
+.lib-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.lib-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: var(--plate-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.lib-tab.active .lib-tab-count {
+  background: rgba(11, 25, 44, 0.14);
+  color: var(--accent-ink);
+}
+
+/* Yön filtresi çipleri: "Tümü / Dikey Shorts / Yatay tam kesit". */
+.chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 5px 12px;
+  border: 1px solid var(--plate-line);
+  border-radius: 999px;
+  background: var(--plate);
+  color: var(--plate-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.chip--on {
+  background: var(--accent-soft);
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+/* Klip kartında tamamlandı + yayın planı satırları (madde 4). */
+.clip-when {
+  display: block;
+  font-size: 11px;
+  color: var(--plate-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.clip-when--plan {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+/* Yön etiketi: künye üstünde küçük hap (dikey = okyanus, yatay = arduvaz). */
+.clip-orient {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.clip-orient--horizontal {
+  background: #eef2f6;
+  color: var(--plate-muted);
+}
+
+/* ============================================================
+   Otomasyon canlandırması (madde 4): süren iş satırı vurgusu,
+   hap içi canlı nokta ve media_process aşama çubuğu.
+   ============================================================ */
+
+.flow-row--live {
+  padding: 8px 10px;
+  margin: 4px -10px;
+  border-radius: var(--radius-control);
+  background: #f7fafc;
+  border-left: none;
+}
+
+/* Hap içinde yalnız nokta: etiket taşımaz, nabız atar. */
+.live-dot--inline {
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  color: inherit;
+}
+
+.live-dot--inline::before {
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Süren işin altındaki aşama çubuğu: satırın tam genişliğinde. */
+.flow-track {
+  flex-basis: 100%;
+  padding: 6px 2px 2px;
+}
+
+.flow-track .stage-track {
+  margin: 0;
+}
+
+.flow-detail {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--plate-muted);
+}
+
+/* ============================================================
+   Genel Bakış dolgunlaştırması (madde 3): ikinci stat satırı,
+   sıradaki yayın kartı, kanal stok meter'ı ve bugünün akışı.
+   ============================================================ */
+
+/* İkinci satır birinciden ayrışır: hafif zemin farkı yok, araya
+   kompakt boşluk girer; kartlar aynı dili konuşur. */
+.stat-grid--pulse {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: var(--space-5);
+}
+
+.stat-grid--pulse .stat-card {
+  background: #fbfcfe;
+}
+
+/* Sıradaki yayın kartı: saat değeri + uzun künye satırı. */
+.stat-card--publish small {
+  white-space: normal;
+  line-height: 1.45;
+}
+
+/* Kanal satırındaki stok hedefi meter'ı: gauge dilinin ince hali. */
+.oc-stock-meter {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin: 2px 0 6px;
+}
+
+.oc-stock-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Bugünün akışı listesi genel bakışta panel içinde yaşar. */
+.overview-flow {
+  padding: 8px 0 6px;
+}
+
+/* ============================================================
+   YouTube yönetim ekranı (madde 5): kanal seçici, video satırı,
+   kayıt dışı vurgusu. Satır dili info-table ile akrabadır: küçük
+   künye + haplar + nums istatistikler + sağda eylem.
+   ============================================================ */
+
+.yt-channel-row {
+  margin-bottom: var(--space-4);
+}
+
+.yt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.yt-chip i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.yt-chip small {
+  color: var(--plate-muted);
+  font-weight: 500;
+}
+
+.yt-chip.chip--on small {
+  color: var(--accent-deep);
+}
+
+.yt-orphan-note {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 12px 16px;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-print);
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.yt-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.yt-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.yt-row:last-child {
+  border-bottom: none;
+}
+
+.yt-row--orphan {
+  background: #fffdf5;
+}
+
+.yt-thumb {
+  display: block;
+  width: 96px;
+  height: 54px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ink-panel);
+  display: grid;
+  place-items: center;
+  color: var(--cream-text);
+}
+
+.yt-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.yt-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.yt-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--plate-ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yt-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.yt-info small {
+  font-size: 11.5px;
+  color: var(--plate-muted);
+}
+
+.yt-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--plate-muted);
+  white-space: nowrap;
+}
+
+.yt-actions {
+  display: inline-flex;
+  gap: 8px;
+  justify-self: end;
+}
+
+/* Analiz panelinin stüdyo özeti şeridi (Pro). */
+.yt-managed-strip {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  background: #fbfcfe;
+  font-size: 12.5px;
+  color: var(--plate-muted);
+}
+
+@media (max-width: 900px) {
+  .yt-row {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .yt-thumb {
+    width: 72px;
+    height: 42px;
+  }
+
+  .yt-info {
+    flex: 1 1 160px;
+  }
+
+  .yt-stats {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .yt-actions {
+    margin-left: auto;
+  }
+}
+
+/* ============================================================
+   Etkileşim cilası (madde 1): rota geçişi, basma geri bildirimi,
+   meter/aşama hareketi, modal girişi. Hareket yalnızca geri
+   bildirim ve devamlılık için — tasarım dilini değiştirmez;
+   prefers-reduced-motion base.css'teki anahtarla hepsini kapatır.
+   ============================================================ */
+
+/* Rota geçişi: ekran içeriği hafifçe yukarı süzülür (180ms). */
+.route-view {
+  animation: route-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Basma geri bildirimi: geçişsiz anında küçülme — algılanan hız
+   yüksek kalır. Tüm düğmeler + blok düzeyli nav bağlantıları. */
+button:active:not(:disabled),
+.tabbar a:active .tab-pill,
+.rail nav a:active {
+  transform: scale(0.96);
+}
+
+/* Alt sekme hapı rengi yumuşak geçer (lib-tab kendi geçişine sahip). */
+.tab-pill {
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* Değer değişimi okunur: gauge dolgusu genişliğiyle akar. */
+.gauge-fill {
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Süren aşamanın noktası nefes alır (live-dot ile aynı dil). */
+.stage-step--active .stage-dot {
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+/* Modal girişi: zemin solar, kart yerinden hafifçe doğar. */
+.modal-backdrop {
+  animation: backdrop-in 150ms ease both;
+}
+
+.modal {
+  animation: modal-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* İç kaydırma alanları kaydırma zincirini sayfaya taşımaz. */
+.modal-backdrop,
+.drawer-scroll,
+.activity-list,
+.table-scroll {
+  overscroll-behavior: contain;
+}
+
+/* ============================================================
+   Hesap sistemi (madde 6): kapı notu, profil, plan kartları,
+   kullanıcı yönetimi, ray kullanıcı eylemleri.
+   ============================================================ */
+
+/* Plana takılan özellik notu: uyarı değil bilgi — yol gösterir. */
+.gate-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 16px;
+  margin: 10px 0;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-print);
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
+}
+
+.gate-notice p {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.gate-notice small {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gate-link {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Ray/çekmecedeki kullanıcı bloğu: ad üstte, eylemler altta. */
+.rail-user-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.rail-user-actions a {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+/* Profil satırı: ad + rol/plan hapları. */
+.account-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.account-profile-row b {
+  font-size: 15px;
+}
+
+.account-expiry {
+  display: block;
+  margin-top: 6px;
+  color: var(--plate-muted);
+}
+
+/* Plan karşılaştırma kartları. */
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.plan-card {
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  padding: 14px 16px;
+  background: var(--plate);
+}
+
+.plan-card--current {
+  border-color: var(--accent);
+  box-shadow: var(--card-shadow);
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-price {
+  margin: 6px 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--plate-ink);
+}
+
+.plan-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--plate-body-ink);
+}
+
+.plan-feature--off {
+  color: var(--plate-muted);
+}
+
+.account-plan-note {
+  font-size: 12.5px;
+  color: var(--plate-muted);
+  line-height: 1.5;
+}
+
+.account-subhead {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--plate-ink);
+}
+

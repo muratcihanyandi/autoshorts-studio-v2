@@ -17,10 +17,19 @@ from app.schemas import (
     MetadataTemplateIn,
 )
 from app.services.channel_service import ChannelService
+from app.services.auth_service import (
+    FREE_MAX_CHANNELS,
+    ensure_channel_access,
+    gate_response,
+)
 from app.services.metadata_service import MetadataError
 from app.services.oauth_service import OAuthError, OAuthService
 
 router = APIRouter(tags=["channels"])
+
+
+def _user(request: Request):
+    return getattr(request.state, "auth_user", None)
 
 
 def _service(request: Request) -> ChannelService:
@@ -53,6 +62,10 @@ def _out_or_404(channel) -> ChannelOut:
 async def list_channels(request: Request) -> ChannelsOut:
     service = _service(request)
     channels = await service.list_channels()
+    # Hesap izolasyonu (madde 6): operatör yalnız kendi kanallarını görür.
+    user = _user(request)
+    if user is not None and not user.is_admin:
+        channels = [c for c in channels if c.owner_user_id == user.id]
     connected = sum(1 for c in channels if c.status.value == "connected")
     return ChannelsOut(
         channels=[ChannelOut.model_validate(c) for c in channels],
@@ -66,13 +79,25 @@ async def list_channels(request: Request) -> ChannelsOut:
 )
 async def create_channel(request: Request, data: ChannelCreate) -> ChannelOut:
     service = _service(request)
-    channel = await service.create_channel(data)
+    user = _user(request)
+    # Free plan kapısı: tek kanal. Admin ve Pro sınırsız ekler.
+    if (
+        user is not None
+        and not user.is_admin
+        and user.effective_plan != "pro"
+        and await service.count_owned_channels(user.id) >= FREE_MAX_CHANNELS
+    ):
+        return gate_response("channels")
+    channel = await service.create_channel(
+        data, owner_user_id=user.id if user is not None else None
+    )
     return ChannelOut.model_validate(channel)
 
 
 @router.get("/channels/{channel_id}", response_model=ChannelOut)
 async def get_channel(request: Request, channel_id: int) -> ChannelOut:
     service = _service(request)
+    await ensure_channel_access(request, channel_id)
     return _out_or_404(await service.get_channel(channel_id))
 
 
@@ -81,12 +106,14 @@ async def update_channel(
     request: Request, channel_id: int, data: ChannelUpdate
 ) -> ChannelOut:
     service = _service(request)
+    await ensure_channel_access(request, channel_id)
     return _out_or_404(await service.update_channel(channel_id, data))
 
 
 @router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(request: Request, channel_id: int) -> None:
     service = _service(request)
+    await ensure_channel_access(request, channel_id)
     if not await service.delete_channel(channel_id):
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
 
@@ -94,11 +121,13 @@ async def delete_channel(request: Request, channel_id: int) -> None:
 @router.post("/channels/{channel_id}/disconnect", response_model=ChannelOut)
 async def disconnect_channel(request: Request, channel_id: int) -> ChannelOut:
     service = _service(request)
+    await ensure_channel_access(request, channel_id)
     return _out_or_404(await service.disconnect_channel(channel_id))
 
 
 @router.post("/channels/{channel_id}/oauth/start")
 async def oauth_start(request: Request, channel_id: int) -> dict:
+    await ensure_channel_access(request, channel_id)
     oauth = await _oauth_service(request)
     try:
         return await oauth.start(channel_id)
@@ -120,6 +149,7 @@ async def oauth_callback(
     URL is configured; otherwise the result is plain JSON (API clients).
     """
     frontend = (await effective_settings(request)).frontend_base_url.rstrip("/")
+    await ensure_channel_access(request, channel_id)
     oauth = await _oauth_service(request)
     try:
         channel = await oauth.callback(channel_id, code, state, error)
@@ -136,6 +166,7 @@ async def oauth_callback(
 
 @router.post("/channels/{channel_id}/oauth/refresh")
 async def oauth_refresh(request: Request, channel_id: int) -> dict:
+    await ensure_channel_access(request, channel_id)
     oauth = await _oauth_service(request)
     try:
         refreshed = await oauth.refresh_if_needed(channel_id)
@@ -194,12 +225,18 @@ async def _metadata_service(request: Request) -> "MetadataService":
 
 
 async def _require_channel(request: Request, channel_id: int) -> None:
+    """Kanal var mı + oturan kullanıcı erişebilir mi (madde 6). Varlık
+    kontrolü auth kapalıyken de çalışır (önceki davranış)."""
     sessionmaker = request.app.state.sessionmaker
     from app.models import Channel
 
+    user = _user(request)
     async with sessionmaker() as session:
-        if await session.get(Channel, channel_id) is None:
-            raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
+        channel = await session.get(Channel, channel_id)
+    if channel is None or (
+        user is not None and not user.is_admin and channel.owner_user_id != user.id
+    ):
+        raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
 
 
 def _template_out(template) -> dict:

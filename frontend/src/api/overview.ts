@@ -12,6 +12,22 @@ export interface TodayPublished {
   horizontal_limit: number
 }
 
+/** Bugün biten işlerin gün nabzı (madde 3). */
+export interface TodayJobs {
+  succeeded: number
+  failed: number
+}
+
+/** Sıradaki yayın: elle planlanmış en yakın saat; plan yoksa
+ * waiting_count ile otomatik slot bekleyen klip sayısı verilir. */
+export interface NextPublish {
+  scheduled_at: string | null
+  title: string | null
+  orientation: string | null
+  channel_name: string | null
+  waiting_count: number
+}
+
 export interface Overview {
   version: string
   app_env: string
@@ -28,6 +44,8 @@ export interface Overview {
    * bunu okur (2026-10-21 kalıcı çözüm). */
   production?: { planned_videos: number }
   today_published: TodayPublished
+  today_jobs?: TodayJobs
+  next_publish?: NextPublish | null
   channel_rows?: ChannelRow[]
   worker?: WorkerHealth
 }

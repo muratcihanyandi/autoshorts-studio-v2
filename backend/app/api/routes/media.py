@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings
+from app.services.auth_service import gate_response, user_allows
 from app.services.library_view import LibraryViewService
 
 router = APIRouter(tags=["media-library"])
@@ -225,6 +226,9 @@ async def bulk_clips(request: Request, payload: BulkClipActionIn) -> dict:
     """Toplu klip eylemi (Görev 4, kullanıcı isteği 2026-10-21):
     seçilen klipleri toplu kaldir / herkese aç / gizliye al.
     İndirme tarayıcı tarafında stream uçları üzerinden yapılır."""
+    # Free plan kapısı (madde 6): toplu işlemler Pro ile açılır.
+    if not user_allows(getattr(request.state, "auth_user", None), "bulk_actions"):
+        return gate_response("bulk_actions")
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(

@@ -8,6 +8,8 @@ import {
 } from '../api/calendar'
 import { usePolling } from '../hooks/usePolling'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
+import { GateNotice } from '../components/GateNotice'
+import { gateFromError, type GateInfo } from '../gates'
 import { ClipDetailModal } from '../components/ClipDetailModal'
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
@@ -220,11 +222,13 @@ function ScheduleModal({
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [gate, setGate] = useState<GateInfo | null>(null)
 
   async function save() {
     if (!target) return
     setBusy(true)
     setError(null)
+    setGate(null)
     try {
       const moment = new Date(`${date}T${time}`)
       if (Number.isNaN(moment.getTime())) {
@@ -236,7 +240,13 @@ function ScheduleModal({
       await rescheduleCalendar(target, moment.toISOString())
       onSaved({ date, time })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Planlama başarısız.')
+      // Free planda manuel planlama kapalı: hata değil plan notu.
+      const gateInfo = gateFromError(err)
+      if (gateInfo) {
+        setGate(gateInfo)
+      } else {
+        setError(err instanceof Error ? err.message : 'Planlama başarısız.')
+      }
     } finally {
       setBusy(false)
     }
@@ -313,6 +323,7 @@ function ScheduleModal({
               {error}
             </p>
           )}
+          {gate && <GateNotice gate={gate} />}
         </div>
         <div className="modal-actions">
           <button type="button" className="btn btn--ghost" onClick={onClose}>

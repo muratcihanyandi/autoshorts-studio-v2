@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import AuditEvent, Channel, ChannelStatus, PublishingProfile
@@ -39,6 +40,14 @@ class ChannelService:
         async with self._sessionmaker() as session:
             return await ChannelRepository(session).list()
 
+    async def count_owned_channels(self, user_id: int) -> int:
+        """Kullanicinin sahip oldugu kanal sayisi (free plan limiti)."""
+        async with self._sessionmaker() as session:
+            rows = await session.execute(
+                select(Channel.id).where(Channel.owner_user_id == user_id)
+            )
+            return len(rows.all())
+
     async def count_connected(self) -> int:
         async with self._sessionmaker() as session:
             return await ChannelRepository(session).count_connected()
@@ -47,10 +56,14 @@ class ChannelService:
         async with self._sessionmaker() as session:
             return await ChannelRepository(session).get(channel_id)
 
-    async def create_channel(self, data: ChannelCreate) -> Channel:
+    async def create_channel(
+        self, data: ChannelCreate, owner_user_id: int | None = None
+    ) -> Channel:
         async with self._sessionmaker() as session:
             repo = ChannelRepository(session)
             channel = await repo.create(data)
+            # Hesap izolasyonu (madde 6): kanalı oluşturan hesaba bagla.
+            channel.owner_user_id = owner_user_id
             # Her kanal kendi yayın profiliyle doğar (kanal bazlı ayarlar).
             session.add(PublishingProfile(channel_id=channel.id))
             record_event(session, channel.id, "channel.created", {"name": data.name})

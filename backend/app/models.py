@@ -88,6 +88,64 @@ RENDERED_CLIP_STATUSES = ("rendering", "rendered", "review", "failed")
 CLIP_METADATA_STATUSES = ("draft", "approved", "rejected")
 
 
+class UserRole(str, enum.Enum):
+    admin = "admin"
+    operator = "operator"
+
+
+class UserPlan(str, enum.Enum):
+    free = "free"
+    pro = "pro"
+
+
+class User(Base):
+    """A studio account (account isolation, madde 6).
+
+    The first account — migrated from the single-operator ``studio_auth``
+    era — is an admin. Later accounts may be operators whose plan gates
+    some features (see auth_service plan limits)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(
+            UserRole,
+            native_enum=False,
+            create_constraint=True,
+            length=16,
+            name="ck_users_role",
+        ),
+        default=UserRole.admin,
+        nullable=False,
+    )
+    plan: Mapped[UserPlan] = mapped_column(
+        SAEnum(
+            UserPlan,
+            native_enum=False,
+            create_constraint=True,
+            length=16,
+            name="ck_users_plan",
+        ),
+        default=UserPlan.pro,
+        nullable=False,
+    )
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class Channel(Base):
     """A YouTube publishing channel the studio manages."""
 
@@ -110,6 +168,11 @@ class Channel(Base):
     )
     ribbon_color: Mapped[str] = mapped_column(Text, nullable=False, default="#3550c4")
     notes: Mapped[str | None] = mapped_column(Text)
+    # Hesap izolasyonu: kanalı oluşturan hesap. NULL = migration öncesi
+    # kalıntı (yalnız admin görür); silinen hesapta kanal yerinde kalır.
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

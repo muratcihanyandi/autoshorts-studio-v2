@@ -749,6 +749,23 @@ class LibraryViewService:
                         if youtube_video_id
                         else None
                     ),
+                    # Kütüphane kartında detaya girmeden yayın planını
+                    # göstermek için ek tarih alanları (madde 4, 2026-10-25).
+                    "published_at": (
+                        published_row.published_at.isoformat()
+                        if published_row is not None and published_row.published_at
+                        else None
+                    ),
+                    "public_at": (
+                        published_row.public_at.isoformat()
+                        if published_row is not None and published_row.public_at
+                        else None
+                    ),
+                    "scheduled_at": (
+                        published_row.scheduled_at.isoformat()
+                        if published_row is not None and published_row.scheduled_at
+                        else None
+                    ),
                     "source_video_id": video.id if video is not None else None,
                     "source_youtube_video_id": (
                         video.youtube_video_id if video is not None else None

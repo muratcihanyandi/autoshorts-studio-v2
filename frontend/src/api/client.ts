@@ -1,9 +1,16 @@
 export class ApiError extends Error {
   status: number
+  /** Hata gövdesi JSON'duysa ham payload (kapı tespiti için). */
+  payload: Record<string, unknown> | null
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    payload: Record<string, unknown> | null = null,
+  ) {
     super(message)
     this.status = status
+    this.payload = payload
   }
 }
 
@@ -13,11 +20,31 @@ function notifyUnauthorized(path: string): void {
   window.dispatchEvent(new Event('studio:unauthorized'))
 }
 
+/** Hata gövdesini okuyarak ApiError üret; detail string'i mesaj olur,
+ * tüm gövde payload olarak taşınır (plana takılan 403'ler {feature,
+ * required_plan} taşır). */
+async function apiError(response: Response): Promise<ApiError> {
+  let payload: Record<string, unknown> | null = null
+  let detail = `HTTP ${response.status}`
+  try {
+    const body = (await response.json()) as Record<string, unknown>
+    if (body && typeof body === 'object') {
+      payload = body
+      if (typeof body.detail === 'string') {
+        detail = body.detail
+      }
+    }
+  } catch {
+    // gövde JSON değilse HTTP kodu yeter
+  }
+  return new ApiError(response.status, detail, payload)
+}
+
 export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path)
   if (!response.ok) {
     if (response.status === 401) notifyUnauthorized(path)
-    throw new ApiError(response.status, `HTTP ${response.status}`)
+    throw await apiError(response)
   }
   return (await response.json()) as T
 }
@@ -35,16 +62,7 @@ export async function sendJson<T>(
   })
   if (!response.ok) {
     if (response.status === 401) notifyUnauthorized(path)
-    let detail = `HTTP ${response.status}`
-    try {
-      const payload = (await response.json()) as { detail?: string }
-      if (payload && typeof payload.detail === 'string') {
-        detail = payload.detail
-      }
-    } catch {
-      // gövde JSON değilse HTTP kodu yeter
-    }
-    throw new ApiError(response.status, detail)
+    throw await apiError(response)
   }
   if (response.status === 204) {
     return null

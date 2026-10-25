@@ -21,12 +21,15 @@ from app.api.routes.logs import router as logs_router
 from app.api.routes.media import router as media_router
 from app.api.routes.overview import router as overview_router
 from app.api.routes.pipeline import router as pipeline_router
+from app.api.routes.plans import router as plans_router
+from app.api.routes.pulse import router as pulse_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.automation import router as automation_router
 from app.api.routes.publishing import router as publishing_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.system import router as system_router
 from app.api.routes.whisper import router as whisper_router
+from app.api.routes.youtube import router as youtube_router
 from app.config import Settings, get_settings
 from app.db import create_engine_and_sessionmaker
 from app.logging_config import setup_logging
@@ -107,11 +110,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(llm_router, prefix="/api")
     app.include_router(jobs_router, prefix="/api")
     app.include_router(pipeline_router, prefix="/api")
+    app.include_router(pulse_router, prefix="/api")
+    app.include_router(plans_router, prefix="/api")
     app.include_router(media_router, prefix="/api")
     app.include_router(logs_router, prefix="/api")
     app.include_router(publishing_router, prefix="/api")
     app.include_router(automation_router, prefix="/api")
     app.include_router(whisper_router, prefix="/api")
+    app.include_router(youtube_router, prefix="/api")
     from app.services.auth_service import install_auth_middleware
 
     install_auth_middleware(app, settings)

@@ -46,3 +46,25 @@ export function formatTimeShort(iso: string | null): string {
     return '—'
   }
 }
+
+/** Okunur tarih+saat: "25 Eki 14:30". Kütüphane kartlarında yayın
+ * planını detaya girmeden göstermek için (madde 4). */
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString('tr-TR', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return '—'
+  }
+}
+
+/** Büyük sayılar için binlik ayraçlı okunuş: 12.403. */
+export function formatCount(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  return new Intl.NumberFormat('tr-TR').format(value)
+}
