@@ -38,6 +38,7 @@ interface ToastItem {
   link: string | null
   /** Yerel eylem geri bildirimi mi, sunucudan gelen olay mı. */
   local: boolean
+  icon?: string
 }
 
 interface PulseContextValue {
@@ -114,6 +115,7 @@ export function PulseProvider({ children }: { children: ReactNode }) {
               note: story.note,
               link: story.link,
               local: false,
+              icon: story.icon,
             }
           })
         pushToast(speak)
@@ -207,7 +209,7 @@ function ToastCard({
       onBlur={() => setPaused(false)}
     >
       <span className="toast-icon" aria-hidden="true">
-        {TONE_ICON[toast.tone]}
+        {toast.icon ?? TONE_ICON[toast.tone]}
       </span>
       <div className="toast-body">
         <p>{toast.sentence}</p>

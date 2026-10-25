@@ -91,7 +91,10 @@ export function ActivityBell() {
                   <li key={event.id} className={`activity-item tone--${story.tone}`}>
                     <span className="activity-dot" aria-hidden="true" />
                     <div>
-                      <p>{story.sentence}</p>
+                      <p>
+                        {story.icon ? <span className="activity-icon" aria-hidden="true">{story.icon} </span> : null}
+                        {story.sentence}
+                      </p>
                       <small>
                         {event.channel_name ? `${event.channel_name} · ` : ''}
                         {relativeTime(event.created_at)}

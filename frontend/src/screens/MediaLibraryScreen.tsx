@@ -334,10 +334,12 @@ function ClipCard({
           {clip.channel_name ?? 'Kanal'} ·{' '}
           {clip.orientation === 'vertical' ? 'Shorts' : 'tam kesit'}
         </small>
-        <span className={`pill pill--${view.tone}`}>{view.label}</span>
-        <span className="clip-when nums">
-          Tamamlandı {formatDateTime(clip.created_at)}
-        </span>
+        <div className="clip-status-row">
+          <span className={`pill pill--${view.tone}`}>{view.label}</span>
+          <span className="clip-when nums">
+            Tamamlandı {formatDateTime(clip.created_at)}
+          </span>
+        </div>
         {view.when && <span className="clip-when clip-when--plan">{view.when}</span>}
         <span
           className="clip-card-remove"
@@ -742,19 +744,20 @@ export function MediaLibraryScreen() {
                 >
                   {(
                     [
-                      ['tumu', 'Tümü'],
-                      ['dikey', 'Dikey Shorts'],
-                      ['yatay', 'Yatay tam kesit'],
-                    ] as [ClipFilter, string][]
-                  ).map(([key, label]) => (
+                      ['tumu', 'Tümü', `Tümü (${data.clips.length})`],
+                      ['dikey', 'Dikey Shorts', `Dikey Shorts (${verticalCount})`],
+                      ['yatay', 'Yatay tam kesit', `Yatay tam kesit (${horizontalCount})`],
+                    ] as [ClipFilter, string, string][]
+                  ).map(([key, name, display]) => (
                     <button
                       key={key}
                       type="button"
+                      aria-label={name}
                       className={`chip${clipFilter === key ? ' chip--on' : ''}`}
                       aria-pressed={clipFilter === key}
                       onClick={() => setClipFilter(key)}
                     >
-                      {label}
+                      {display}
                     </button>
                   ))}
                 </div>

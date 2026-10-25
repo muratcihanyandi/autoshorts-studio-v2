@@ -15,6 +15,8 @@ export interface PulseStory {
   link: string | null
   /** İsteğe bağlı kısa not: hata özeti ya da bağlam. */
   note: string | null
+  /** Duygusal durum ikonu */
+  icon?: string
 }
 
 const JOB_SUCCESS: Record<string, string> = {
@@ -82,6 +84,14 @@ export function pulseStory(event: PulseEvent): PulseStory {
     const jobType = String(event.detail?.job_type ?? '')
     if (event.event_type === 'job.succeeded') {
       const action = JOB_SUCCESS[jobType] ?? 'tamamlandı'
+      const icon =
+        jobType.includes('publish')
+          ? '🚀'
+          : jobType.includes('clip_render')
+            ? '🎬'
+            : jobType === 'media_process'
+              ? '✨'
+              : '✓'
       return {
         tone: 'ok',
         sentence: subject
@@ -90,6 +100,7 @@ export function pulseStory(event: PulseEvent): PulseStory {
         subject,
         link: '/medya',
         note: null,
+        icon,
       }
     }
     const failAction = JOB_FAIL[jobType] ?? 'tamamlanamadı'
@@ -101,6 +112,7 @@ export function pulseStory(event: PulseEvent): PulseStory {
       subject,
       link: '/otomasyon',
       note: shortError(event.detail?.last_error as string | undefined),
+      icon: '⚠️',
     }
   }
 
@@ -111,12 +123,23 @@ export function pulseStory(event: PulseEvent): PulseStory {
       : channel
         ? `${channel}: ${known.sentence}`
         : cap(known.sentence)
+    const icon =
+      event.event_type === 'publish.public'
+        ? '🌟'
+        : event.event_type === 'publish.private'
+          ? '🔒'
+          : event.tone === 'ok'
+            ? '✨'
+            : event.tone === 'error'
+              ? '⚠️'
+              : '🔔'
     return {
       tone: event.tone,
       sentence: withSubject,
       subject: subject ?? channel,
       link: known.link ?? null,
       note: null,
+      icon,
     }
   }
 
@@ -128,6 +151,7 @@ export function pulseStory(event: PulseEvent): PulseStory {
     subject,
     link: null,
     note: null,
+    icon: event.tone === 'ok' ? '✨' : event.tone === 'error' ? '⚠️' : '🔔',
   }
 }
 

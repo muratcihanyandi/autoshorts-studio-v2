@@ -37,23 +37,36 @@ function ProfileCard({
   plan: string
   planExpiresAt: string | null
 }) {
+  const initial = (username.trim()[0] || 'U').toUpperCase()
   return (
     <section className="plate account-profile" aria-label="Hesap bilgileri">
       <h2 className="panel-title">Profil</h2>
-      <div className="account-profile-row">
-        <b>{username}</b>
-        <span className={`pill pill--${role === 'admin' ? 'ok' : 'idle'}`}>
-          {ROLE_LABEL[role] ?? role}
-        </span>
-        <span className={`pill pill--${plan === 'pro' ? 'run' : 'idle'}`}>
-          {PLAN_LABEL[plan] ?? plan} planı
-        </span>
+      <div className="account-profile-main">
+        <div className="account-avatar" aria-hidden="true">
+          {initial}
+        </div>
+        <div className="account-profile-details">
+          <div className="account-profile-row">
+            <b>{username}</b>
+            <span className={`pill pill--${role === 'admin' ? 'ok' : 'idle'}`}>
+              {ROLE_LABEL[role] ?? role}
+            </span>
+            <span className={`pill pill--${plan === 'pro' ? 'run' : 'idle'}`}>
+              {PLAN_LABEL[plan] ?? plan} planı
+            </span>
+          </div>
+          <small className="account-desc">
+            {role === 'admin'
+              ? 'Tüm yetkilere sahip stüdyo yöneticisi. Kullanıcıları ve planları yönetebilir.'
+              : 'Stüdyo operatörü. Yetkili kanalları ve medya üretimini takip edebilir.'}
+          </small>
+          {planExpiresAt && (
+            <small className="account-expiry">
+              Plan süresi: {formatDateTime(planExpiresAt)}
+            </small>
+          )}
+        </div>
       </div>
-      {planExpiresAt && (
-        <small className="account-expiry">
-          Plan süresi: {formatDateTime(planExpiresAt)}
-        </small>
-      )}
     </section>
   )
 }

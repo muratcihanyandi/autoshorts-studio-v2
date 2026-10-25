@@ -187,6 +187,7 @@ export function AutomationScreen() {
   const { state, retry } = usePolling(fetcher, 10000)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
+  const [filter, setFilter] = useState<'all' | 'running' | 'queued' | 'failed'>('all')
 
   const act = async (
     id: number,
@@ -334,9 +335,36 @@ export function AutomationScreen() {
           <section className="ink-panel" aria-label="Otomasyon işleri">
             <div className="panel-head-row">
               <h2>İş Akışı ve Süreç Durumu</h2>
-              <span className="nums flow-soft">
-                Toplam {jobs.length} kayıt
-              </span>
+              <div className="chip-row" role="group" aria-label="İş filtresi">
+                <button
+                  type="button"
+                  className={`chip${filter === 'all' ? ' chip--on' : ''}`}
+                  onClick={() => setFilter('all')}
+                >
+                  Tümü ({jobs.length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip${filter === 'running' ? ' chip--on' : ''}`}
+                  onClick={() => setFilter('running')}
+                >
+                  Sürüyor ({running.length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip${filter === 'queued' ? ' chip--on' : ''}`}
+                  onClick={() => setFilter('queued')}
+                >
+                  Sırada ({queued.length})
+                </button>
+                <button
+                  type="button"
+                  className={`chip${filter === 'failed' ? ' chip--on' : ''}`}
+                  onClick={() => setFilter('failed')}
+                >
+                  Hatalar ({failedToday})
+                </button>
+              </div>
             </div>
 
             {jobs.length === 0 ? (
@@ -349,62 +377,68 @@ export function AutomationScreen() {
               </div>
             ) : (
               <>
-                <div className="flow-section">
-                  <h3>Şu an sürüyor</h3>
-                  {running.length === 0 ? (
-                    <p className="plate-note">Şu an süren iş yok.</p>
-                  ) : (
-                    running.map((job) => (
-                      <JobRow
-                        key={job.id}
-                        job={job}
-                        now={now}
-                        position={null}
-                        busy={busy === job.id}
-                        onCancel={cancelWithNote}
-                        onRetry={retryWithNote}
-                      />
-                    ))
-                  )}
-                </div>
+                {(filter === 'all' || filter === 'running') && (
+                  <div className="flow-section">
+                    <h3>Şu an sürüyor</h3>
+                    {running.length === 0 ? (
+                      <p className="plate-note">Şu an süren iş yok.</p>
+                    ) : (
+                      running.map((job) => (
+                        <JobRow
+                          key={job.id}
+                          job={job}
+                          now={now}
+                          position={null}
+                          busy={busy === job.id}
+                          onCancel={cancelWithNote}
+                          onRetry={retryWithNote}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
 
-                <div className="flow-section">
-                  <h3>Sırada bekleyen</h3>
-                  {queued.length === 0 ? (
-                    <p className="plate-note">Bekleyen iş yok.</p>
-                  ) : (
-                    queued.map((job, index) => (
-                      <JobRow
-                        key={job.id}
-                        job={job}
-                        now={now}
-                        position={index + 1}
-                        busy={busy === job.id}
-                        onCancel={cancelWithNote}
-                        onRetry={retryWithNote}
-                      />
-                    ))
-                  )}
-                </div>
+                {(filter === 'all' || filter === 'queued') && (
+                  <div className="flow-section">
+                    <h3>Sırada bekleyen</h3>
+                    {queued.length === 0 ? (
+                      <p className="plate-note">Bekleyen iş yok.</p>
+                    ) : (
+                      queued.map((job, index) => (
+                        <JobRow
+                          key={job.id}
+                          job={job}
+                          now={now}
+                          position={index + 1}
+                          busy={busy === job.id}
+                          onCancel={cancelWithNote}
+                          onRetry={retryWithNote}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
 
-                <div className="flow-section">
-                  <h3>Son bitenler</h3>
-                  {finished.length === 0 ? (
-                    <p className="plate-note">Henüz bitmiş iş yok.</p>
-                  ) : (
-                    finished.map((job) => (
-                      <JobRow
-                        key={job.id}
-                        job={job}
-                        now={now}
-                        position={null}
-                        busy={busy === job.id}
-                        onCancel={cancelWithNote}
-                        onRetry={retryWithNote}
-                      />
-                    ))
-                  )}
-                </div>
+                {(filter === 'all' || filter === 'failed') && (
+                  <div className="flow-section">
+                    <h3>Son bitenler</h3>
+                    {finished.length === 0 ? (
+                      <p className="plate-note">Henüz bitmiş iş yok.</p>
+                    ) : (
+                      (filter === 'failed' ? finished.filter((j) => j.status === 'failed') : finished).map((job) => (
+                        <JobRow
+                          key={job.id}
+                          job={job}
+                          now={now}
+                          position={null}
+                          busy={busy === job.id}
+                          onCancel={cancelWithNote}
+                          onRetry={retryWithNote}
+                        />
+                      ))
+                    )}
+                  </div>
+                )}
               </>
             )}
             <p className="plate-note">

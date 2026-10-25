@@ -371,16 +371,68 @@ export function YouTubeScreen() {
                             </b>{' '}
                             izlenme
                           </span>
+                          <span>
+                            Beğeniler{' '}
+                            <b className="nums">
+                              {formatCount(
+                                analytics.managed_totals.total_like_count,
+                              )}
+                            </b>
+                          </span>
                         </div>
                       )}
                       {analyticsGate && <GateNotice gate={analyticsGate} />}
 
+                      {analytics?.top_videos && analytics.top_videos.length > 0 && (
+                        <section className="ink-panel yt-top-panel" aria-label="En çok izlenen videolar">
+                          <div className="panel-head-row">
+                            <h2>Kanalın En Çok İzlenenleri</h2>
+                            <small className="nums">İlk {analytics.top_videos.length} video</small>
+                          </div>
+                          <div className="yt-top-grid">
+                            {analytics.top_videos.map((vid, idx) => (
+                              <div key={vid.youtube_video_id} className="yt-top-card">
+                                <span className="yt-top-rank nums">#{idx + 1}</span>
+                                <div className="yt-top-body">
+                                  <a
+                                    href={`https://www.youtube.com/watch?v=${vid.youtube_video_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="yt-title"
+                                  >
+                                    {vid.title}
+                                  </a>
+                                  <div className="yt-stats nums">
+                                    <span>{formatCount(vid.view_count)} izlenme</span>
+                                    <span>{formatCount(vid.like_count)} beğeni</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+
                       {orphanCount > 0 && (
                         <div className="yt-orphan-note" role="status">
-                          <b className="nums">{orphanCount}</b> video stüdyo
-                          kaydında yok — siteden silinmiş ya da elle yüklenmiş
-                          olabilir. Yayınlanmasını istemediklerini buradan
-                          YouTube’tan silebilirsin.
+                          <div className="yt-orphan-lead">
+                            <span className="yt-orphan-icon" aria-hidden="true">⚠️</span>
+                            <div>
+                              <b className="nums">{orphanCount}</b> video stüdyo
+                              kaydında yok — siteden silinmiş ya da elle yüklenmiş
+                              olabilir. Yayınlanmasını istemediklerini buradan
+                              YouTube’tan silebilirsin.
+                            </div>
+                          </div>
+                          {filter !== 'kayit-disi' && (
+                            <button
+                              type="button"
+                              className="btn--ghost yt-orphan-btn"
+                              onClick={() => setFilter('kayit-disi')}
+                            >
+                              Kayıt dışı videoları filtrele →
+                            </button>
+                          )}
                         </div>
                       )}
 

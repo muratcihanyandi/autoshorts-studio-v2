@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { fetchOverview, type Overview, type StudioPhase } from '../api/overview'
 import { fetchPulse, type PulseEvent } from '../api/pulse'
 import { fetchSystemResources } from '../api/system'
+import { fetchMedia } from '../api/media'
 import {
   ACTIVITY_LABEL,
   AUTOMATION_STATE_LABEL,
@@ -11,7 +12,7 @@ import {
   type ChannelRow,
 } from '../api/automation'
 import { usePolling } from '../hooks/usePolling'
-import { formatDateTime } from '../format'
+import { formatDateTime, formatDuration } from '../format'
 import { pulseStory, relativeTime } from '../pulse/narrative'
 import { Gauge } from '../components/Studio'
 import { ChannelSettingsModal } from '../components/ChannelSettingsModal'
@@ -134,7 +135,10 @@ function TodayFlowPanel() {
           <li key={event.id} className={`activity-item tone--${story.tone}`}>
             <span className="activity-dot" aria-hidden="true" />
             <div>
-              <p>{story.sentence}</p>
+              <p>
+                {story.icon ? <span className="activity-icon" aria-hidden="true">{story.icon} </span> : null}
+                {story.sentence}
+              </p>
               <small>
                 {event.channel_name ? `${event.channel_name} · ` : ''}
                 {relativeTime(event.created_at)}
@@ -144,6 +148,253 @@ function TodayFlowPanel() {
         )
       })}
     </ul>
+  )
+}
+
+/** Stüdyo Ruhu / Canlı Nabız: makinenin anlık operasyonel ruhunu
+ * sıcak, anlaşılır ve duygusal bir dille özetler (madde 2 + madde 3). */
+function StudioSoulBanner({ data }: { data: Overview }) {
+  const workerRunning = data.worker?.running ?? false
+  const activeJobs = data.jobs.active
+  const failedJobs = data.today_jobs?.failed ?? 0
+  const stockClips = data.stock.clips
+  const plannedVideos = data.production?.planned_videos ?? 0
+
+  let title = 'Stüdyo Tetikte & Hazır'
+  let emoji = '☕'
+  let tone: 'ok' | 'run' | 'warn' | 'idle' = 'ok'
+  let story =
+    'Tüm sistemler çalışır durumda. Yetkili kaynaklar taranıyor; yeni videolar çıktığında anında işlenecek.'
+
+  if (!workerRunning && data.worker?.enabled) {
+    title = 'Motor Sinyali Bekleniyor'
+    emoji = '⚠️'
+    tone = 'warn'
+    story =
+      'Otomasyon motorundan sinyal alınamadı. Pi üzerindeki konteyneri kontrol edin.'
+  } else if (!workerRunning) {
+    title = 'Otomasyon Dinleniyor'
+    emoji = '⏸️'
+    tone = 'idle'
+    story =
+      'Otomasyon motoru durdurulmuş durumda. Çarkları yeniden döndürmek için kanal kartlarındaki "Başlat" butonunu kullanabilirsin.'
+  } else if (activeJobs > 0) {
+    title = 'Yaratıcı Motor Sahnesi'
+    emoji = '🎬'
+    tone = 'run'
+    story = `Stüdyo harıl harıl çalışıyor! ${activeJobs} video şu an dikey kesit ve altyazı aşamasında işleniyor.`
+  } else if (failedJobs > 0) {
+    title = 'Küçük Bir Aksilik Var'
+    emoji = '🛠️'
+    tone = 'warn'
+    story = `Bugün ${failedJobs} görev aksadı ama panik yok. Otomasyon sekmesinden durumu inceleyip kaldığı yerden sürdürebilirsin.`
+  } else if (stockClips > 0) {
+    title = 'Yayınlara Hazır & Stok Dolu'
+    emoji = '✨'
+    tone = 'ok'
+    story = `Harika! Stokta ${stockClips} hazır klip bekliyor. Sıradaki yayın saati geldiğinde otomatik YouTube'a yüklenecek.`
+  } else if (plannedVideos > 0) {
+    title = 'Üretim Sırası Hazır'
+    emoji = '📋'
+    tone = 'run'
+    story = `${plannedVideos} video işlenmek üzere sıraya alındı; motor sırayla üretime geçiyor.`
+  }
+
+  return (
+    <div className={`studio-soul tone--${tone}`}>
+      <div className="studio-soul-lead">
+        <span className="studio-soul-emoji" aria-hidden="true">
+          {emoji}
+        </span>
+        <div className="studio-soul-body">
+          <div className="studio-soul-head">
+            <b>{title}</b>
+            <span className={`pill pill--${tone}`}>
+              {tone === 'run' ? 'Üretimde' : tone === 'warn' ? 'Aksilik' : tone === 'idle' ? 'Beklemede' : 'Hazır'}
+            </span>
+          </div>
+          <p>{story}</p>
+        </div>
+      </div>
+      <div className="studio-soul-stats">
+        <div className="soul-mini-stat">
+          <small>Hazır Stok</small>
+          <b className="nums">{stockClips}</b>
+        </div>
+        <div className="soul-mini-stat">
+          <small>Bugün Yayınlanan</small>
+          <b className="nums">{data.today_published.vertical + data.today_published.horizontal}</b>
+        </div>
+        <div className="soul-mini-stat">
+          <small>İş Kuyruğu</small>
+          <b className="nums">{data.jobs.active + data.jobs.queued}</b>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Görsel Üretim Boru Hattı: 5 adımlı üretim bandının canlı durumu. */
+function PipelineFlowVisualizer({
+  data,
+  onOpenDetail,
+}: {
+  data: Overview
+  onOpenDetail: () => void
+}) {
+  const steps = [
+    {
+      step: '1',
+      title: 'Kaynak İzleme',
+      count: `${data.sources.monitored} kaynak`,
+      status: data.sources.monitored > 0 ? 'İzleniyor' : 'Kaynak yok',
+      tone: data.sources.monitored > 0 ? 'ok' : 'idle',
+      to: '/kanallar',
+    },
+    {
+      step: '2',
+      title: 'İndirme & Analiz',
+      count: `${data.jobs.active} aktif · ${data.jobs.queued} sırada`,
+      status: data.jobs.active > 0 ? 'İşlemde' : 'Boş',
+      tone: data.jobs.active > 0 ? 'run' : 'ok',
+      to: '/otomasyon',
+    },
+    {
+      step: '3',
+      title: 'Kesim & Altyazı',
+      count: `${data.production?.planned_videos ?? 0} planlı`,
+      status: (data.production?.planned_videos ?? 0) > 0 ? 'Sırada' : 'Temiz',
+      tone: (data.production?.planned_videos ?? 0) > 0 ? 'run' : 'idle',
+      onClick: onOpenDetail,
+    },
+    {
+      step: '4',
+      title: 'Hazır Stok',
+      count: `${data.stock.clips} klip`,
+      status: data.stock.clips > 0 ? 'Dolu' : 'Bekliyor',
+      tone: data.stock.clips > 0 ? 'ok' : 'idle',
+      to: '/medya',
+    },
+    {
+      step: '5',
+      title: 'YouTube Yayını',
+      count: `${data.today_published.vertical + data.today_published.horizontal} bugün`,
+      status: (data.today_published.vertical + data.today_published.horizontal) > 0 ? 'Yayında' : 'Sırada',
+      tone: (data.today_published.vertical + data.today_published.horizontal) > 0 ? 'ok' : 'idle',
+      to: '/youtube',
+    },
+  ]
+
+  return (
+    <section className="ink-panel pipeline-flow-panel" aria-label="Görsel üretim hattı">
+      <div className="panel-head-row">
+        <h2>Üretim Boru Hattı Akışı</h2>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={onOpenDetail}
+        >
+          Ayrıntılı İncele →
+        </button>
+      </div>
+      <div className="pipeline-track">
+        {steps.map((st, idx) => (
+          <div key={st.step} className="pipeline-track-item">
+            <div className={`pipeline-node tone--${st.tone}`}>
+              <div className="pipeline-node-top">
+                <span className="pipeline-step-badge nums">{st.step}</span>
+                <span className={`pill pill--${st.tone}`}>{st.status}</span>
+              </div>
+              <b>{st.title}</b>
+              <small className="nums">{st.count}</small>
+              {st.to ? (
+                <Link to={st.to} className="pipeline-link">
+                  Aç ↗
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="pipeline-link pipeline-btn"
+                  onClick={st.onClick}
+                >
+                  Detay ↗
+                </button>
+              )}
+            </div>
+            {idx < steps.length - 1 && (
+              <span className="pipeline-connector" aria-hidden="true">
+                ›
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** Taze stok vitrini: stüdyonun ürettiği en taze hazır klipler. */
+function FreshStockShowcase() {
+  const fetchCb = useCallback(() => fetchMedia(), [])
+  const media = usePolling(fetchCb, 20000)
+
+  if (media.state.status !== 'ok' || media.state.data.clips.length === 0) {
+    return null
+  }
+
+  const freshClips = media.state.data.clips.slice(0, 4)
+
+  return (
+    <section className="ink-panel fresh-stock-panel" aria-label="Taze klipler vitrini">
+      <div className="panel-head-row">
+        <h2>Taze Stok & Sıradaki Yayınlar</h2>
+        <Link to="/medya" className="btn btn--ghost">
+          Tüm Medyayı Gör ({media.state.data.clips.length}) →
+        </Link>
+      </div>
+      <div className="fresh-clips-grid">
+        {freshClips.map((clip) => {
+          const isVertical = clip.orientation === 'vertical'
+          const statusText =
+            clip.visibility === 'public'
+              ? `Yayında: ${formatDateTime(clip.public_at ?? clip.published_at)}`
+              : clip.scheduled_at
+                ? `Yayın: ${formatDateTime(clip.scheduled_at)}`
+                : clip.published_status === 'verified' || clip.published_status === 'uploaded'
+                  ? 'Gizli Yüklendi · Saat Bekliyor'
+                  : 'Stokta · Otomasyon Sırasında'
+          return (
+            <div key={clip.id} className="fresh-clip-card">
+              <div className="fresh-clip-thumb">
+                {clip.thumbnail_url ? (
+                  <img src={clip.thumbnail_url} alt="" loading="lazy" />
+                ) : (
+                  <span className="fresh-clip-placeholder" aria-hidden="true">▶</span>
+                )}
+                <span className={`pill fresh-clip-orient pill--${isVertical ? 'run' : 'idle'}`}>
+                  {isVertical ? 'Shorts' : 'Yatay'}
+                </span>
+                <span className="fresh-clip-dur nums">
+                  {formatDuration(clip.duration_seconds)}
+                </span>
+              </div>
+              <div className="fresh-clip-info">
+                <b title={clip.title}>{clip.title}</b>
+                <small>
+                  {clip.channel_name ? <span>{clip.channel_name} · </span> : null}
+                  <span className="nums">Tamamlandı: {formatDateTime(clip.created_at)}</span>
+                </small>
+                <div className="fresh-clip-plan">
+                  <span className={`pill ${clip.visibility === 'public' ? 'pill--ok' : 'pill--run'}`}>
+                    {statusText}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -337,6 +588,8 @@ export function OverviewScreen() {
             </div>
           )}
 
+          <StudioSoulBanner data={overview.state.data} />
+
           {(() => {
             const pill = PHASE_PILL[overview.state.data.phase]
             return <span className={`pill pill--${pill.tone}`}>{pill.text}</span>
@@ -419,6 +672,13 @@ export function OverviewScreen() {
             </div>
             <NextPublishCard data={overview.state.data} />
           </div>
+
+          <PipelineFlowVisualizer
+            data={overview.state.data}
+            onOpenDetail={() => setPipelineDetail(true)}
+          />
+
+          <FreshStockShowcase />
 
           <div className="two-col">
             <div className="stack">

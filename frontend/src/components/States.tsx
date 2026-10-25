@@ -40,11 +40,27 @@ export function ErrorState({
   )
 }
 
-/** Mürekkep sıyırma: yükleme durumu. */
-export function LoadingState({ label }: { label: string }) {
+/** Mürekkep sıyırma & modern iskelet: yükleme durumu. */
+export function LoadingState({
+  label,
+  skeleton = false,
+}: {
+  label: string
+  skeleton?: boolean
+}) {
   return (
-    <div className="ink-loading" aria-live="polite">
-      {label}
+    <div className="ink-loading" role="status" aria-live="polite">
+      <div className="ink-loading-head">
+        <span className="ink-spinner" aria-hidden="true" />
+        <span className="ink-loading-text">{label}</span>
+      </div>
+      {skeleton && (
+        <div className="skeleton-rows" aria-hidden="true">
+          <div className="skeleton-bar" style={{ width: '85%' }} />
+          <div className="skeleton-bar" style={{ width: '65%' }} />
+          <div className="skeleton-bar" style={{ width: '45%' }} />
+        </div>
+      )}
     </div>
   )
 }

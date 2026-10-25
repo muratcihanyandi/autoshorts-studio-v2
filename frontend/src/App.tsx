@@ -66,7 +66,17 @@ function App() {
   if (auth.status === 'loading') {
     return (
       <div className="auth-splash" role="status" aria-live="polite">
-        Stüdyo açılıyor…
+        <div className="auth-splash-card">
+          <div className="auth-splash-aperture" aria-hidden="true">
+            <span className="aperture-ring" />
+            <span className="aperture-core" />
+          </div>
+          <div className="auth-splash-brand">AutoShorts Studio</div>
+          <div className="auth-splash-sub">Stüdyo açılıyor…</div>
+          <div className="auth-splash-meter" aria-hidden="true">
+            <span className="meter-sweep" />
+          </div>
+        </div>
       </div>
     )
   }
