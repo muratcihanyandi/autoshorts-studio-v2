@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { usePulse } from '../pulse/PulseProvider'
 import { pulseStory, relativeTime } from '../pulse/narrative'
 
 /** Zil düğmesi + "Son olup bitenler" çekmecesi: stüdyonun sesinin
- * arşivi. Okunmamış olay sayısı hapla gösterilir; açınca sıfırlanır. */
+ * arşivi. Okunmamış olay sayısı hapla gösterilir; açınca sıfırlanır.
+ * Bildirime tıklanınca doğrudan ilgili çalışma ekranına (medya, youtube,
+ * otomasyon vb.) yönlendirir. */
 export function ActivityBell() {
   const { events, unread, markSeen } = usePulse()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!open) return
     markSeen()
     panelRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') {
+        setOpen(false)
+        buttonRef.current?.focus()
+      }
     }
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node
@@ -32,9 +39,15 @@ export function ActivityBell() {
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('pointerdown', onPointerDown)
-      buttonRef.current?.focus()
     }
   }, [open, markSeen])
+
+  const handleItemClick = (link: string | null) => {
+    setOpen(false)
+    if (link) {
+      navigate(link)
+    }
+  }
 
   return (
     <div className="activity-wrap">
@@ -45,11 +58,12 @@ export function ActivityBell() {
         aria-label={`Son olup bitenler${unread > 0 ? ` (${unread} yeni)` : ''}`}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
+        title="Stüdyo Bildirimleri & Son Gelişmeler"
       >
         <svg
           viewBox="0 0 24 24"
-          width="16"
-          height="16"
+          width="17"
+          height="17"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -75,8 +89,13 @@ export function ActivityBell() {
           aria-label="Son olup bitenler"
         >
           <div className="activity-head">
-            <b>Son olup bitenler</b>
-            <small>stüdyo kendi devam ederken buraya yazar</small>
+            <div className="activity-head-titles">
+              <b>Son Olup Bitenler</b>
+              <small>stüdyonun canlı işlem akışı</small>
+            </div>
+            {unread > 0 && (
+              <span className="activity-unread-pill nums">{unread} yeni</span>
+            )}
           </div>
           {events.length === 0 ? (
             <p className="activity-empty">
@@ -87,18 +106,43 @@ export function ActivityBell() {
             <ul className="activity-list">
               {events.map((event) => {
                 const story = pulseStory(event)
+                const hasLink = Boolean(story.link)
                 return (
-                  <li key={event.id} className={`activity-item tone--${story.tone}`}>
+                  <li
+                    key={event.id}
+                    className={`activity-item tone--${story.tone}${hasLink ? ' activity-item--clickable' : ''}`}
+                    onClick={() => handleItemClick(story.link)}
+                    role={hasLink ? 'button' : undefined}
+                    tabIndex={hasLink ? 0 : undefined}
+                    onKeyDown={(e) => {
+                      if (hasLink && (e.key === 'Enter' || e.key === ' ')) {
+                        e.preventDefault()
+                        handleItemClick(story.link)
+                      }
+                    }}
+                    title={hasLink ? 'İlgili ekrana git' : undefined}
+                  >
                     <span className="activity-dot" aria-hidden="true" />
-                    <div>
+                    <div className="activity-item-content">
                       <p>
-                        {story.icon ? <span className="activity-icon" aria-hidden="true">{story.icon} </span> : null}
+                        {story.icon ? (
+                          <span className="activity-icon" aria-hidden="true">
+                            {story.icon}{' '}
+                          </span>
+                        ) : null}
                         {story.sentence}
                       </p>
-                      <small>
-                        {event.channel_name ? `${event.channel_name} · ` : ''}
-                        {relativeTime(event.created_at)}
-                      </small>
+                      <div className="activity-meta-line">
+                        <small>
+                          {event.channel_name ? `${event.channel_name} · ` : ''}
+                          {relativeTime(event.created_at)}
+                        </small>
+                        {hasLink && (
+                          <span className="activity-action-hint">
+                            İncele →
+                          </span>
+                        )}
+                      </div>
                       {story.note && (
                         <small className="activity-note">{story.note}</small>
                       )}
@@ -108,6 +152,15 @@ export function ActivityBell() {
               })}
             </ul>
           )}
+          <div className="activity-footer">
+            <Link
+              to="/gunlukler"
+              className="activity-all-link"
+              onClick={() => setOpen(false)}
+            >
+              Tüm Olay Günlüğünü Gör →
+            </Link>
+          </div>
         </div>
       )}
     </div>

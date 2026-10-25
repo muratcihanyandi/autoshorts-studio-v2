@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   fetchCalendar,
@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/S
 import { GateNotice } from '../components/GateNotice'
 import { gateFromError, type GateInfo } from '../gates'
 import { ClipDetailModal } from '../components/ClipDetailModal'
+import { notifyPulse } from '../pulse/bus'
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
 
@@ -456,6 +457,83 @@ export function CalendarScreen() {
   /** Kayıt sonrası taşıma onayı: tarih gerçekten değişti mi görünsün. */
   const [notice, setNotice] = useState<string | null>(null)
   const [dragOverDate, setDragOverDate] = useState<string | null>(null)
+  const [toastMessage, setToastMessage] = useState<{
+    id: number
+    text: string
+    tone: 'ok' | 'error'
+  } | null>(null)
+
+  useEffect(() => {
+    if (!toastMessage) return
+    const timer = setTimeout(() => {
+      setToastMessage(null)
+    }, 4500)
+    return () => clearTimeout(timer)
+  }, [toastMessage])
+
+  async function handleDropSchedule(
+    entry: CalendarEntry,
+    targetDate: string,
+    targetSlotTime: string | null,
+  ) {
+    if (!canSchedule(entry)) return
+    const target = scheduleTarget(entry)
+    if (!target) return
+
+    let finalTime = targetSlotTime
+    if (!finalTime || !/^\d{2}:\d{2}$/.test(finalTime)) {
+      const current = entryTime(entry.scheduled_at)
+      if (/^\d{2}:\d{2}$/.test(current)) {
+        finalTime = current
+      } else {
+        finalTime = '18:00'
+      }
+    }
+
+    let moment = new Date(`${targetDate}T${finalTime}:00`)
+    if (Number.isNaN(moment.getTime())) {
+      moment = new Date(`${targetDate}T18:00:00`)
+    }
+    if (moment.getTime() <= Date.now()) {
+      moment = new Date(Date.now() + 10 * 60 * 1000)
+      const h = String(moment.getHours()).padStart(2, '0')
+      const m = String(moment.getMinutes()).padStart(2, '0')
+      finalTime = `${h}:${m}`
+    }
+
+    try {
+      await rescheduleCalendar(target, moment.toISOString())
+      const title = entry.title?.trim() || 'Video'
+      const readableDate = formatScheduleDate(targetDate)
+      const msg = `“${title}” ${readableDate} (${finalTime}) tarihine alındı.`
+      setToastMessage({
+        id: Date.now(),
+        text: msg,
+        tone: 'ok',
+      })
+      notifyPulse({
+        tone: 'ok',
+        sentence: msg,
+        link: '/takvim',
+      })
+      calendar.retry()
+    } catch (err) {
+      const gateInfo = gateFromError(err)
+      if (gateInfo) {
+        setToastMessage({
+          id: Date.now(),
+          text: `Planlama yükseltme gerektirir: ${gateInfo.requiredPlan}`,
+          tone: 'error',
+        })
+      } else {
+        setToastMessage({
+          id: Date.now(),
+          text: err instanceof Error ? err.message : 'Planlama başarısız oldu.',
+          tone: 'error',
+        })
+      }
+    }
+  }
   // Sürükleme olayları aynı tikte state görmediği için ref'ler de tutulur:
   // aksi halde drop sırasında kayıt null görünüp planlama sessizce
   // atlanıyordu (kullanıcı bildirimi 2026-10-25: "tarihi değişmiyor").
@@ -702,7 +780,7 @@ export function CalendarScreen() {
                             hoveredSlotTimeRef.current = null
                             setDragOverDate(null)
                             if (entry && canSchedule(entry)) {
-                              openReschedule(entry, cell.date, hoveredTime)
+                              void handleDropSchedule(entry, cell.date, hoveredTime)
                             }
                           }}
                         >
@@ -820,6 +898,26 @@ export function CalendarScreen() {
             openReschedule(entry, entry.local_date || localDateToday())
           }
         />
+      )}
+      {toastMessage && (
+        <div
+          className={`cal-toast-popup cal-toast--${toastMessage.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="cal-toast-icon">
+            {toastMessage.tone === 'ok' ? '✓' : '⚠️'}
+          </span>
+          <span className="cal-toast-text">{toastMessage.text}</span>
+          <button
+            type="button"
+            className="cal-toast-close"
+            onClick={() => setToastMessage(null)}
+            aria-label="Kapat"
+          >
+            ×
+          </button>
+        </div>
       )}
       {schedule !== null && (
         <ScheduleModal

@@ -28,22 +28,37 @@ function privacyView(status: string) {
   return PRIVACY_VIEW[status] ?? { tone: 'idle', label: status }
 }
 
-/** Tek YouTube videosu satırı: künye, izlenme verileri ve yönetim.
- * Kayıt dışı (stüdyo kaydında olmayan) videolar uyarı tonuyla öne
- * çıkar — "siteden silinmiş ama YouTube'ta kalan" videolar burada. */
+const EMPTY_VIDEOS: YoutubeVideo[] = []
+
+/** Tek YouTube videosu satırı: seçim kutusu, künye, izlenme verileri ve yönetim. */
 function VideoRow({
   video,
+  selected,
+  onToggleSelect,
   onDelete,
   deleting,
 }: {
   video: YoutubeVideo
+  selected: boolean
+  onToggleSelect: (id: string) => void
   onDelete: (video: YoutubeVideo) => void
   deleting: boolean
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const privacy = privacyView(video.privacy_status)
+
   return (
-    <div className={`yt-row${video.managed ? '' : ' yt-row--orphan'}`}>
+    <div className={`yt-row${video.managed ? '' : ' yt-row--orphan'}${selected ? ' yt-row--selected' : ''}`}>
+      <div className="yt-row-select">
+        <input
+          type="checkbox"
+          id={`check-${video.youtube_video_id}`}
+          checked={selected}
+          onChange={() => onToggleSelect(video.youtube_video_id)}
+          aria-label={`${video.title} seç`}
+          className="yt-checkbox"
+        />
+      </div>
       <a
         className="yt-thumb"
         href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}
@@ -66,7 +81,14 @@ function VideoRow({
         >
           {video.title}
         </a>
-        <small className="nums">{formatDateTime(video.published_at)}</small>
+        <div className="yt-meta-row">
+          <small className="nums">{formatDateTime(video.published_at)}</small>
+          {video.orientation && (
+            <span className="yt-orientation-badge">
+              {video.orientation === 'vertical' ? 'Shorts' : 'Yatay'}
+            </span>
+          )}
+        </div>
       </div>
       <span className={`pill pill--${privacy.tone}`}>{privacy.label}</span>
       <span
@@ -86,7 +108,7 @@ function VideoRow({
       </div>
       <span className="yt-actions">
         {confirmDelete ? (
-          <>
+          <div className="delete-confirm-group">
             <button
               type="button"
               className="btn--danger"
@@ -103,7 +125,7 @@ function VideoRow({
             >
               Vazgeç
             </button>
-          </>
+          </div>
         ) : (
           <button
             type="button"
@@ -126,6 +148,12 @@ export function YouTubeScreen() {
   const [filter, setFilter] = useState<VideoFilter>('tumu')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Toplu seçim ve silme durumları
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState<{ current: number; total: number } | null>(null)
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [confirmOrphanDelete, setConfirmOrphanDelete] = useState(false)
 
   const channelList =
     channels.state.status === 'ok' ? channels.state.data.channels : []
@@ -156,11 +184,7 @@ export function YouTubeScreen() {
   const videos = usePolling(videosCb, 60000)
 
   // Analiz paneli (Pro): stüdyo yönetimindeki videoların toplamı.
-  // Free planda kapı notu gösterilir — analytics ucu 403 {feature}
-  // şekliyle döner.
-  const [analytics, setAnalytics] = useState<YoutubeAnalyticsResponse | null>(
-    null,
-  )
+  const [analytics, setAnalytics] = useState<YoutubeAnalyticsResponse | null>(null)
   const [analyticsGate, setAnalyticsGate] = useState<GateInfo | null>(null)
   useEffect(() => {
     if (selectedId === null) {
@@ -190,16 +214,100 @@ export function YouTubeScreen() {
   )
 
   const data = videos.state.status === 'ok' ? videos.state.data : null
-  const orphanCount = data ? data.videos.filter((v) => !v.managed).length : 0
-  const filteredVideos =
-    data?.videos.filter((video) =>
-      filter === 'tumu'
-        ? true
-        : filter === 'yonetim'
-          ? video.managed
-          : !video.managed,
-    ) ?? []
+  const allVideos = data?.videos ?? EMPTY_VIDEOS
+  const orphanVideos = useMemo(() => allVideos.filter((v) => !v.managed), [allVideos])
+  const orphanCount = orphanVideos.length
 
+  const filteredVideos = useMemo(
+    () =>
+      allVideos.filter((video) =>
+        filter === 'tumu'
+          ? true
+          : filter === 'yonetim'
+            ? video.managed
+            : !video.managed,
+      ),
+    [allVideos, filter],
+  )
+
+  // Minimum API kotasıyla yerel video listesinden hesaplanan kapsamlı kanal analizleri:
+  const localAnalytics = useMemo(() => {
+    if (allVideos.length === 0) return null
+    const totalViews = allVideos.reduce((acc, v) => acc + (v.view_count || 0), 0)
+    const totalLikes = allVideos.reduce((acc, v) => acc + (v.like_count || 0), 0)
+    const totalComments = allVideos.reduce((acc, v) => acc + (v.comment_count || 0), 0)
+    const avgViews = Math.round(totalViews / allVideos.length)
+    const avgLikes = Math.round(totalLikes / allVideos.length)
+    const engagementRate =
+      totalViews > 0
+        ? (((totalLikes + totalComments) / totalViews) * 100).toFixed(2)
+        : '0.00'
+    const likeRatio =
+      totalViews > 0 ? ((totalLikes / totalViews) * 100).toFixed(2) : '0.00'
+
+    // Format dağılımı
+    const shorts = allVideos.filter((v) => v.orientation === 'vertical')
+    const horizontals = allVideos.filter((v) => v.orientation === 'horizontal')
+    const shortsViews = shorts.reduce((acc, v) => acc + (v.view_count || 0), 0)
+    const horizontalViews = horizontals.reduce((acc, v) => acc + (v.view_count || 0), 0)
+
+    // Gizlilik durumu
+    const publicVideos = allVideos.filter((v) => v.privacy_status === 'public')
+    const privateVideos = allVideos.filter((v) => v.privacy_status === 'private')
+    const unlistedVideos = allVideos.filter((v) => v.privacy_status === 'unlisted')
+
+    return {
+      totalViews,
+      totalLikes,
+      totalComments,
+      avgViews,
+      avgLikes,
+      engagementRate,
+      likeRatio,
+      shortsCount: shorts.length,
+      shortsViews,
+      shortsAvgViews: shorts.length > 0 ? Math.round(shortsViews / shorts.length) : 0,
+      horizontalCount: horizontals.length,
+      horizontalViews,
+      horizontalAvgViews: horizontals.length > 0 ? Math.round(horizontalViews / horizontals.length) : 0,
+      publicCount: publicVideos.length,
+      privateCount: privateVideos.length,
+      unlistedCount: unlistedVideos.length,
+    }
+  }, [allVideos])
+
+  // Seçim yönetimi
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const selectAllFiltered = () => {
+    if (selectedIds.size === filteredVideos.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredVideos.map((v) => v.youtube_video_id)))
+    }
+  }
+
+  const selectAllOrphans = () => {
+    setSelectedIds(new Set(orphanVideos.map((v) => v.youtube_video_id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+    setConfirmOrphanDelete(false)
+  }
+
+  // Tekil video silme
   async function handleDelete(video: YoutubeVideo) {
     if (selectedId === null) return
     setDeletingId(video.youtube_video_id)
@@ -215,12 +323,52 @@ export function YouTubeScreen() {
       })
       videos.retry()
     } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : 'Video silinemedi.',
-      )
+      setActionError(err instanceof Error ? err.message : 'Video silinemedi.')
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // Toplu video silme (sıralı işlemle kota aşımını önler ve ilerleme bildirir)
+  async function executeBulkDelete(ids: string[], isOrphanCleanup = false) {
+    if (selectedId === null || ids.length === 0) return
+    setBulkDeleting({ current: 0, total: ids.length })
+    setActionError(null)
+
+    let deletedCount = 0
+    let lastError: string | null = null
+
+    for (let index = 0; index < ids.length; index += 1) {
+      const videoId = ids[index]
+      setBulkDeleting({ current: index + 1, total: ids.length })
+      try {
+        await deleteYoutubeVideo(selectedId, videoId)
+        deletedCount += 1
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : 'Silinemedi'
+      }
+    }
+
+    setBulkDeleting(null)
+    setConfirmBulkDelete(false)
+    setConfirmOrphanDelete(false)
+    setSelectedIds(new Set())
+
+    if (deletedCount > 0) {
+      notifyPulse({
+        tone: 'ok',
+        sentence: isOrphanCleanup
+          ? `${deletedCount} kayıt dışı video YouTube'tan toplu temizlendi.`
+          : `${deletedCount} video YouTube'tan toplu silindi.`,
+        note: lastError ? `Bazı videolarda hata oluştu: ${lastError}` : undefined,
+      })
+    }
+
+    if (lastError && deletedCount === 0) {
+      setActionError(`Toplu silme başarısız: ${lastError}`)
+    }
+
+    videos.retry()
   }
 
   return (
@@ -229,7 +377,7 @@ export function YouTubeScreen() {
         <div>
           <h1>YouTube</h1>
           <span className="screen-sub">
-            Kanalının gören yüzü — videolar, analizler ve temizlik
+            Kanalının gören yüzü — minimum kotayla derin analizler, video yönetimi ve toplu temizlik
           </span>
         </div>
       </div>
@@ -270,6 +418,7 @@ export function YouTubeScreen() {
                 onClick={() => {
                   setSelectedId(channel.id)
                   setFilter('tumu')
+                  setSelectedIds(new Set())
                 }}
                 title={
                   channel.status === 'connected'
@@ -319,7 +468,8 @@ export function YouTubeScreen() {
 
                   {data?.channel.connected && (
                     <>
-                      <div className="stat-grid" aria-label="Kanal analizi">
+                      {/* Üst Analiz Kartları (Temel & Türetilmiş Metrikler) */}
+                      <div className="stat-grid yt-stat-grid" aria-label="Kanal analizi">
                         <div className="stat-card">
                           <span>Abone</span>
                           <b className="nums">
@@ -330,16 +480,30 @@ export function YouTubeScreen() {
                         <div className="stat-card">
                           <span>Toplam izlenme</span>
                           <b className="nums">
-                            {formatCount(data.youtube?.view_count ?? 0)}
+                            {formatCount(data.youtube?.view_count ?? localAnalytics?.totalViews ?? 0)}
                           </b>
                           <small>kanal geneli</small>
                         </div>
                         <div className="stat-card">
                           <span>Video sayısı</span>
                           <b className="nums">
-                            {formatCount(data.youtube?.video_count ?? 0)}
+                            {formatCount(data.youtube?.video_count ?? allVideos.length)}
                           </b>
                           <small>YouTube’ta görünür</small>
+                        </div>
+                        <div className="stat-card">
+                          <span>Ort. İzlenme</span>
+                          <b className="nums">
+                            {formatCount(localAnalytics?.avgViews ?? 0)}
+                          </b>
+                          <small>video başına ortalama</small>
+                        </div>
+                        <div className="stat-card">
+                          <span>Etkileşim Oranı</span>
+                          <b className="nums">
+                            %{localAnalytics?.engagementRate ?? '0.00'}
+                          </b>
+                          <small>beğeni + yorum / izlenme</small>
                         </div>
                         <div className="stat-card">
                           <span>Kota kullanımı</span>
@@ -352,6 +516,50 @@ export function YouTubeScreen() {
                           <small>bugünlük YouTube API bütçesi</small>
                         </div>
                       </div>
+
+                      {/* Derin Analiz Kırılımları (0 İlave Kota Tüketimi) */}
+                      {localAnalytics && (
+                        <div className="yt-breakdowns-panel" aria-label="Format ve gizlilik kırılımları">
+                          <div className="yt-breakdown-card">
+                            <span className="breakdown-title">İçerik Format Performansı</span>
+                            <div className="breakdown-metrics">
+                              <div className="breakdown-row">
+                                <span className="breakdown-pill pill-vertical">📱 Shorts (9:16)</span>
+                                <b>{localAnalytics.shortsCount} video</b>
+                                <span className="nums">{formatCount(localAnalytics.shortsViews)} izlenme</span>
+                                <small className="nums">Ort. {formatCount(localAnalytics.shortsAvgViews)}</small>
+                              </div>
+                              <div className="breakdown-row">
+                                <span className="breakdown-pill pill-horizontal">🎬 Yatay (16:9)</span>
+                                <b>{localAnalytics.horizontalCount} video</b>
+                                <span className="nums">{formatCount(localAnalytics.horizontalViews)} izlenme</span>
+                                <small className="nums">Ort. {formatCount(localAnalytics.horizontalAvgViews)}</small>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="yt-breakdown-card">
+                            <span className="breakdown-title">Yayın & Gizlilik Durumu</span>
+                            <div className="breakdown-metrics">
+                              <div className="breakdown-row">
+                                <span className="breakdown-pill pill-public">✓ Yayında</span>
+                                <b>{localAnalytics.publicCount} video</b>
+                                <small>herkese açık</small>
+                              </div>
+                              <div className="breakdown-row">
+                                <span className="breakdown-pill pill-private">🔒 Gizli</span>
+                                <b>{localAnalytics.privateCount} video</b>
+                                <small>yayın saatini bekliyor</small>
+                              </div>
+                              <div className="breakdown-row">
+                                <span className="breakdown-pill pill-unlisted">🔗 Liste dışı</span>
+                                <b>{localAnalytics.unlistedCount} video</b>
+                                <small>yalnız bağlantıyla</small>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {analytics && (
                         <div className="yt-managed-strip" role="status">
@@ -413,6 +621,7 @@ export function YouTubeScreen() {
                         </section>
                       )}
 
+                      {/* Kayıt Dışı Videolar Uyarısı ve Tek Tuşla Toplu Temizleme */}
                       {orphanCount > 0 && (
                         <div className="yt-orphan-note" role="status">
                           <div className="yt-orphan-lead">
@@ -424,21 +633,122 @@ export function YouTubeScreen() {
                               YouTube’tan silebilirsin.
                             </div>
                           </div>
-                          {filter !== 'kayit-disi' && (
+                          <div className="yt-orphan-actions">
+                            {filter !== 'kayit-disi' && (
+                              <button
+                                type="button"
+                                className="btn--ghost yt-orphan-btn"
+                                onClick={() => setFilter('kayit-disi')}
+                              >
+                                Kayıt dışı videoları filtrele →
+                              </button>
+                            )}
                             <button
                               type="button"
-                              className="btn--ghost yt-orphan-btn"
-                              onClick={() => setFilter('kayit-disi')}
+                              className="btn--ghost yt-orphan-select-btn"
+                              onClick={selectAllOrphans}
                             >
-                              Kayıt dışı videoları filtrele →
+                              Tüm Kayıt Dışıları Seç ({orphanCount})
                             </button>
-                          )}
+                            {confirmOrphanDelete ? (
+                              <div className="delete-confirm-group">
+                                <button
+                                  type="button"
+                                  className="btn--danger"
+                                  disabled={Boolean(bulkDeleting)}
+                                  onClick={() =>
+                                    void executeBulkDelete(
+                                      orphanVideos.map((v) => v.youtube_video_id),
+                                      true,
+                                    )
+                                  }
+                                >
+                                  {bulkDeleting
+                                    ? `Siliniyor: ${bulkDeleting.current}/${bulkDeleting.total}`
+                                    : 'Evet, Tümünü YouTube’tan Sil'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn--ghost"
+                                  onClick={() => setConfirmOrphanDelete(false)}
+                                >
+                                  Vazgeç
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn--danger yt-orphan-bulk-btn"
+                                onClick={() => setConfirmOrphanDelete(true)}
+                              >
+                                Kayıt Dışıları Toplu Sil ({orphanCount})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Toplu İşlem Çubuğu (Seçili Video Varsa Görünür) */}
+                      {selectedIds.size > 0 && (
+                        <div className="yt-batch-bar" role="toolbar" aria-label="Toplu video işlemleri">
+                          <span className="batch-selected-count">
+                            <b>{selectedIds.size}</b> video seçildi
+                          </span>
+                          <div className="batch-actions">
+                            {confirmBulkDelete ? (
+                              <div className="delete-confirm-group">
+                                <button
+                                  type="button"
+                                  className="btn--danger"
+                                  disabled={Boolean(bulkDeleting)}
+                                  onClick={() => void executeBulkDelete(Array.from(selectedIds))}
+                                >
+                                  {bulkDeleting
+                                    ? `Siliniyor: ${bulkDeleting.current}/${bulkDeleting.total}`
+                                    : `Onayla (${selectedIds.size} Videoyu Sil)`}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn--ghost"
+                                  onClick={() => setConfirmBulkDelete(false)}
+                                >
+                                  Vazgeç
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn--danger"
+                                onClick={() => setConfirmBulkDelete(true)}
+                              >
+                                Seçilenleri YouTube’tan Sil ({selectedIds.size})
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn--ghost"
+                              onClick={clearSelection}
+                            >
+                              Seçimi Temizle
+                            </button>
+                          </div>
                         </div>
                       )}
 
                       <section className="ink-panel" aria-label="Kanal videoları">
                         <div className="panel-head-row">
-                          <h2>Videolar</h2>
+                          <div className="panel-head-left">
+                            <h2>Videolar</h2>
+                            <button
+                              type="button"
+                              className="btn--ghost btn-sm select-all-toggle-btn"
+                              onClick={selectAllFiltered}
+                            >
+                              {selectedIds.size === filteredVideos.length && filteredVideos.length > 0
+                                ? 'Seçimi Kaldır'
+                                : 'Listedekilerin Tümünü Seç'}
+                            </button>
+                          </div>
                           <div
                             className="chip-row"
                             role="group"
@@ -476,8 +786,13 @@ export function YouTubeScreen() {
                               <VideoRow
                                 key={video.youtube_video_id}
                                 video={video}
+                                selected={selectedIds.has(video.youtube_video_id)}
+                                onToggleSelect={toggleSelect}
                                 onDelete={(v) => void handleDelete(v)}
-                                deleting={deletingId === video.youtube_video_id}
+                                deleting={
+                                  deletingId === video.youtube_video_id ||
+                                  (Boolean(bulkDeleting) && selectedIds.has(video.youtube_video_id))
+                                }
                               />
                             ))}
                           </div>
@@ -485,7 +800,7 @@ export function YouTubeScreen() {
                         <p className="plate-note">
                           Liste YouTube’dan 60 saniyelik önbellekle okunur;
                           silinen video en geç bir dakika içinde kaybolur.
-                          Silme işlemi günlük kota bütçesinden 50 birim harcar.
+                          Her silme işlemi günlük kota bütçesinden 50 birim harcar.
                         </p>
                       </section>
                     </>

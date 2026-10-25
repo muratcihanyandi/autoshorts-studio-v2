@@ -48,25 +48,28 @@ const JOB_FAIL: Record<string, string> = {
 const AUDIT_STORY: Record<string, { sentence: string; link?: string }> = {
   'publish.public': {
     sentence: 'YouTube’da herkese açıldı',
-    link: '/medya',
+    link: '/youtube',
   },
-  'publish.private': { sentence: 'gizliye alındı', link: '/medya' },
-  'publish.done': { sentence: 'yayınlandı', link: '/medya' },
+  'publish.private': { sentence: 'gizliye alındı', link: '/youtube' },
+  'publish.done': { sentence: 'yayınlandı', link: '/youtube' },
   'publish.rescheduled': { sentence: 'yayın saati güncellendi', link: '/takvim' },
   'publish.no_ready': {
     sentence: 'Yayın saati geldi ama hazır klip yok — sıradaki turu bekliyor',
     link: '/otomasyon',
   },
+  'youtube.video_deleted': { sentence: 'YouTube’tan kaldırıldı', link: '/youtube' },
+  'youtube.orphan_deleted': { sentence: 'kayıt dışı video YouTube’tan temizlendi', link: '/youtube' },
   'automation.started': { sentence: 'otomasyonu başladı', link: '/otomasyon' },
   'automation.stopped': { sentence: 'otomasyonu durduruldu', link: '/otomasyon' },
   'automation.paused': { sentence: 'otomasyonu beklemeye alındı', link: '/otomasyon' },
-  'automation.error': { sentence: 'otomasyonunda bir aksilik oldu', link: '/gunlukler' },
-  'media.cleaned': { sentence: 'eski medya dosyaları temizlendi' },
+  'automation.error': { sentence: 'otomasyonunda bir aksilik oldu', link: '/otomasyon' },
+  'media.cleaned': { sentence: 'eski medya dosyaları temizlendi', link: '/medya' },
   'media.lost_file_sweep': {
     sentence: 'dosyası kaybolmuş videolar temizlendi',
     link: '/medya',
   },
-  'hype.fallback': { sentence: 'hype puanlaması yedek yolla tamamlandı' },
+  'media.clip_removed': { sentence: 'klip kütüphaneden kaldırıldı', link: '/medya' },
+  'hype.fallback': { sentence: 'hype puanlaması yedek yolla tamamlandı', link: '/medya' },
 }
 
 function shortError(text: string | undefined | null): string | null {
@@ -143,14 +146,42 @@ export function pulseStory(event: PulseEvent): PulseStory {
     }
   }
 
+  // Genel / tanimlanmamis olaylar icin baglam tabanli hedef ve aciklama belirle:
+  let fallbackLink = '/otomasyon'
+  const evt = event.event_type.toLowerCase()
+  if (evt.includes('publish') || evt.includes('youtube')) {
+    fallbackLink = '/youtube'
+  } else if (evt.includes('media') || evt.includes('clip') || evt.includes('video')) {
+    fallbackLink = '/medya'
+  } else if (evt.includes('channel') || evt.includes('source')) {
+    fallbackLink = '/kanallar'
+  } else if (evt.includes('calendar') || evt.includes('schedule')) {
+    fallbackLink = '/takvim'
+  }
+
+  const detailMsg =
+    typeof event.detail?.message === 'string'
+      ? event.detail.message
+      : typeof event.detail?.error === 'string'
+        ? event.detail.error
+        : null
+
+  const cleanEventType = event.event_type
+    .replace(/[._]/g, ' ')
+    .trim()
+
   return {
     tone: event.tone,
     sentence: subject
-      ? `“${subject}” — stüdyoda yeni bir gelişme`
-      : 'Stüdyoda yeni bir gelişme',
+      ? `“${subject}” — ${detailMsg || cleanEventType || 'yeni gelişme'}`
+      : detailMsg || cap(cleanEventType) || 'Stüdyoda yeni bir gelişme',
     subject,
-    link: null,
-    note: null,
+    link: fallbackLink,
+    note: shortError(
+      (event.detail?.detail as string) ||
+        (event.detail?.last_error as string) ||
+        null,
+    ),
     icon: event.tone === 'ok' ? '✨' : event.tone === 'error' ? '⚠️' : '🔔',
   }
 }
