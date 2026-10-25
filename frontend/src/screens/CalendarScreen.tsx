@@ -118,12 +118,8 @@ function formatScheduleDate(value: string): string {
 
 /** Çipin saati (yerel): sürükleme sırasında bırakma hedefi olur. */
 function slotTimeOf(entry: CalendarEntry): string | null {
-  if (entry.status === 'empty') {
-    // Boş dilim çipi: sadece saat taşır (09:00, 14:00 gibi).
-    const time = entryTime(entry.scheduled_at)
-    return /^\d{2}:\d{2}$/.test(time) ? time : null
-  }
-  return null
+  const time = entryTime(entry.scheduled_at)
+  return /^\d{2}:\d{2}$/.test(time) ? time : null
 }
 
 function CalendarChip({
@@ -502,20 +498,60 @@ export function CalendarScreen() {
     }
 
     try {
-      await rescheduleCalendar(target, moment.toISOString())
-      const title = entry.title?.trim() || 'Video'
-      const readableDate = formatScheduleDate(targetDate)
-      const msg = `“${title}” ${readableDate} (${finalTime}) tarihine alındı.`
-      setToastMessage({
-        id: Date.now(),
-        text: msg,
-        tone: 'ok',
-      })
-      notifyPulse({
-        tone: 'ok',
-        sentence: msg,
-        link: '/takvim',
-      })
+      const targetEntries = byDate.get(targetDate) ?? []
+      const existingVideo = targetEntries.find(
+        (e) =>
+          e.channel_id === entry.channel_id &&
+          e.id !== entry.id &&
+          e.status !== 'empty' &&
+          entryTime(e.scheduled_at) === finalTime,
+      )
+
+      if (existingVideo && canSchedule(existingVideo)) {
+        const oldTime = entryTime(entry.scheduled_at)
+        const oldDate = entry.local_date
+        let oldMoment =
+          /^\d{2}:\d{2}$/.test(oldTime) && oldDate
+            ? new Date(`${oldDate}T${oldTime}:00`)
+            : null
+
+        if (!oldMoment || Number.isNaN(oldMoment.getTime()) || oldMoment.getTime() <= Date.now()) {
+          oldMoment = new Date(Date.now() + 15 * 60 * 1000)
+        }
+
+        await rescheduleCalendar(target, moment.toISOString())
+        await rescheduleCalendar(scheduleTarget(existingVideo)!, oldMoment.toISOString())
+
+        const entryTitle = entry.title?.trim() || 'Video'
+        const existingTitle = existingVideo.title?.trim() || 'Video'
+        const swapTimeStr = /^\d{2}:\d{2}$/.test(oldTime) ? oldTime : 'yeni saat'
+        const msg = `“${entryTitle}” (${finalTime}) ve “${existingTitle}” (${swapTimeStr}) saatleri takas edildi.`
+        setToastMessage({
+          id: Date.now(),
+          text: msg,
+          tone: 'ok',
+        })
+        notifyPulse({
+          tone: 'ok',
+          sentence: msg,
+          link: '/takvim',
+        })
+      } else {
+        await rescheduleCalendar(target, moment.toISOString())
+        const title = entry.title?.trim() || 'Video'
+        const readableDate = formatScheduleDate(targetDate)
+        const msg = `“${title}” ${readableDate} (${finalTime}) tarihine alındı.`
+        setToastMessage({
+          id: Date.now(),
+          text: msg,
+          tone: 'ok',
+        })
+        notifyPulse({
+          tone: 'ok',
+          sentence: msg,
+          link: '/takvim',
+        })
+      }
       calendar.retry()
     } catch (err) {
       const gateInfo = gateFromError(err)

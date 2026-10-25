@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.models import (
+    AppMeta,
     Channel,
     ClipCandidate,
     ClipMetadata,
@@ -109,7 +110,6 @@ class CalendarViewService:
             )
             channels_meta = []
             slot_map: dict[int, dict[str, list]] = {}
-            queues: dict[int, dict[str, list[dict]]] = {}
             for profile, channel in profiles:
                 # Bozuk saat yapilandirmasi takvimi patratmam: varsayilana
                 # dus ve kanali listele.
@@ -127,6 +127,9 @@ class CalendarViewService:
                         )
                     )
                     h_slots = list(parse_publish_times(list(DEFAULT_PUBLISH_TIMES)))
+                active = ["vertical"]
+                if channel.id in horizontal_capable:
+                    active.append("horizontal")
                 channels_meta.append(
                     {
                         "id": channel.id,
@@ -142,29 +145,41 @@ class CalendarViewService:
                         "automation_state": profile.automation_state,
                         "daily_vertical_limit": profile.daily_clip_target,
                         "daily_horizontal_limit": profile.daily_horizontal_limit,
+                        "orientations": active,
                     }
                 )
                 slot_map[channel.id] = {
                     "vertical": v_slots,
                     "horizontal": h_slots,
                 }
-                queues[channel.id] = {
+
+            await self._ensure_verified_scheduled(session, channels_meta, slot_map)
+
+            meta_row = await session.get(AppMeta, "manual_schedules")
+            manual_ids = (
+                set(meta_row.value.get("published_video_ids", []))
+                if meta_row and meta_row.value
+                else set()
+            )
+
+            queues: dict[int, dict[str, list[dict]]] = {}
+            for channel in channels_meta:
+                c_id = channel["id"]
+                queues[c_id] = {
                     "vertical": await self._ready_queue(
-                        session, channel.id, "vertical"
+                        session, c_id, "vertical", manual_ids
                     ),
                     "horizontal": await self._ready_queue(
-                        session, channel.id, "horizontal"
+                        session, c_id, "horizontal", manual_ids
                     ),
                 }
                 # Stokta/sirada yatay video varsa kaynak ayari degisse bile
                 # yatay dilimler gosterilir (mevcut yatay stok yayinlanabilir).
-                active = ["vertical"]
                 if (
-                    channel.id in horizontal_capable
-                    or queues[channel.id]["horizontal"]
+                    "horizontal" not in channel["orientations"]
+                    and queues[c_id]["horizontal"]
                 ):
-                    active.append("horizontal")
-                channels_meta[-1]["orientations"] = active
+                    channel["orientations"].append("horizontal")
 
             published = await self._published_entries(session, year, month)
 
@@ -203,6 +218,7 @@ class CalendarViewService:
                     if not (month_start <= local_day <= month_end):
                         continue
                     entry_id += 1
+                    is_manual = item.get("manual", True)
                     entries.append(
                         {
                             "id": entry_id,
@@ -222,19 +238,43 @@ class CalendarViewService:
                             "youtube_video_id": item.get("youtube_video_id"),
                             "youtube_url": item.get("youtube_url"),
                             "metadata": item["metadata"],
-                            "note": "Elle planlandı; bu saatte herkese açılacak.",
-                            "manual": True,
+                            "note": item.get("note") or (
+                                "Elle planlandı; bu saatte herkese açılacak."
+                                if is_manual
+                                else "Gizli yüklendi; plan saatinde herkese açılacak."
+                            ),
+                            "manual": is_manual,
                         }
                     )
                 queue[orientation] = unscheduled
+
+            occupied_slots: set[tuple[int, str, str]] = set()
+            for entry in entries:
+                if entry["channel_id"] != channel_id or entry.get("status") == "empty":
+                    continue
+                try:
+                    moment_val = datetime.fromisoformat(entry["scheduled_at"]).astimezone(tz)
+                    occupied_slots.add((
+                        channel_id,
+                        entry["local_date"],
+                        moment_val.strftime("%H:%M"),
+                    ))
+                except Exception:
+                    pass
 
             day = max(month_start, today_local)
             while day <= month_end:
                 counts = self._todays_counts(
                     entries, channel_id, day, tz
                 )
+                day_str = day.isoformat()
                 for orientation in active_orientations:
                     for slot in slots[orientation]:
+                        slot_str = slot.strftime("%H:%M")
+                        # Slot zaten bu kanalda bir video ile doluysa yeni/boş kayıt üretme!
+                        if (channel_id, day_str, slot_str) in occupied_slots:
+                            continue
+
                         slot_utc = (
                             datetime.combine(day, slot, tzinfo=tz)
                             .astimezone(UTC)
@@ -364,19 +404,145 @@ class CalendarViewService:
             "note": item["note"],
         }
 
+    async def _ensure_verified_scheduled(
+        self,
+        session: AsyncSession,
+        channels_meta: list[dict],
+        slot_map: dict[int, dict[str, list]],
+    ) -> None:
+        """Kanalın gizli yüklenmiş (verified + private) videolarının
+        scheduled_at'i boşsa veya çakışıyorsa, ilk uygun yayın dilimlerine
+        kalıcı olarak atanır. Böylece kullanıcı bir videoyu kaydırdığında
+        diğer videolar kaymaz ve boşaltılan dilim (örn. 12:00) boş kalır."""
+        now = datetime.now(UTC)
+        meta_row = await session.get(AppMeta, "manual_schedules")
+        manual_ids = (
+            set(meta_row.value.get("published_video_ids", []))
+            if meta_row and meta_row.value
+            else set()
+        )
+        updated = False
+
+        for channel in channels_meta:
+            channel_id = channel["id"]
+            tz = ZoneInfo(channel["timezone"])
+            slots = slot_map.get(channel_id, {})
+            today_local = now.astimezone(tz).date()
+
+            for orientation in channel.get("orientations", []):
+                daily_limit = (
+                    channel["daily_vertical_limit"]
+                    if orientation == "vertical"
+                    else channel["daily_horizontal_limit"]
+                )
+                orient_slots = slots.get(orientation) or []
+                if not orient_slots:
+                    continue
+
+                stmt = (
+                    sa.select(PublishedVideo)
+                    .outerjoin(
+                        ClipCandidate,
+                        PublishedVideo.clip_candidate_id == ClipCandidate.id,
+                    )
+                    .where(
+                        PublishedVideo.channel_id == channel_id,
+                        PublishedVideo.orientation == orientation,
+                        PublishedVideo.status == "verified",
+                        PublishedVideo.visibility == "private",
+                    )
+                )
+                if orientation == "vertical":
+                    stmt = stmt.order_by(
+                        sa.desc(sa.func.coalesce(ClipCandidate.score, 0)),
+                        PublishedVideo.id.asc(),
+                    )
+                else:
+                    stmt = stmt.order_by(PublishedVideo.id.asc())
+
+                rows = list((await session.execute(stmt)).scalars().all())
+                if not rows:
+                    continue
+
+                # 1) Çakışma kontrolü: Aynı kanalda aynı saatte iki video olamaz
+                seen_moments: set[str] = set()
+                unassigned: list[PublishedVideo] = []
+                assigned: list[PublishedVideo] = []
+
+                for row in rows:
+                    if row.scheduled_at is None:
+                        unassigned.append(row)
+                    else:
+                        m_str = row.scheduled_at.isoformat()
+                        if m_str in seen_moments:
+                            row.scheduled_at = None
+                            unassigned.append(row)
+                            updated = True
+                        else:
+                            seen_moments.add(m_str)
+                            assigned.append(row)
+
+                if not unassigned:
+                    continue
+
+                taken_slots = {
+                    (
+                        r.scheduled_at.astimezone(tz).date(),
+                        r.scheduled_at.astimezone(tz).strftime("%H:%M"),
+                    )
+                    for r in assigned
+                    if r.scheduled_at is not None
+                }
+
+                day = today_local
+                max_day = today_local + timedelta(days=60)
+                while unassigned and day <= max_day:
+                    day_count = sum(1 for d, _s in taken_slots if d == day)
+                    if daily_limit and day_count >= daily_limit:
+                        day += timedelta(days=1)
+                        continue
+
+                    for s in orient_slots:
+                        s_str = s.strftime("%H:%M")
+                        s_utc = datetime.combine(day, s, tzinfo=tz).astimezone(UTC)
+                        if s_utc <= now:
+                            continue
+                        if (day, s_str) in taken_slots:
+                            continue
+
+                        video = unassigned.pop(0)
+                        video.scheduled_at = s_utc
+                        taken_slots.add((day, s_str))
+                        updated = True
+                        if not unassigned:
+                            break
+
+                    day += timedelta(days=1)
+
+        if updated:
+            await session.commit()
+
     async def _ready_queue(
-        self, session: AsyncSession, channel_id: int, orientation: str
+        self,
+        session: AsyncSession,
+        channel_id: int,
+        orientation: str,
+        manual_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Bir kanal+yön için yükleme sırası: önce gizli yüklenmiş
         (scheduled), sonra stoktaki hazır klip (planned)."""
         scheduled = await self._published_queue(
-            session, channel_id, orientation
+            session, channel_id, orientation, manual_ids
         )
         planned = await self._stock_queue(session, channel_id, orientation)
         return scheduled + planned
 
     async def _published_queue(
-        self, session: AsyncSession, channel_id: int, orientation: str
+        self,
+        session: AsyncSession,
+        channel_id: int,
+        orientation: str,
+        manual_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         statement = (
             sa.select(PublishedVideo, ClipCandidate.score)
@@ -399,11 +565,13 @@ class CalendarViewService:
             statement = statement.order_by(PublishedVideo.id)
         rows = (await session.execute(statement)).all()
         items = []
+        effective_manuals = manual_ids or set()
         for row, _score in rows:
             render = await self._render_for_published(session, row)
             metadata = await self._metadata_for(
                 session, row.clip_candidate_id, row.source_video_id
             )
+            is_manual = row.id in effective_manuals
             items.append(
                 {
                     "status": "scheduled",
@@ -433,7 +601,12 @@ class CalendarViewService:
                         else None
                     ),
                     "metadata": metadata,
-                    "note": "Gizli yüklendi; plan saatinde herkese açılacak.",
+                    "note": (
+                        "Elle planlandı; bu saatte herkese açılacak."
+                        if is_manual
+                        else "Gizli yüklendi; plan saatinde herkese açılacak."
+                    ),
+                    "manual": is_manual,
                 }
             )
         return items

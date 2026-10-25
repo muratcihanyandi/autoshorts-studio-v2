@@ -559,7 +559,36 @@ class PublishingService:
                 raise PublishingError(
                     "Video henüz doğrulanmadı; önce gizli yükleme tamamlanmalı."
                 )
+            if scheduled_at is not None:
+                # Çakışma kontrolü: Aynı kanalda ve yönde bu saatte başka video varsa eski saatle takas et
+                other = (
+                    await session.execute(
+                        sa.select(PublishedVideo).where(
+                            PublishedVideo.channel_id == row.channel_id,
+                            PublishedVideo.orientation == row.orientation,
+                            PublishedVideo.id != row_id,
+                            PublishedVideo.scheduled_at == scheduled_at,
+                            PublishedVideo.status == "verified",
+                            PublishedVideo.visibility == "private",
+                        )
+                    )
+                ).scalars().first()
+                if other is not None:
+                    other.scheduled_at = row.scheduled_at
+
             row.scheduled_at = scheduled_at
+
+            meta = await session.get(AppMeta, "manual_schedules")
+            ids = set(meta.value.get("published_video_ids", [])) if meta and meta.value else set()
+            if scheduled_at is not None:
+                ids.add(row_id)
+            else:
+                ids.discard(row_id)
+            if meta is None:
+                session.add(AppMeta(key="manual_schedules", value={"published_video_ids": list(ids)}))
+            else:
+                meta.value = {"published_video_ids": list(ids)}
+
             await session.commit()
             await session.refresh(row)
         await self._audit(
