@@ -158,17 +158,25 @@ class PublishingService:
         self, channel_id: int, orientation: str
     ) -> int | None:
         """Kanalin yayina hazir kaydi: dogrulanmis ama hala gizli.
-        Dikeyde en yuksek skorlu aday, yatayda en eski tam kesit."""
+        Dikeyde en yuksek skorlu aday, yatayda en eski tam kesit.
+
+        Gelecege elle planlanmis satirlar HARIC tutulur: kullanici bir
+        videoyu takvimden 27 Ekim'e tasidiysa, motor onu 25 Ekim'in
+        normal slotunda yayina acmamalidir (2026-10-25 canli hatasi:
+        planlama yaziliyor ama video yine eski slotta public oluyordu —
+        kullaniciya "tarih degismiyor" gorunuyordu). Saati gelmis
+        planlamalar ``next_manual_due`` uzerinden oncelikli akar.
+        """
+        now = datetime.now(UTC)
         async with self._sessionmaker() as session:
             statement = (
-                sa.select(PublishedVideo.id)
+                sa.select(PublishedVideo.id, PublishedVideo.scheduled_at)
                 .where(
                     PublishedVideo.channel_id == channel_id,
                     PublishedVideo.orientation == orientation,
                     PublishedVideo.status == "verified",
                     PublishedVideo.visibility == "private",
                 )
-                .limit(1)
             )
             if orientation == "vertical":
                 statement = statement.join(
@@ -177,9 +185,14 @@ class PublishingService:
                 ).order_by(ClipCandidate.score.desc())
             else:
                 statement = statement.order_by(PublishedVideo.id)
-            return (
-                (await session.execute(statement)).scalars().one_or_none()
-            )
+            rows = (await session.execute(statement)).all()
+        for row_id, scheduled_at in rows:
+            moment = _as_utc(scheduled_at)
+            if moment is not None and moment > now:
+                # Gelecek icin elle planlanmis: kendi saatini bekler.
+                continue
+            return row_id
+        return None
 
     async def today_published_counts(self, channel_id: int) -> dict:
         """Bugun herkese acik yapilan videolarin yon bazli sayilari.

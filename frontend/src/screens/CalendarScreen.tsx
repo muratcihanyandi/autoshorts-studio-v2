@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import {
   fetchCalendar,
@@ -11,6 +11,22 @@ import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/S
 import { ClipDetailModal } from '../components/ClipDetailModal'
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+
+/** Ay etiketleri (planlama penceresinde "27 Ekim 2026" gibi okunur). */
+const MONTH_NAMES = [
+  'Ocak',
+  'Şubat',
+  'Mart',
+  'Nisan',
+  'Mayıs',
+  'Haziran',
+  'Temmuz',
+  'Ağustos',
+  'Eylül',
+  'Ekim',
+  'Kasım',
+  'Aralık',
+]
 
 const STATUS_VIEW: Record<string, { tone: string; label: string }> = {
   scheduled: { tone: 'run', label: 'Saat bekliyor' },
@@ -88,18 +104,41 @@ function localDateToday(): string {
   return `${now.getFullYear()}-${month}-${day}`
 }
 
+/** ISO gün (YYYY-MM-DD) -> "27 Ekim 2026" (yerel okunur etiket). */
+function formatScheduleDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+  const month = Number(match[2])
+  const label = MONTH_NAMES[month - 1] ?? match[2]
+  return `${Number(match[3])} ${label} ${match[1]}`
+}
+
+/** Çipin saati (yerel): sürükleme sırasında bırakma hedefi olur. */
+function slotTimeOf(entry: CalendarEntry): string | null {
+  if (entry.status === 'empty') {
+    // Boş dilim çipi: sadece saat taşır (09:00, 14:00 gibi).
+    const time = entryTime(entry.scheduled_at)
+    return /^\d{2}:\d{2}$/.test(time) ? time : null
+  }
+  return null
+}
+
 function CalendarChip({
   entry,
   draggable,
   onOpen,
   onDragStart,
   onDragEnd,
+  onHoverTime,
 }: {
   entry: CalendarEntry
   draggable: boolean
   onOpen: (entry: CalendarEntry) => void
   onDragStart: (entry: CalendarEntry) => void
   onDragEnd: () => void
+  /** Sürükleme bir çipin üzerindeyken o çipin saatini bildirir: bırakılan
+   * dilimin saati yeni yayın saati olur ("09:00 dilimine bırak" = 09:00). */
+  onHoverTime: (time: string | null) => void
 }) {
   const view = STATUS_VIEW[entry.status] ?? {
     tone: 'idle',
@@ -120,7 +159,13 @@ function CalendarChip({
         event.dataTransfer.setData('text/plain', String(entry.id))
         event.dataTransfer.effectAllowed = 'move'
       }}
-      onDragEnd={onDragEnd}
+      onDragEnd={() => {
+        onHoverTime(null)
+        onDragEnd()
+      }}
+      onDragEnter={() => onHoverTime(slotTimeOf(entry))}
+      onDragOver={() => onHoverTime(slotTimeOf(entry))}
+      onDragLeave={() => onHoverTime(null)}
       className={`cal-chip ${orientationClass}${
         entry.status === 'empty' ? ' cal-chip--empty' : ''
       }${clickable ? '' : ' cal-chip--static'}${
@@ -152,17 +197,21 @@ function CalendarChip({
 function ScheduleModal({
   entry,
   initialDate,
+  initialTime,
   onClose,
   onSaved,
 }: {
   entry: CalendarEntry
   initialDate: string
+  /** Bırakılan dilimin saati; yoksa kaydın kendi saati/varsayılan. */
+  initialTime: string | null
   onClose: () => void
-  onSaved: () => void
+  onSaved: (movedTo: { date: string; time: string }) => void
 }) {
   const target = scheduleTarget(entry)
   const [date, setDate] = useState(initialDate)
   const [time, setTime] = useState(() => {
+    if (initialTime && /^\d{2}:\d{2}$/.test(initialTime)) return initialTime
     if (entry.status === 'scheduled' || entry.manual) {
       const current = entryTime(entry.scheduled_at)
       if (/^\d{2}:\d{2}$/.test(current)) return current
@@ -185,7 +234,7 @@ function ScheduleModal({
         throw new Error('Yayın saati gelecekte olmalı.')
       }
       await rescheduleCalendar(target, moment.toISOString())
-      onSaved()
+      onSaved({ date, time })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Planlama başarısız.')
     } finally {
@@ -226,6 +275,19 @@ function ScheduleModal({
             limit ve yayın saatlerinden bağımsız çıkar.
             {entry.status === 'planned' &&
               ' Stoktaki klip önce gizli yüklenir; saat yüklenince uygulanır.'}
+          </p>
+          {/* Hedef net görünsün: kullanıcı hangi gün/saate taşıdığını
+              onaylamadan önce okur (2026-10-25 bildirimi: bırakılan gün
+              ile kaydedilen gün karışıyordu). */}
+          <p className="schedule-target" aria-live="polite">
+            Yeni yayın: <b>{formatScheduleDate(date)}</b> · <b>{time}</b>
+            {entryTime(entry.scheduled_at) !== '—' && (
+              <span className="schedule-target-old">
+                {' '}
+                (şu an {formatScheduleDate(entry.local_date)} ·{' '}
+                {entryTime(entry.scheduled_at)})
+              </span>
+            )}
           </p>
           <div className="schedule-form">
             <label className="field">
@@ -377,9 +439,17 @@ export function CalendarScreen() {
   const [schedule, setSchedule] = useState<{
     entry: CalendarEntry
     date: string
+    /** Sürüklenen çipin bırakıldığı dilimin saati (varsa). */
+    time: string | null
   } | null>(null)
-  const [dragEntry, setDragEntry] = useState<CalendarEntry | null>(null)
+  /** Kayıt sonrası taşıma onayı: tarih gerçekten değişti mi görünsün. */
+  const [notice, setNotice] = useState<string | null>(null)
   const [dragOverDate, setDragOverDate] = useState<string | null>(null)
+  // Sürükleme olayları aynı tikte state görmediği için ref'ler de tutulur:
+  // aksi halde drop sırasında kayıt null görünüp planlama sessizce
+  // atlanıyordu (kullanıcı bildirimi 2026-10-25: "tarihi değişmiyor").
+  const dragEntryRef = useRef<CalendarEntry | null>(null)
+  const hoveredSlotTimeRef = useRef<string | null>(null)
 
   const fetchCb = useCallback(
     () => fetchCalendar(cursor.year, cursor.month),
@@ -444,10 +514,14 @@ export function CalendarScreen() {
     }
   }
 
-  function openReschedule(entry: CalendarEntry, date: string) {
+  function openReschedule(
+    entry: CalendarEntry,
+    date: string,
+    time: string | null = null,
+  ) {
     if (!canSchedule(entry)) return
     setOpenEntry(null)
-    setSchedule({ entry, date })
+    setSchedule({ entry, date, time })
   }
 
   return (
@@ -497,6 +571,20 @@ export function CalendarScreen() {
           </button>
         </div>
       </div>
+
+      {notice && (
+        <p className="schedule-notice" role="status">
+          <span>Taşındı: {notice}</span>
+          <button
+            type="button"
+            className="btn--ghost"
+            onClick={() => setNotice(null)}
+            aria-label="Bildirimi kapat"
+          >
+            ×
+          </button>
+        </p>
+      )}
 
       {calendar.state.status === 'loading' && (
         <LoadingState label="Takvim yükleniyor…" />
@@ -582,8 +670,12 @@ export function CalendarScreen() {
                           role="gridcell"
                           aria-label={cell.date}
                           onDragOver={(event) => {
-                            if (!dragEntry) return
+                            // preventDefault HER ZAMAN: state gecikse bile
+                            // birakma reddedilmesin (sessiz "hiçbir şey
+                            // olmadı" hatasının kökü buydu, 2026-10-25).
+                            if (!dragEntryRef.current) return
                             event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
                             setDragOverDate(cell.date)
                           }}
                           onDragLeave={() =>
@@ -593,11 +685,13 @@ export function CalendarScreen() {
                           }
                           onDrop={(event) => {
                             event.preventDefault()
-                            const entry = dragEntry
-                            setDragEntry(null)
+                            const entry = dragEntryRef.current
+                            const hoveredTime = hoveredSlotTimeRef.current
+                            dragEntryRef.current = null
+                            hoveredSlotTimeRef.current = null
                             setDragOverDate(null)
                             if (entry && canSchedule(entry)) {
-                              openReschedule(entry, cell.date)
+                              openReschedule(entry, cell.date, hoveredTime)
                             }
                           }}
                         >
@@ -610,8 +704,16 @@ export function CalendarScreen() {
                               entry={entry}
                               draggable={canSchedule(entry)}
                               onOpen={openDetail}
-                              onDragStart={setDragEntry}
-                              onDragEnd={() => setDragEntry(null)}
+                              onDragStart={(picked) => {
+                                dragEntryRef.current = picked
+                              }}
+                              onDragEnd={() => {
+                                dragEntryRef.current = null
+                                hoveredSlotTimeRef.current = null
+                              }}
+                              onHoverTime={(time) => {
+                                hoveredSlotTimeRef.current = time
+                              }}
                             />
                           ))}
                         </div>
@@ -710,12 +812,19 @@ export function CalendarScreen() {
       )}
       {schedule !== null && (
         <ScheduleModal
-          key={schedule.entry.id}
+          key={`${schedule.entry.id}-${schedule.date}-${schedule.time ?? ''}`}
           entry={schedule.entry}
           initialDate={schedule.date}
+          initialTime={schedule.time}
           onClose={() => setSchedule(null)}
-          onSaved={() => {
+          onSaved={(movedTo) => {
             setSchedule(null)
+            // Tasiyici onay: kullanici yeni gun/saati ekranda gorur.
+            setNotice(
+              `${schedule.entry.title ?? 'Video'} → ${formatScheduleDate(
+                movedTo.date,
+              )} · ${movedTo.time}`,
+            )
             calendar.retry()
           }}
         />
