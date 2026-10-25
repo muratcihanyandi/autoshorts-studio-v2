@@ -534,6 +534,9 @@ class MediaPipelineService:
             budget = analysis_timeout(
                 inspection.duration_seconds if inspection else None
             )
+            media_duration = (
+                inspection.duration_seconds if inspection else None
+            )
 
         silences = await detect_silence(
             self._settings.ffmpeg_bin,
@@ -559,6 +562,8 @@ class MediaPipelineService:
                 "scene_changes": scenes,
                 "energy_windows": [round(v, 2) for v in energy],
             }
+            analysis_path = asset.file_path
+            analysis_duration = media_duration
             self._complete_stage(asset, "analysis")
             record_event(
                 session,
@@ -575,7 +580,29 @@ class MediaPipelineService:
         # Otomatik intro/outro tespiti (2026-10-24): yatay tam kesit,
         # jenerik/bitis karti cikarilarak paylasilir; kullanici elle
         # ayarlamaz. Best-effort: tespit basarisizsa akis durmaz.
-        from app.services.intro_outro import compute_auto_trim_for_asset
+        # Kenar ses parmak izi burada hesaplanir; sonraki videolar ayni
+        # kanaldaki tekrar eden jenerigi bununla eslestirir.
+        from app.services.intro_outro import (
+            compute_auto_trim_for_asset,
+            edge_fingerprint,
+        )
+
+        try:
+            fingerprint = await edge_fingerprint(
+                self._settings.ffmpeg_bin,
+                analysis_path,
+                duration=analysis_duration,
+            )
+            if fingerprint.get("head") or fingerprint.get("tail"):
+                async with self._sessionmaker() as session:
+                    row = await session.get(MediaAsset, asset_id)
+                    if row is not None:
+                        updated = dict(row.analysis or {})
+                        updated["edge_fingerprint"] = fingerprint
+                        row.analysis = updated
+                        await session.commit()
+        except Exception:  # noqa: BLE001 - parmak izi istege bagli
+            logger.exception("kenar ses parmak izi hesaplanamadi")
 
         try:
             auto_trim = await compute_auto_trim_for_asset(
