@@ -475,6 +475,11 @@ class LibraryViewService:
             "filter_rules": source.filter_rules or {},
             "trim_start_seconds": source.trim_start_seconds,
             "trim_end_seconds": source.trim_end_seconds,
+            # Otomatik intro/outro tespiti (2026-10-24): kullanici elle
+            # ayarlamaz; analiz asamasinda hesaplanip render'da uygulanir.
+            "auto_trim": (asset.analysis or {}).get("auto_trim")
+            if asset is not None
+            else None,
             "duration_seconds": video.duration_seconds,
             "tag": tag,
             "asset_stage": asset.stage if asset is not None else None,

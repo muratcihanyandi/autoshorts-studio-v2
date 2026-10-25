@@ -42,8 +42,6 @@ const EMPTY_SOURCE_FORM = {
   orientation: 'auto' as SourceOrientation,
   reaction: false,
   reaction_only: false,
-  trim_start: '',
-  trim_end: '',
 }
 
 /** Görev 2 (2026-10-24): kaynağın çıktı yönü etiketleri. auto ve
@@ -173,22 +171,6 @@ function SourceRow({
 
   const recencyDays = source.filter_rules?.max_age_days ?? 0
 
-  // Yatay tam kesit intro/outro budaması: değer yalnız SONRAKİ
-  // render'larda etkilidir (mevcut tam kesit dosyası yeniden üretilmez).
-  const changeTrim = (
-    field: 'trim_start_seconds' | 'trim_end_seconds',
-    raw: string,
-  ) =>
-    run(async () => {
-      const value = Math.max(0, Number(raw) || 0)
-      await updateSource(source.id, { [field]: value })
-      setNote(
-        field === 'trim_start_seconds'
-          ? `Baştan budama ${value} sn olarak kaydedildi.`
-          : `Sondan budama ${value} sn olarak kaydedildi.`,
-      )
-    })
-
   const changeRecency = (days: number) =>
     run(async () => {
       await updateSource(source.id, {
@@ -259,44 +241,14 @@ function SourceRow({
           <option value={30}>Son 30 gün</option>
         </select>
         {source.output_orientation !== 'vertical' && (
-          <>
-            <label
-              className="source-trim"
-              title="Yatay tam kesitte baştan kesilecek saniye (intro)."
-            >
-              <span>Baştan</span>
-              <input
-                aria-label={`${source.title} baştan budama`}
-                className="nums"
-                type="number"
-                min={0}
-                step={1}
-                disabled={busy}
-                value={String(source.trim_start_seconds ?? 0)}
-                onChange={(e) =>
-                  void changeTrim('trim_start_seconds', e.target.value)
-                }
-              />
-            </label>
-            <label
-              className="source-trim"
-              title="Yatay tam kesitte sondan kesilecek saniye (outro)."
-            >
-              <span>Sondan</span>
-              <input
-                aria-label={`${source.title} sondan budama`}
-                className="nums"
-                type="number"
-                min={0}
-                step={1}
-                disabled={busy}
-                value={String(source.trim_end_seconds ?? 0)}
-                onChange={(e) =>
-                  void changeTrim('trim_end_seconds', e.target.value)
-                }
-              />
-            </label>
-          </>
+          <span
+            className="source-trim"
+            title="Intro/outro otomatik tespit edilir: konuşma boşluğu, sessizlik, siyah kare ve sahne kesmesi sinyalleri birleştirilir; yatay tam kesit bu kadar saniye budanarak paylaşılır."
+          >
+            {source.trim_start_seconds || source.trim_end_seconds
+              ? `Budama: ${source.trim_start_seconds}s / ${source.trim_end_seconds}s (elle)`
+              : 'Budama: otomatik'}
+          </span>
         )}
         {source.permission_status === 'authorized' ? (
           <button
@@ -430,11 +382,6 @@ function SourceAddForm({
     if (form.reaction) {
       input.reaction_source = true
     }
-    // Budama yatay tam kesiti etkiler; yalnız dikey seçilmediyse gönderilir.
-    if (form.orientation !== 'vertical') {
-      input.trim_start_seconds = Number(form.trim_start) || 0
-      input.trim_end_seconds = Number(form.trim_end) || 0
-    }
     if (form.reaction_only) {
       input.filter_rules = { require_reaction_content: true }
     }
@@ -553,42 +500,11 @@ function SourceAddForm({
             funny moments olsa bile — serbest kalır.
           </span>
         </div>
-        {/* Budama yatay tam kesiti etkiler: yalnız dikey seçilmediyse anlamlı. */}
         {form.orientation !== 'vertical' && (
-          <>
-            <div className="field">
-              <label htmlFor={`src-trim-start-${characterId}`}>
-                Baştan Budama (sn)
-              </label>
-              <input
-                id={`src-trim-start-${characterId}`}
-                className="nums"
-                type="number"
-                min={0}
-                step={1}
-                value={form.trim_start}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, trim_start: e.target.value }))
-                }
-              />
-            </div>
-            <div className="field">
-              <label htmlFor={`src-trim-end-${characterId}`}>
-                Sondan Budama (sn)
-              </label>
-              <input
-                id={`src-trim-end-${characterId}`}
-                className="nums"
-                type="number"
-                min={0}
-                step={1}
-                value={form.trim_end}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, trim_end: e.target.value }))
-                }
-              />
-            </div>
-          </>
+          <span className="field-help">
+            Intro/outro budaması otomatik: konuşma boşluğu, sessizlik, siyah
+            kare ve sahne kesmesi sinyallerinden tespit edilir.
+          </span>
         )}
       </div>
       <div className="settings-actions">

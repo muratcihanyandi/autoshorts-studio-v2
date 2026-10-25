@@ -13,6 +13,7 @@ stage appends a channel audit event.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,7 @@ from app.services.media_transcript import (
 )
 
 STAGES = ("download", "inspect", "transcript", "analysis", "candidates")
+logger = logging.getLogger(__name__)
 _STAGE_STATUS = {
     "download": "downloaded",
     "inspect": "inspected",
@@ -569,6 +571,31 @@ class MediaPipelineService:
                 },
             )
             await session.commit()
+
+        # Otomatik intro/outro tespiti (2026-10-24): yatay tam kesit,
+        # jenerik/bitis karti cikarilarak paylasilir; kullanici elle
+        # ayarlamaz. Best-effort: tespit basarisizsa akis durmaz.
+        from app.services.intro_outro import compute_auto_trim_for_asset
+
+        try:
+            auto_trim = await compute_auto_trim_for_asset(
+                self._sessionmaker, self._settings, asset_id
+            )
+        except Exception:  # noqa: BLE001 - tespit istege bagli
+            auto_trim = {}
+        if auto_trim:
+            async with self._sessionmaker() as session:
+                record_event(
+                    session,
+                    channel_id,
+                    "media.auto_trim",
+                    {
+                        "source_video_id": source_video_id,
+                        "intro_seconds": auto_trim.get("intro_seconds"),
+                        "outro_seconds": auto_trim.get("outro_seconds"),
+                    },
+                )
+                await session.commit()
 
     async def _stage_candidates(
         self,

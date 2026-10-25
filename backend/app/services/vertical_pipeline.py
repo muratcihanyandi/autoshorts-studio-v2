@@ -364,6 +364,29 @@ class VerticalPipelineService:
             )
             trim_start = max(0.0, float(source.trim_start_seconds or 0.0))
             trim_end = max(0.0, float(source.trim_end_seconds or 0.0))
+            manual_trim = trim_start > 0.0 or trim_end > 0.0
+            analysis = dict(asset.analysis or {})
+
+        # Otomatik intro/outro (2026-10-24): kullanici elle ayarlamaz.
+        # Kaynakta acik bir manuel deger varsa o kazanir; yoksa analiz
+        # asamasinda hesaplanan tespit uygulanir. Tespit yoksa (eski
+        # videolar) once burada hesaplanir.
+        if not manual_trim:
+            auto_trim = analysis.get("auto_trim")
+            if not auto_trim:
+                from app.services.intro_outro import (
+                    compute_auto_trim_for_asset,
+                )
+
+                try:
+                    auto_trim = await compute_auto_trim_for_asset(
+                        self._sessionmaker, self._settings, asset.id
+                    )
+                except Exception:  # noqa: BLE001 - tespit istege bagli
+                    auto_trim = {}
+            if auto_trim:
+                trim_start = max(0.0, float(auto_trim.get("intro_seconds") or 0.0))
+                trim_end = max(0.0, float(auto_trim.get("outro_seconds") or 0.0))
 
         if existing is not None and existing.status == "rendered":
             return {"source_video_id": source_video_id, "skipped": True}
@@ -450,6 +473,7 @@ class VerticalPipelineService:
                     "file_bytes": row.file_bytes,
                     "trim_start_seconds": trim_start,
                     "trim_end_seconds": trim_end,
+                    "trim_source": "manual" if manual_trim else "auto",
                 },
             )
             await session.commit()
