@@ -424,6 +424,10 @@ class VerticalPipelineService:
                 trim_end=trim_end,
                 source_duration=duration,
                 threads=self._settings.ffmpeg_threads,
+                # Sabit 30 dk Pi'de uzun VOD'larda yetmiyordu: 43 dk'lik
+                # video "Render zaman asimina ugradi" ile dustu
+                # (2026-10-24 canli olay, render 185 / video 957).
+                timeout=max(1800.0, duration * 2.0 + 600.0),
             )
             report = await validate_output(
                 self._settings.ffprobe_bin,
