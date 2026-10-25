@@ -96,7 +96,7 @@ def _backfill_admin_from_studio_auth() -> None:
             sa.text(
                 "INSERT INTO users (username, password_hash, role, plan,"
                 " is_active, token_version)"
-                " VALUES (:u, :h, 'admin', 'pro', 1, 1)"
+                " VALUES (:u, :h, 'admin', 'pro', TRUE, 1)"
             ),
             {"u": username, "h": password_hash},
         )
