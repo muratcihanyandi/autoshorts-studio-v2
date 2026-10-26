@@ -270,18 +270,14 @@ export function AchievementsScreen() {
               <span className="achievements-h1-icon" aria-hidden="true">
                 🏆
               </span>
-              Başarımlar & Kupa Ağaçları
+              Başarımlar
             </h1>
-            <p className="achievements-sub">
-              PlayStation tarzı kupa odası: Her kanalın bağımsız bir başarım ağacı vardır.
-              Bir kanalınızın para kazanması açıldığında yalnızca o kanal Platin Kupa kazanır!
-            </p>
           </div>
 
           <div className="achievements-controls">
             {/* Hesap Rozeti */}
             {currentUser && (
-              <div className="ach-user-badge" title="Hesaba Özel Başarımlar">
+              <div className="ach-user-badge" title="Aktif Hesap">
                 <span>👤 {currentUser.username}</span>
                 <span className="ach-user-plan-pill">{currentUser.plan}</span>
               </div>
@@ -292,8 +288,8 @@ export function AchievementsScreen() {
               type="button"
               className={`ach-sound-toggle ${soundEnabled ? 'ach-sound-toggle--on' : ''}`}
               onClick={() => setSoundEnabled((v) => !v)}
-              title={soundEnabled ? 'Kupa bildirim sesleri açık' : 'Kupa bildirim sesleri kapalı'}
-              aria-label="Kupa seslerini aç veya kapat"
+              title={soundEnabled ? 'Sesler açık' : 'Sesler kapalı'}
+              aria-label="Sesleri aç veya kapat"
             >
               {soundEnabled ? '🔊 Ses Açık' : '🔇 Ses Kapalı'}
             </button>
@@ -303,8 +299,8 @@ export function AchievementsScreen() {
         {/* HER KANALA ÖZEL BAŞARIM AĞACI SEKME ÇUBUĞU */}
         {channels.length > 0 && (
           <div className="ach-channel-tree-section">
-            <span className="ach-channel-tree-tabs-label">Kanal Başarım Ağacı Seç:</span>
-            <div className="ach-channel-tree-tabs" role="tablist" aria-label="Kanal Başarım Ağaçları">
+            <span className="ach-channel-tree-tabs-label">Kanal:</span>
+            <div className="ach-channel-tree-tabs" role="tablist" aria-label="Kanallar">
               {channels.map((c) => {
                 const isSelected = c.id === selectedChannelId
                 return (
@@ -322,13 +318,10 @@ export function AchievementsScreen() {
                     />
                     <div className="ach-channel-tab-text">
                       <span className="ach-channel-tab-name">{c.name}</span>
-                      <small className="ach-channel-tab-handle">
-                        {c.handle || 'Özel Kanal Ağacı'}
-                      </small>
+                      {c.handle && (
+                        <small className="ach-channel-tab-handle">{c.handle}</small>
+                      )}
                     </div>
-                    {isSelected && (
-                      <span className="ach-channel-active-indicator">Aktif Ağaç</span>
-                    )}
                   </button>
                 )
               })}
@@ -339,13 +332,13 @@ export function AchievementsScreen() {
 
       {/* Yükleniyor veya Boş Durum */}
       {loadingChannels ? (
-        <LoadingState label="Kanallar ve başarım ağaçları yükleniyor…" />
+        <LoadingState label="Kanallar yükleniyor…" />
       ) : channels.length === 0 ? (
         <EmptyState
-          title="Hesabınıza henüz bir YouTube kanalı bağlı değil"
+          title="Bağlı kanal bulunamadı"
           action={<Link to="/kanallar" className="btn btn--primary">Kanallara Git</Link>}
         >
-          Başarım ağaçlarını açmak için önce Kanallar sayfasından hesabınıza bir kanal bağlayın.
+          Başarımları görüntülemek için bir kanal bağlayın.
         </EmptyState>
       ) : (
         <>
@@ -362,7 +355,7 @@ export function AchievementsScreen() {
             </div>
           )}
 
-          {/* AKTİF KANALIN KUPA AĞACI BİLGİ ŞERİDİ */}
+          {/* AKTİF KANAL BİLGİ ŞERİDİ */}
           {selectedChannel && (
             <div className="ach-active-channel-banner">
               <div className="ach-active-channel-info">
@@ -370,41 +363,35 @@ export function AchievementsScreen() {
                   className="ach-active-channel-ribbon-dot"
                   style={{ backgroundColor: selectedChannel.ribbon_color || '#3b82f6' }}
                 />
-                <h2 className="ach-active-channel-name">
-                  {selectedChannel.name} — Başarım Ağacı
-                </h2>
+                <h2 className="ach-active-channel-name">{selectedChannel.name}</h2>
                 {selectedChannel.handle && (
                   <span className="ach-active-channel-handle">{selectedChannel.handle}</span>
                 )}
               </div>
               <div className="ach-active-channel-badge">
-                {summary.isMonetized
-                  ? '🏆 Bu Kanalda Para Kazanma Açık (Platin Kupa Kazanıldı)'
-                  : '⏳ Bu Kanalda Para Kazanma Eşiği Aranıyor'}
+                {summary.isMonetized ? '🏆 Para Kazanma Açık' : '⏳ Hedefe Doğru'}
               </div>
             </div>
           )}
 
-          {/* PLAYSTATION KUPA ÖZETİ PANOSU (PS5 Trophy Shelf) */}
+          {/* KUPA ÖZETİ PANOSU */}
           <section
             className="ps-trophy-shelf"
-            aria-label={`${selectedChannel?.name ?? 'Kanal'} Kupa İstatistiği Özeti`}
+            aria-label={`${selectedChannel?.name ?? 'Kanal'} Kupa İstatistiği`}
           >
             <div className="ps-level-badge">
               <div className="ps-level-icon" aria-hidden="true">
                 ⭐
               </div>
               <div className="ps-level-content">
-                <span className="ps-level-tag">KUPA SEVİYESİ</span>
+                <span className="ps-level-tag">SEVİYE</span>
                 <span className="ps-level-num">{summary.level}</span>
               </div>
             </div>
 
             <div className="ps-progress-box">
               <div className="ps-progress-labels">
-                <span className="ps-progress-title">
-                  {selectedChannel?.name ?? 'Kanal'} Kupa İlerlemesi
-                </span>
+                <span className="ps-progress-title">Genel İlerleme</span>
                 <span className="ps-progress-percent">
                   %{summary.completionPercentage} ({summary.unlockedCount}/{summary.total})
                 </span>
@@ -452,7 +439,7 @@ export function AchievementsScreen() {
                 className={`ps-counter ps-counter--platinum ${
                   summary.isMonetized ? 'ps-counter--plat-unlocked' : ''
                 }`}
-                title="Platin Kupa (Bu Kanalın Para Kazanması)"
+                title="Platin Kupa"
               >
                 <TrophyIcon
                   tier="platinum"
@@ -469,15 +456,11 @@ export function AchievementsScreen() {
             </div>
           </section>
 
-          {/* YOUTUBE PARA KAZANMA MONİTÖRÜ (Seçili Kanala Özel YPP Partner Programı) */}
+          {/* PARA KAZANMA TAKİBİ */}
           <section className="monetization-showcase">
             <div className="monetization-showcase-header">
               <div className="monetization-showcase-title">
-                <h2>{selectedChannel?.name ?? 'Kanal'} — Para Kazanma Durumu</h2>
-                <p>
-                  Bu kanalın Platin Kupayı kazanması ve YouTube reklam gelirlerinin açılması için
-                  gereken iki ana kriter:
-                </p>
+                <h2>Para Kazanma (YPP)</h2>
               </div>
               <div
                 className={`monetization-status-pill ${
@@ -486,9 +469,7 @@ export function AchievementsScreen() {
                     : 'monetization-status-pill--progress'
                 }`}
               >
-                {summary.isMonetized
-                  ? '🎉 Para Kazanma Açıldı!'
-                  : '⏳ Bu Kanalda Eşik Aranıyor'}
+                {summary.isMonetized ? '✓ Açık' : '⏳ Hedefe Doğru'}
               </div>
             </div>
 
@@ -496,7 +477,7 @@ export function AchievementsScreen() {
               {/* Kriter 1: Abone Eşiği */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">1.000 Abone Hedefi</span>
+                  <span className="monetization-track-name">1.000 Abone</span>
                   <span className="monetization-track-val">
                     {metrics.subscriberCount.toLocaleString('tr-TR')} / 1.000
                   </span>
@@ -511,15 +492,15 @@ export function AchievementsScreen() {
                 </div>
                 <small className="monetization-track-note">
                   {metrics.subscriberCount >= 1000
-                    ? '✓ Abone şartı bu kanalda sağlandı!'
-                    : `${Math.max(0, 1000 - metrics.subscriberCount)} abone kaldı.`}
+                    ? '✓ Tamamlandı'
+                    : `Kalan: ${Math.max(0, 1000 - metrics.subscriberCount).toLocaleString('tr-TR')}`}
                 </small>
               </div>
 
               {/* Kriter 2A: 4000 Saat Yatay İzlenme */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">4.000 Saat (Yatay Videolar)</span>
+                  <span className="monetization-track-name">4.000 Saat (Yatay)</span>
                   <span className="monetization-track-val">
                     {metrics.watchHours.toLocaleString('tr-TR')} / 4.000 Saat
                   </span>
@@ -534,15 +515,15 @@ export function AchievementsScreen() {
                 </div>
                 <small className="monetization-track-note">
                   {metrics.watchHours >= 4000
-                    ? '✓ 4.000 saat şartı bu kanalda sağlandı!'
-                    : `${Math.max(0, 4000 - metrics.watchHours)} saat kaldı.`}
+                    ? '✓ Tamamlandı'
+                    : `Kalan: ${Math.max(0, 4000 - metrics.watchHours).toLocaleString('tr-TR')} saat`}
                 </small>
               </div>
 
               {/* Kriter 2B: 10 Milyon Shorts İzlenmesi */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">10 Milyon Shorts İzlenmesi</span>
+                  <span className="monetization-track-name">10 Milyon Shorts</span>
                   <span className="monetization-track-val">
                     {metrics.shortsViews.toLocaleString('tr-TR')} / 10.000.000
                   </span>
@@ -557,10 +538,10 @@ export function AchievementsScreen() {
                 </div>
                 <small className="monetization-track-note">
                   {metrics.shortsViews >= 10000000
-                    ? '✓ 10M Shorts şartı bu kanalda sağlandı!'
-                    : `${Math.max(0, 10000000 - metrics.shortsViews).toLocaleString(
+                    ? '✓ Tamamlandı'
+                    : `Kalan: ${Math.max(0, 10000000 - metrics.shortsViews).toLocaleString(
                         'tr-TR',
-                      )} Shorts izlenmesi kaldı.`}
+                      )}`}
                 </small>
               </div>
             </div>
