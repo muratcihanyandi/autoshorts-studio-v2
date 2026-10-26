@@ -34,6 +34,7 @@ export interface Overview {
   uptime_seconds: number | null
   phase: StudioPhase
   database: 'reachable' | 'not_configured' | 'unreachable'
+  channel_id?: number | null
   channels: { connected: number; total?: number }
   sources: { monitored: number }
   llm_providers: { configured: number }
@@ -50,6 +51,7 @@ export interface Overview {
   worker?: WorkerHealth
 }
 
-export function fetchOverview(): Promise<Overview> {
-  return getJson<Overview>('/api/overview')
+export function fetchOverview(channelId?: number): Promise<Overview> {
+  const url = channelId != null ? `/api/overview?channel_id=${channelId}` : '/api/overview'
+  return getJson<Overview>(url)
 }

@@ -10,6 +10,7 @@ import {
 } from '../api/youtube'
 import { fetchChannels, type Channel } from '../api/channels'
 import { usePolling } from '../hooks/usePolling'
+import { useActiveChannel } from '../context/ChannelContext'
 import { formatCount, formatDateTime } from '../format'
 import { notifyPulse } from '../pulse/bus'
 import { EmptyState, ErrorState, LoadingState, StaleNote } from '../components/States'
@@ -145,9 +146,10 @@ function VideoRow({
 }
 
 export function YouTubeScreen() {
+  const { activeChannelId } = useActiveChannel()
   const channelsCb = useCallback(() => fetchChannels(), [])
   const channels = usePolling(channelsCb, 30000)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(activeChannelId)
   const [filter, setFilter] = useState<VideoFilter>('tumu')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -160,6 +162,13 @@ export function YouTubeScreen() {
 
   const channelList =
     channels.state.status === 'ok' ? channels.state.data.channels : []
+
+  // Global aktif kanal değiştiğinde YouTube ekranının kanalını da senkronize et
+  useEffect(() => {
+    if (activeChannelId !== null) {
+      setSelectedId(activeChannelId)
+    }
+  }, [activeChannelId])
 
   // Varsayılan kanal: ilk bağlı kanal (yoksa ilk kanal).
   useEffect(() => {

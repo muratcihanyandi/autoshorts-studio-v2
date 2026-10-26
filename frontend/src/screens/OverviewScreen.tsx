@@ -4,6 +4,7 @@ import { fetchOverview, type Overview, type StudioPhase } from '../api/overview'
 import { fetchPulse, type PulseEvent } from '../api/pulse'
 import { fetchSystemResources } from '../api/system'
 import { fetchMedia } from '../api/media'
+import { useActiveChannel } from '../context/ChannelContext'
 import {
   ACTIVITY_LABEL,
   AUTOMATION_STATE_LABEL,
@@ -484,7 +485,11 @@ function OverviewChannelRow({
 }
 
 export function OverviewScreen() {
-  const fetchOverviewCb = useCallback(() => fetchOverview(), [])
+  const { activeChannelId, activeChannel } = useActiveChannel()
+  const fetchOverviewCb = useCallback(
+    () => fetchOverview(activeChannelId ?? undefined),
+    [activeChannelId],
+  )
   const fetchSystemCb = useCallback(() => fetchSystemResources(), [])
   const overview = usePolling(fetchOverviewCb, 10000)
   const system = usePolling(fetchSystemCb, 10000)
@@ -529,7 +534,40 @@ export function OverviewScreen() {
   return (
     <>
       <div className="screen-head">
-        <h1>Genel Bakış</h1>
+        <div>
+          <h1>Genel Bakış</h1>
+          {activeChannel && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '6px',
+                padding: '3px 10px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '999px',
+                fontSize: '12px',
+              }}
+            >
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: activeChannel.ribbon_color || '#3b82f6',
+                }}
+                aria-hidden="true"
+              />
+              <span style={{ fontWeight: 600 }}>{activeChannel.name}</span>
+              {activeChannel.handle && (
+                <span style={{ color: 'var(--muted-on-dark, #888)' }}>
+                  {activeChannel.handle}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <span className="screen-sub nums">
           {overview.state.status === 'ok'
             ? `v${overview.state.data.version} · çalışma süresi ${formatUptime(overview.state.data.uptime_seconds)}`
@@ -628,14 +666,22 @@ export function OverviewScreen() {
                 overview.state.data.channels.connected === 0 ? ' warn' : ''
               }`}
             >
-              <span>Bağlı kanal</span>
+              <span>{activeChannel ? 'Kanal durumu' : 'Bağlı kanal'}</span>
               <b className="nums">
-                {overview.state.data.channels.connected}
-                <small>
-                  / {overview.state.data.channels.total ?? 0} kayıtlı
-                </small>
+                {activeChannel
+                  ? (overview.state.data.channels.connected > 0 ? 'Bağlı' : 'Kopuk')
+                  : overview.state.data.channels.connected}
+                {!activeChannel && (
+                  <small>
+                    / {overview.state.data.channels.total ?? 0} kayıtlı
+                  </small>
+                )}
               </b>
-              <small>otomasyon kanal bazında yönetilir</small>
+              <small>
+                {activeChannel
+                  ? `${activeChannel.name} aktif`
+                  : 'otomasyon kanal bazında yönetilir'}
+              </small>
             </div>
           </div>
 

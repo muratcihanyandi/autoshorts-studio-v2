@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import logoUrl from '../assets/brand/logo-dark-bg.svg'
 import { ActivityBell } from './ActivityBell'
+import { ChannelSwitcher } from './ChannelSwitcher'
+import { useActiveChannel } from '../context/ChannelContext'
 import {
   BoltIcon,
   CalendarIcon,
@@ -105,6 +107,7 @@ export function AppShell({
 }) {
   const isMobile = useIsMobile()
   const location = useLocation()
+  const { activeChannel } = useActiveChannel()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const drawerRef = useRef<HTMLElement | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -174,6 +177,9 @@ export function AppShell({
                 <CloseIcon />
               </button>
             </div>
+            <div className="drawer-channel-section">
+              <ChannelSwitcher onSelect={closeDrawer} />
+            </div>
             <div className="drawer-scroll">
               <StudioNav onNavigate={closeDrawer} />
             </div>
@@ -215,6 +221,7 @@ export function AppShell({
             <div className="rail-brand">
               <img src={logoUrl} alt="AutoShorts Studio" />
             </div>
+            <ChannelSwitcher />
             <StudioNav />
             <div className="rail-foot">
               {username && (
@@ -237,6 +244,19 @@ export function AppShell({
               <div className="topbar-context">
                 <span className="topbar-status-pulse" aria-hidden="true" />
                 <span className="topbar-studio-title">AutoShorts Stüdyo</span>
+                {activeChannel && (
+                  <span
+                    className="topbar-channel-pill"
+                    title={`Aktif Kanal: ${activeChannel.name}`}
+                  >
+                    <span
+                      className="topbar-channel-dot"
+                      style={{ backgroundColor: activeChannel.ribbon_color || '#3b82f6' }}
+                      aria-hidden="true"
+                    />
+                    <span className="topbar-channel-name">{activeChannel.name}</span>
+                  </span>
+                )}
               </div>
               <div className="topbar-right">
                 <ActivityBell />

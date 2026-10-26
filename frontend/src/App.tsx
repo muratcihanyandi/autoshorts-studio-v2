@@ -5,6 +5,7 @@ import { fetchAuthStatus, logoutStudio } from './api/auth'
 import { AppShell } from './components/AppShell'
 import { AuthScreen } from './components/AuthScreen'
 import { PulseProvider } from './pulse/PulseProvider'
+import { ChannelProvider } from './context/ChannelContext'
 import { OverviewScreen } from './screens/OverviewScreen'
 import { ChannelsScreen } from './screens/ChannelsScreen'
 import { CharactersScreen } from './screens/CharactersScreen'
@@ -105,28 +106,30 @@ function App() {
   return (
     <BrowserRouter>
       <PulseProvider>
-        <Routes>
-          <Route
-            element={
-              <AppShell username={auth.username} onLogout={handleLogout} />
-            }
-          >
-            <Route index element={<OverviewScreen />} />
-            <Route path="kanallar" element={<ChannelsScreen />} />
-            <Route path="karakterler" element={<CharactersScreen />} />
-            <Route path="medya" element={<MediaLibraryScreen />} />
-            <Route path="youtube" element={<YouTubeScreen />} />
-            <Route path="basarimlar" element={<AchievementsScreen />} />
-            <Route path="takvim" element={<CalendarScreen />} />
-            <Route path="otomasyon" element={<AutomationScreen />} />
-            <Route path="hesap" element={<AccountScreen />} />
-            <Route path="llm-saglayicilari" element={<LlmProvidersScreen />} />
-            <Route path="gunlukler" element={<LogsScreen />} />
-            <Route path="ayarlar" element={<SettingsScreen />} />
-            <Route path="rehber" element={<GuideScreen />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+        <ChannelProvider>
+          <Routes>
+            <Route
+              element={
+                <AppShell username={auth.username} onLogout={handleLogout} />
+              }
+            >
+              <Route index element={<OverviewScreen />} />
+              <Route path="kanallar" element={<ChannelsScreen />} />
+              <Route path="karakterler" element={<CharactersScreen />} />
+              <Route path="medya" element={<MediaLibraryScreen />} />
+              <Route path="youtube" element={<YouTubeScreen />} />
+              <Route path="basarimlar" element={<AchievementsScreen />} />
+              <Route path="takvim" element={<CalendarScreen />} />
+              <Route path="otomasyon" element={<AutomationScreen />} />
+              <Route path="hesap" element={<AccountScreen />} />
+              <Route path="llm-saglayicilari" element={<LlmProvidersScreen />} />
+              <Route path="gunlukler" element={<LogsScreen />} />
+              <Route path="ayarlar" element={<SettingsScreen />} />
+              <Route path="rehber" element={<GuideScreen />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </ChannelProvider>
       </PulseProvider>
     </BrowserRouter>
   )

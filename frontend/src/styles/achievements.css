@@ -59,6 +59,28 @@
   line-height: 1.45;
 }
 
+.ach-active-channel-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.ach-active-channel-name {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.ach-active-channel-handle {
+  color: #94a3b8;
+  font-size: 11.5px;
+}
+
 .achievements-controls {
   display: flex;
   align-items: center;

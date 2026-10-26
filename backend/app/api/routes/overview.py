@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from sqlalchemy import text
 
 from app import __version__
@@ -39,7 +39,9 @@ async def _database_state(request: Request) -> str:
     return "reachable"
 
 
-async def _channels_connected(request: Request, database: str) -> tuple[int, int]:
+async def _channels_connected(
+    request: Request, database: str, channel_id: int | None = None
+) -> tuple[int, int]:
     """(total, connected); a schema behind its migration reads as zero."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if database != "reachable" or sessionmaker is None:
@@ -49,6 +51,12 @@ async def _channels_connected(request: Request, database: str) -> tuple[int, int
         channels = await service.list_channels()
     except Exception:  # noqa: BLE001 - migration'dan geride şema
         return 0, 0
+    if channel_id is not None:
+        matched = [c for c in channels if c.id == channel_id]
+        if not matched:
+            return 0, 0
+        connected = 1 if matched[0].status.value == "connected" else 0
+        return 1, connected
     connected = sum(1 for c in channels if c.status.value == "connected")
     return len(channels), connected
 
@@ -94,7 +102,9 @@ async def _job_counts(request: Request, database: str) -> dict[str, int]:
         return {"active": 0, "queued": 0}
 
 
-async def _sources_monitored(request: Request, database: str) -> int:
+async def _sources_monitored(
+    request: Request, database: str, channel_id: int | None = None
+) -> int:
     """Authorized source channels; a schema behind its migration reads as zero."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if database != "reachable" or sessionmaker is None:
@@ -103,20 +113,34 @@ async def _sources_monitored(request: Request, database: str) -> int:
         from sqlalchemy import text
 
         async with sessionmaker() as session:
-            count = (
-                await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM source_channels "
-                        "WHERE permission_status = 'authorized'"
+            if channel_id is not None:
+                count = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM source_channels "
+                            "WHERE permission_status = 'authorized' "
+                            "AND channel_id = :channel_id"
+                        ),
+                        {"channel_id": channel_id},
                     )
-                )
-            ).scalar()
+                ).scalar()
+            else:
+                count = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM source_channels "
+                            "WHERE permission_status = 'authorized'"
+                        )
+                    )
+                ).scalar()
         return int(count or 0)
     except Exception:  # noqa: BLE001 - migration'dan geride şema
         return 0
 
 
-async def _real_totals(request: Request) -> tuple[int, dict, list[dict]]:
+async def _real_totals(
+    request: Request, channel_id: int | None = None
+) -> tuple[int, dict, list[dict]]:
     """(ready clip stock, today's published counts with limits, channel
     rows) — computed from the database; a schema behind its migration
     degrades to zeros/empty instead of failing the endpoint."""
@@ -137,6 +161,8 @@ async def _real_totals(request: Request) -> tuple[int, dict, list[dict]]:
         automation = AutomationService(sessionmaker, settings)
         status = StatusService(sessionmaker, settings)
         channels = await ChannelService(sessionmaker).list_channels()
+        if channel_id is not None:
+            channels = [c for c in channels if c.id == channel_id]
         stock_total = 0
         today = {"vertical": 0, "horizontal": 0}
         limits = {"vertical": 0, "horizontal": 0}
@@ -164,7 +190,9 @@ async def _real_totals(request: Request) -> tuple[int, dict, list[dict]]:
         }, []
 
 
-async def _planned_videos(request: Request, database: str) -> int:
+async def _planned_videos(
+    request: Request, database: str, channel_id: int | None = None
+) -> int:
     """Üretim sırasındaki videolar (status='planned', yetkili kaynaklar).
     Overview'in 'işlenecek video yok' uyarısı bu sayıya bakar — 0 olup
     motor çalışıyorsa kütüphane boşalmış ya da her şey hariç kalmış
@@ -174,17 +202,32 @@ async def _planned_videos(request: Request, database: str) -> int:
         return 0
     try:
         async with sessionmaker() as session:
-            count = (
-                await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM source_videos sv"
-                        " JOIN source_channels sc"
-                        " ON sv.source_channel_id = sc.id"
-                        " WHERE sv.status = 'planned'"
-                        " AND sc.permission_status = 'authorized'"
+            if channel_id is not None:
+                count = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM source_videos sv"
+                            " JOIN source_channels sc"
+                            " ON sv.source_channel_id = sc.id"
+                            " WHERE sv.status = 'planned'"
+                            " AND sc.permission_status = 'authorized'"
+                            " AND sc.channel_id = :channel_id"
+                        ),
+                        {"channel_id": channel_id},
                     )
-                )
-            ).scalar()
+                ).scalar()
+            else:
+                count = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM source_videos sv"
+                            " JOIN source_channels sc"
+                            " ON sv.source_channel_id = sc.id"
+                            " WHERE sv.status = 'planned'"
+                            " AND sc.permission_status = 'authorized'"
+                        )
+                    )
+                ).scalar()
         return int(count or 0)
     except Exception:  # noqa: BLE001 - migration'dan geride şema
         return 0
@@ -230,20 +273,27 @@ async def _worker_health(request: Request) -> dict:
 
 
 @router.get("/overview")
-async def overview(request: Request) -> dict:
+async def overview(
+    request: Request,
+    channel_id: int | None = Query(None),
+) -> dict:
     database = await _database_state(request)
     started_at = getattr(request.app.state, "started_at", None)
     uptime_seconds = round(time.time() - started_at) if started_at else None
 
-    channels_total, channels_connected = await _channels_connected(request, database)
+    channels_total, channels_connected = await _channels_connected(
+        request, database, channel_id
+    )
     llm_providers_configured = await _llm_providers_configured(request, database)
     job_counts = await _job_counts(request, database)
-    sources_monitored = await _sources_monitored(request, database)
-    planned_videos = await _planned_videos(request, database)
-    stock_clips, today_published, channel_rows = await _real_totals(request)
+    sources_monitored = await _sources_monitored(request, database, channel_id)
+    planned_videos = await _planned_videos(request, database, channel_id)
+    stock_clips, today_published, channel_rows = await _real_totals(
+        request, channel_id
+    )
     worker = await _worker_health(request)
     today_jobs = await _today_job_counts(request, database)
-    next_publish = await _next_publish(request, database)
+    next_publish = await _next_publish(request, database, channel_id)
 
     jobs_active = job_counts["active"]
     jobs_queued = job_counts["queued"]
@@ -261,6 +311,7 @@ async def overview(request: Request) -> dict:
         "uptime_seconds": uptime_seconds,
         "phase": phase,
         "database": database,
+        "channel_id": channel_id,
         "channels": {"connected": channels_connected, "total": channels_total},
         "sources": {"monitored": sources_monitored},
         "llm_providers": {"configured": llm_providers_configured},
@@ -307,7 +358,9 @@ async def _today_job_counts(request: Request, database: str) -> dict:
         return {"succeeded": 0, "failed": 0}
 
 
-async def _next_publish(request: Request, database: str) -> dict | None:
+async def _next_publish(
+    request: Request, database: str, channel_id: int | None = None
+) -> dict | None:
     """Sıradaki yayın: takvimden elle planlanmış en yakın saat. Elle
     plan yoksa gizli yüklenmiş klip sayısıyla 'otomatik slot bekleniyor'
     anlatılır — uydurma saat gösterilmez."""
@@ -317,33 +370,65 @@ async def _next_publish(request: Request, database: str) -> dict | None:
     now = datetime.now(UTC)
     try:
         async with sessionmaker() as session:
-            scheduled = (
-                await session.execute(
-                    text(
-                        "SELECT pv.scheduled_at, pv.title, pv.orientation, "
-                        "c.name AS channel_name "
-                        "FROM published_videos pv "
-                        "JOIN channels c ON pv.channel_id = c.id "
-                        "WHERE pv.scheduled_at IS NOT NULL "
-                        "AND pv.scheduled_at > :now "
-                        "AND pv.visibility = 'private' "
-                        "AND pv.status IN ('uploaded', 'verified') "
-                        "ORDER BY pv.scheduled_at ASC LIMIT 1"
-                    ),
-                    {"now": now},
-                )
-            ).first()
-            waiting = (
-                await session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM published_videos "
-                        "WHERE visibility = 'private' "
-                        "AND status IN ('uploaded', 'verified') "
-                        "AND scheduled_at IS NULL "
-                        "AND public_at IS NULL"
+            if channel_id is not None:
+                scheduled = (
+                    await session.execute(
+                        text(
+                            "SELECT pv.scheduled_at, pv.title, pv.orientation, "
+                            "c.name AS channel_name "
+                            "FROM published_videos pv "
+                            "JOIN channels c ON pv.channel_id = c.id "
+                            "WHERE pv.scheduled_at IS NOT NULL "
+                            "AND pv.scheduled_at > :now "
+                            "AND pv.visibility = 'private' "
+                            "AND pv.status IN ('uploaded', 'verified') "
+                            "AND pv.channel_id = :channel_id "
+                            "ORDER BY pv.scheduled_at ASC LIMIT 1"
+                        ),
+                        {"now": now, "channel_id": channel_id},
                     )
-                )
-            ).scalar()
+                ).first()
+                waiting = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM published_videos "
+                            "WHERE visibility = 'private' "
+                            "AND status IN ('uploaded', 'verified') "
+                            "AND scheduled_at IS NULL "
+                            "AND public_at IS NULL "
+                            "AND channel_id = :channel_id"
+                        ),
+                        {"channel_id": channel_id},
+                    )
+                ).scalar()
+            else:
+                scheduled = (
+                    await session.execute(
+                        text(
+                            "SELECT pv.scheduled_at, pv.title, pv.orientation, "
+                            "c.name AS channel_name "
+                            "FROM published_videos pv "
+                            "JOIN channels c ON pv.channel_id = c.id "
+                            "WHERE pv.scheduled_at IS NOT NULL "
+                            "AND pv.scheduled_at > :now "
+                            "AND pv.visibility = 'private' "
+                            "AND pv.status IN ('uploaded', 'verified') "
+                            "ORDER BY pv.scheduled_at ASC LIMIT 1"
+                        ),
+                        {"now": now},
+                    )
+                ).first()
+                waiting = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM published_videos "
+                            "WHERE visibility = 'private' "
+                            "AND status IN ('uploaded', 'verified') "
+                            "AND scheduled_at IS NULL "
+                            "AND public_at IS NULL"
+                        )
+                    )
+                ).scalar()
         return {
             "scheduled_at": (
                 scheduled.scheduled_at.isoformat()

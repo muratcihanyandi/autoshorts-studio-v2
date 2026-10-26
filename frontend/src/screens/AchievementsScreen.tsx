@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../styles/achievements.css'
-import { fetchChannels, type Channel } from '../api/channels'
+import { useActiveChannel } from '../context/ChannelContext'
 import {
   fetchChannelVideos,
   type YoutubeVideosResponse,
@@ -116,9 +116,8 @@ function deriveMetrics(data: YoutubeVideosResponse | null): ChannelMetrics {
 
 export function AchievementsScreen() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null)
-  const [channels, setChannels] = useState<Channel[]>([])
-  const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null)
-  const [loadingChannels, setLoadingChannels] = useState(true)
+  const { channels, activeChannelId, activeChannel, loading: loadingChannels } =
+    useActiveChannel()
 
   const [videoData, setVideoData] = useState<YoutubeVideosResponse | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -134,36 +133,18 @@ export function AchievementsScreen() {
   // Kupa pop-up bildirimi (otomatik tek seferlik duyulur)
   const [activeToast, setActiveToast] = useState<ComputedAchievement | null>(null)
 
-  // Kullanıcı ve Kanalları yükle (Hesap İzolasyonu)
+  // Kullanıcı profilini yükle
   useEffect(() => {
     let cancelled = false
-    setLoadingChannels(true)
-
     void fetchMe()
       .then((user) => {
         if (!cancelled) setCurrentUser(user)
       })
       .catch(() => {})
-
-    fetchChannels()
-      .then((res) => {
-        if (cancelled) return
-        const list = res.channels ?? []
-        setChannels(list)
-        if (list.length > 0 && selectedChannelId === null) {
-          setSelectedChannelId(list[0].id)
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setErrorMsg(err instanceof Error ? err.message : 'Kanallar alınamadı.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingChannels(false)
-      })
     return () => {
       cancelled = true
     }
-  }, [selectedChannelId])
+  }, [])
 
   // Seçili kanalın YouTube verilerini yükle (Kanala Özel Başarım Ağacı)
   const loadChannelData = useCallback(async (channelId: number) => {
@@ -181,10 +162,12 @@ export function AchievementsScreen() {
   }, [])
 
   useEffect(() => {
-    if (selectedChannelId !== null) {
-      void loadChannelData(selectedChannelId)
+    if (activeChannelId !== null) {
+      void loadChannelData(activeChannelId)
+    } else {
+      setVideoData(null)
     }
-  }, [selectedChannelId, loadChannelData])
+  }, [activeChannelId, loadChannelData])
 
   // Seçili kanala ait metrikler ve başarımları bağımsız hesapla
   const metrics = useMemo(() => deriveMetrics(videoData), [videoData])
@@ -193,9 +176,9 @@ export function AchievementsScreen() {
   // Bir kanalın açılan kupaları diğer kanalın kupa ağacına kesinlikle karışmaz!
   const storageKey = useMemo(() => {
     const uid = currentUser?.id ?? 'me'
-    const chId = selectedChannelId ?? 'none'
+    const chId = activeChannelId ?? 'none'
     return `autoshorts_seen_trophies_u_${uid}_ch_${chId}`
-  }, [currentUser?.id, selectedChannelId])
+  }, [currentUser?.id, activeChannelId])
 
   const { achievements, summary } = useMemo(() => {
     return computeAchievements(metrics)
@@ -251,7 +234,7 @@ export function AchievementsScreen() {
     })
   }, [achievements, tierFilter, categoryFilter, searchQuery])
 
-  const selectedChannel = channels.find((c) => c.id === selectedChannelId)
+  const selectedChannel = activeChannel
 
   return (
     <div className="achievements-page">
@@ -272,6 +255,19 @@ export function AchievementsScreen() {
               </span>
               Başarımlar
             </h1>
+            {activeChannel && (
+              <div className="ach-active-channel-banner">
+                <span
+                  className="channel-avatar-dot"
+                  style={{ backgroundColor: activeChannel.ribbon_color || '#3b82f6' }}
+                  aria-hidden="true"
+                />
+                <span className="ach-active-channel-name">{activeChannel.name}</span>
+                {activeChannel.handle && (
+                  <small className="ach-active-channel-handle">{activeChannel.handle}</small>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="achievements-controls">
@@ -295,39 +291,6 @@ export function AchievementsScreen() {
             </button>
           </div>
         </div>
-
-        {/* HER KANALA ÖZEL BAŞARIM AĞACI SEKME ÇUBUĞU */}
-        {channels.length > 0 && (
-          <div className="ach-channel-tree-section">
-            <span className="ach-channel-tree-tabs-label">Kanal:</span>
-            <div className="ach-channel-tree-tabs" role="tablist" aria-label="Kanallar">
-              {channels.map((c) => {
-                const isSelected = c.id === selectedChannelId
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isSelected}
-                    className={`ach-channel-tree-tab ${isSelected ? 'ach-channel-tree-tab--active' : ''}`}
-                    onClick={() => setSelectedChannelId(c.id)}
-                  >
-                    <span
-                      className="ach-channel-ribbon"
-                      style={{ backgroundColor: c.ribbon_color || '#3b82f6' }}
-                    />
-                    <div className="ach-channel-tab-text">
-                      <span className="ach-channel-tab-name">{c.name}</span>
-                      {c.handle && (
-                        <small className="ach-channel-tab-handle">{c.handle}</small>
-                      )}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </header>
 
       {/* Yükleniyor veya Boş Durum */}
@@ -348,7 +311,7 @@ export function AchievementsScreen() {
               <button
                 type="button"
                 className="btn btn--sm"
-                onClick={() => selectedChannelId && void loadChannelData(selectedChannelId)}
+                onClick={() => activeChannelId && void loadChannelData(activeChannelId)}
               >
                 Tekrar Dene
               </button>
