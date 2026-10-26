@@ -78,6 +78,7 @@ function VideoRow({
           href={`https://www.youtube.com/watch?v=${video.youtube_video_id}`}
           target="_blank"
           rel="noopener noreferrer"
+          title={video.title}
         >
           {video.title}
         </a>
@@ -90,17 +91,19 @@ function VideoRow({
           )}
         </div>
       </div>
-      <span className={`pill pill--${privacy.tone}`}>{privacy.label}</span>
-      <span
-        className={`pill pill--${video.managed ? 'ok' : 'warn'}`}
-        title={
-          video.managed
-            ? 'Bu video stüdyonun yayın kayıtlarında yönetiliyor.'
-            : 'Stüdyo kaydında yok: siteden silinmiş ya da elle yüklenmiş.'
-        }
-      >
-        {video.managed ? 'Stüdyo yönetiminde' : 'Kayıt dışı'}
-      </span>
+      <div className="yt-badges">
+        <span className={`pill pill--${privacy.tone}`}>{privacy.label}</span>
+        <span
+          className={`pill pill--${video.managed ? 'ok' : 'warn'}`}
+          title={
+            video.managed
+              ? 'Bu video stüdyonun yayın kayıtlarında yönetiliyor.'
+              : 'Stüdyo kaydında yok: siteden silinmiş ya da elle yüklenmiş.'
+          }
+        >
+          {video.managed ? 'Stüdyo yönetiminde' : 'Kayıt dışı'}
+        </span>
+      </div>
       <div className="yt-stats nums" aria-label="İzlenme verileri">
         <span title="İzlenme">{formatCount(video.view_count)} izlenme</span>
         <span title="Beğeni">{formatCount(video.like_count)} beğeni</span>

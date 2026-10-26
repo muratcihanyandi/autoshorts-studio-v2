@@ -4611,11 +4611,12 @@
 
 .yt-row {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) auto auto auto;
-  gap: 12px;
+  grid-template-columns: 24px 96px minmax(180px, 1fr) auto auto auto;
+  gap: 14px;
   align-items: center;
   padding: 10px 18px;
   border-bottom: 1px solid #eef2f6;
+  transition: background-color 150ms ease;
 }
 
 .yt-row:last-child {
@@ -4624,6 +4625,27 @@
 
 .yt-row--orphan {
   background: #fffdf5;
+}
+
+.yt-row--selected {
+  background: rgba(21, 245, 186, 0.08) !important;
+  border-color: rgba(21, 245, 186, 0.4) !important;
+}
+
+.yt-row-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.yt-checkbox {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  cursor: pointer;
+  accent-color: var(--accent-deep);
+  margin: 0;
 }
 
 .yt-thumb {
@@ -4636,6 +4658,7 @@
   display: grid;
   place-items: center;
   color: var(--cream-text);
+  flex-shrink: 0;
 }
 
 .yt-thumb img {
@@ -4672,18 +4695,29 @@
   color: var(--plate-muted);
 }
 
+.yt-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
 .yt-stats {
   display: flex;
   gap: 12px;
   font-size: 12px;
   color: var(--plate-muted);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .yt-actions {
   display: inline-flex;
   gap: 8px;
   justify-self: end;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* Analiz panelinin stüdyo özeti şeridi (Pro). */
@@ -4704,16 +4738,30 @@
   .yt-row {
     display: flex;
     flex-wrap: wrap;
-    row-gap: 6px;
+    row-gap: 8px;
+    column-gap: 12px;
+    align-items: center;
+  }
+
+  .yt-row-select {
+    flex-shrink: 0;
   }
 
   .yt-thumb {
     width: 72px;
     height: 42px;
+    flex-shrink: 0;
   }
 
   .yt-info {
-    flex: 1 1 160px;
+    flex: 1 1 200px;
+    min-width: 140px;
+  }
+
+  .yt-badges {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
   }
 
   .yt-stats {
@@ -6257,24 +6305,6 @@ button:active:not(:disabled),
   border: 1px solid rgba(234, 88, 12, 0.25);
 }
 
-.yt-row-select {
-  display: flex;
-  align-items: center;
-  padding-right: 4px;
-}
-
-.yt-checkbox {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
-  cursor: pointer;
-  accent-color: var(--accent-deep);
-}
-
-.yt-row--selected {
-  background: rgba(21, 245, 186, 0.08) !important;
-  border-color: rgba(21, 245, 186, 0.4) !important;
-}
 
 .yt-orphan-actions {
   display: flex;
