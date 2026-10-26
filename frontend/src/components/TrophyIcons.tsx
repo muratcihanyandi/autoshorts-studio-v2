@@ -7,8 +7,17 @@ interface TrophyIconProps {
   className?: string
 }
 
-/** Kupa ikonu: tek renk çizgi dili (currentColor). Derece rengini
-    CSS sınıfı (trophy-icon--bronze…) taşır; kilitli form kasa gösterir. */
+/** Derece madalya renkleri: düz (flat) dolgu + koyu kontur.
+    Bronz toprak, Gümüş çelik, Altın sarı, Platin turkuaz. */
+const TIER_COLORS: Record<TrophyTier, { base: string; dark: string; shine: string }> = {
+  bronze: { base: '#cd7f32', dark: '#8b4513', shine: '#ffd1b3' },
+  silver: { base: '#c8d6e5', dark: '#718093', shine: '#ffffff' },
+  gold: { base: '#f1c40f', dark: '#b7950b', shine: '#fff9e6' },
+  platinum: { base: '#7ed6df', dark: '#4834d4', shine: '#ffffff' },
+}
+
+/** Kupa ikonu: madalya rengiyle dolu flat görsel. Açılan kupalar
+    derecesinin rengini taşır; kilitli form kasa gösterir. */
 export function TrophyIcon({
   tier,
   size = 32,
@@ -39,6 +48,8 @@ export function TrophyIcon({
     )
   }
 
+  const { base, dark, shine } = TIER_COLORS[tier]
+
   return (
     <svg
       width={size}
@@ -52,21 +63,22 @@ export function TrophyIcon({
       {/* Kupa gövdesi */}
       <path
         d="M14 6H34V20C34 26 29.5 30 24 30C18.5 30 14 26 14 20V6Z"
-        stroke="currentColor"
-        strokeWidth="3"
+        fill={base}
+        stroke={dark}
+        strokeWidth="1.5"
         strokeLinejoin="round"
       />
       {/* Kulplar */}
       <path
         d="M14 10H8C6.34 10 5 11.34 5 13V16C5 19.87 8.13 23 12 23H14.2"
-        stroke="currentColor"
+        stroke={dark}
         strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
         d="M34 10H40C41.66 10 43 11.34 43 13V16C43 19.87 39.87 23 36 23H33.8"
-        stroke="currentColor"
+        stroke={dark}
         strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -74,21 +86,24 @@ export function TrophyIcon({
       {/* Kupa sapı ve tabanı */}
       <path
         d="M21 30H27V36C27 37 28 38 29 38H19C20 38 21 37 21 36V30Z"
-        stroke="currentColor"
-        strokeWidth="3"
+        fill={base}
+        stroke={dark}
+        strokeWidth="1.2"
         strokeLinejoin="round"
       />
-      <path
-        d="M13 42H35"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
+      <rect
+        x="13"
+        y="38"
+        width="22"
+        height="5"
+        rx="2"
+        fill={dark}
       />
       {/* Yıldız amblemi */}
       <path
         d="M24 12L25.3 15.5L29 16L26.2 18.5L27 22L24 20.2L21 22L21.8 18.5L19 16L22.7 15.5L24 12Z"
-        fill="currentColor"
-        opacity="0.9"
+        fill={shine}
+        opacity="0.95"
       />
     </svg>
   )

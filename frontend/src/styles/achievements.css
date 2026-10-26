@@ -176,24 +176,8 @@
   color: var(--plate-muted);
 }
 
-/* Derece mürekkepleri: kupa ikonu ve sayaç değerleri.
-   Bronz arduvaz, Gümüş yeşim, Altın hardal, Platin okyanus. */
-.trophy-icon--bronze {
-  color: var(--plate-muted);
-}
-
-.trophy-icon--silver {
-  color: var(--green-on-plate);
-}
-
-.trophy-icon--gold {
-  color: var(--amber-on-plate);
-}
-
-.trophy-icon--platinum {
-  color: var(--accent-deep);
-}
-
+/* Kupa ikonları derecesinin madalya rengini SVG içinde taşır
+   (flat dolgu + koyu kontur); kilitli form currentColor ile soluk. */
 .trophy-icon--locked {
   color: #b6c2d1;
 }

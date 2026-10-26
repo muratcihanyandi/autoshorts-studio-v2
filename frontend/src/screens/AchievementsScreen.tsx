@@ -340,7 +340,11 @@ export function AchievementsScreen() {
 
               <div className="ps-trophy-counters">
                 <div className="ps-counter" title="Bronz kupalar">
-                  <TrophyIcon tier="bronze" size={22} unlocked={true} />
+                  <TrophyIcon
+                    tier="bronze"
+                    size={22}
+                    unlocked={summary.bronze.unlocked > 0}
+                  />
                   <div className="ps-counter-info">
                     <span className="ps-counter-val">
                       {summary.bronze.unlocked}/{summary.bronze.total}
@@ -350,7 +354,11 @@ export function AchievementsScreen() {
                 </div>
 
                 <div className="ps-counter" title="Gümüş kupalar">
-                  <TrophyIcon tier="silver" size={22} unlocked={true} />
+                  <TrophyIcon
+                    tier="silver"
+                    size={22}
+                    unlocked={summary.silver.unlocked > 0}
+                  />
                   <div className="ps-counter-info">
                     <span className="ps-counter-val">
                       {summary.silver.unlocked}/{summary.silver.total}
@@ -360,7 +368,11 @@ export function AchievementsScreen() {
                 </div>
 
                 <div className="ps-counter" title="Altın kupalar">
-                  <TrophyIcon tier="gold" size={22} unlocked={true} />
+                  <TrophyIcon
+                    tier="gold"
+                    size={22}
+                    unlocked={summary.gold.unlocked > 0}
+                  />
                   <div className="ps-counter-info">
                     <span className="ps-counter-val">
                       {summary.gold.unlocked}/{summary.gold.total}
@@ -373,7 +385,7 @@ export function AchievementsScreen() {
                   <TrophyIcon
                     tier="platinum"
                     size={22}
-                    unlocked={summary.isMonetized}
+                    unlocked={summary.platinum.unlocked > 0}
                   />
                   <div className="ps-counter-info">
                     <span className="ps-counter-val">
