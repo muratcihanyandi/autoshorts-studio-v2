@@ -38,3 +38,16 @@ export async function loginStudio(
 export async function logoutStudio(): Promise<void> {
   await sendJson<null>('/api/auth/logout', 'POST')
 }
+
+export interface UserProfile {
+  id: number
+  username: string
+  role: string
+  plan: string
+  plan_expires_at: string | null
+  is_active: boolean
+}
+
+export function fetchMe(): Promise<UserProfile> {
+  return getJson<UserProfile>('/api/auth/me')
+}
