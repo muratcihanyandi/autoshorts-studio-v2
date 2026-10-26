@@ -72,7 +72,7 @@ export function ChannelSwitcher({ onSelect }: ChannelSwitcherProps) {
     )
   }
 
-  const ribbonColor = activeChannel?.ribbon_color || '#3b82f6'
+  const ribbonColor = activeChannel?.ribbon_color || '#0e9f6e'
 
   return (
     <div className="channel-switcher" ref={containerRef}>
@@ -88,7 +88,7 @@ export function ChannelSwitcher({ onSelect }: ChannelSwitcherProps) {
         <div className="channel-switcher-leading">
           <span
             className="channel-avatar-dot"
-            style={{ backgroundColor: ribbonColor, boxShadow: `0 0 8px ${ribbonColor}66` }}
+            style={{ backgroundColor: ribbonColor }}
             aria-hidden="true"
           />
         </div>
@@ -125,7 +125,7 @@ export function ChannelSwitcher({ onSelect }: ChannelSwitcherProps) {
           <div className="channel-switcher-list">
             {channels.map((ch) => {
               const isSelected = ch.id === activeChannelId
-              const chColor = ch.ribbon_color || '#3b82f6'
+              const chColor = ch.ribbon_color || '#0e9f6e'
               return (
                 <button
                   key={ch.id}

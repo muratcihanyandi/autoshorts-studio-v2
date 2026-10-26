@@ -1,1104 +1,637 @@
 /* ========================================================
-   PlayStation Kupa ve Başarımlar Stilleri
-   AutoShorts Studio Trophy System
+   Kupa ve Başarımlar ekranı — "Kategori Standardı" dili.
+   Beyaz kart + 1px kontur + 10px köşe + tek kart gölgesi;
+   durumlar yumuşak zeminli haplarla, ilerleme 6px meter'la.
+   Kupa dereceleri mevcut hap paletinden sıralanır:
+   Bronz arduvaz → Gümüş yeşim → Altın hardal → Platin okyanus.
    ======================================================== */
 
 .achievements-page {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding-bottom: 3rem;
-  color: #e2e8f0;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
 }
 
-/* --- Sayfa Başlığı ve Kontroller --- */
+/* --- Sayfa başlığı: mevcut screen-head dili (h1 + sub) --- */
 .achievements-header {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  background: linear-gradient(135deg, rgba(19, 25, 36, 0.85) 0%, rgba(11, 14, 20, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-.achievements-header-main {
-  display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  gap: var(--space-4);
   flex-wrap: wrap;
-  gap: 1rem;
 }
 
 .achievements-title-wrap {
-  flex: 1;
-  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .achievements-h1 {
-  font-size: 1.6rem;
+  margin: 0;
+  font-family: var(--font-display);
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0 0 0.4rem 0;
-  color: #ffffff;
-  letter-spacing: -0.02em;
-}
-
-.achievements-h1-icon {
-  font-size: 1.8rem;
-  filter: drop-shadow(0 0 8px rgba(241, 196, 15, 0.6));
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  color: var(--plate-ink);
 }
 
 .achievements-sub {
   margin: 0;
-  font-size: 0.92rem;
-  color: #94a3b8;
-  line-height: 1.45;
-}
-
-.ach-active-channel-banner {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  padding: 4px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  font-size: 13px;
-}
-
-.ach-active-channel-name {
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.ach-active-channel-handle {
-  color: #94a3b8;
-  font-size: 11.5px;
+  font-size: 12.5px;
+  color: var(--plate-muted);
 }
 
 .achievements-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
-.achievements-channel-picker {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 0.35rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.ach-label {
-  font-size: 0.85rem;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.ach-select {
-  background: transparent;
-  color: #f8fafc;
-  border: none;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  outline: none;
-}
-
-.ach-select option {
-  background: #131924;
-  color: #ffffff;
-}
-
-.ach-sound-toggle {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 0.45rem 0.85rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.ach-sound-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-}
-
-.ach-sound-toggle--on {
-  border-color: rgba(74, 222, 128, 0.4);
-  color: #4ade80;
-}
-
-.ach-user-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  color: #c7d2fe;
-  padding: 0.35rem 0.75rem;
-  border-radius: 8px;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.ach-user-plan-pill {
-  background: #4f46e5;
-  color: #ffffff;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-/* --- KANAL BAŞARIM AĞACI SEKME ÇUBUĞU (Channel Tree Tabs) --- */
-.ach-channel-tree-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.ach-channel-tree-tabs-label {
-  font-size: 0.78rem;
-  color: #94a3b8;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.ach-channel-tree-tabs {
-  display: flex;
-  gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.35rem;
-}
-
-.ach-channel-tree-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: rgba(19, 25, 36, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 0.65rem 1rem;
-  cursor: pointer;
-  color: #cbd5e1;
-  text-align: left;
-  transition: all 0.2s ease;
-  min-width: 200px;
-  flex-shrink: 0;
-}
-
-.ach-channel-tree-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.ach-channel-tree-tab--active {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
-  border-color: #3b82f6;
-  box-shadow: 0 0 14px rgba(59, 130, 246, 0.3);
-  color: #ffffff;
-}
-
-.ach-channel-ribbon {
-  width: 10px;
-  height: 28px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.ach-channel-tab-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.ach-channel-tab-name {
-  font-size: 0.92rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ach-channel-tab-handle {
-  font-size: 0.76rem;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ach-channel-active-indicator {
-  font-size: 0.68rem;
-  font-weight: 800;
-  background: #2563eb;
-  color: #ffffff;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* Aktif Kanal Başarım Şeridi */
-.ach-active-channel-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  background: linear-gradient(90deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 0.65rem 1.1rem;
-  flex-wrap: wrap;
-}
-
-.ach-active-channel-info {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.ach-active-channel-ribbon-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 8px currentColor;
-}
-
-.ach-active-channel-name {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #f8fafc;
-  margin: 0;
-}
-
-.ach-active-channel-handle {
-  font-size: 0.85rem;
-  color: #94a3b8;
-}
-
-.ach-active-channel-badge {
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #38bdf8;
-}
-
-/* Hata Panosu */
+/* Hata şeridi: stale-note dili — ince, koyu metin, yeniden dene. */
 .ach-error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  font-size: 0.9rem;
+  gap: var(--space-3);
+  padding: 8px 14px;
+  border: 1px solid var(--red-soft);
+  border-radius: var(--radius-panel);
+  background: var(--red-soft);
+  color: var(--red-on-plate);
+  font-size: 13px;
 }
 
-/* --- PLAYSTATION KUPA ÖZETİ PANOSU (PS5 Shelf) --- */
-.ps-trophy-shelf {
+/* --- KUPA ÖZETİ PANOSU: başlık şeritli beyaz panel (ink-panel) ---
+   Dolguyu ve h2 şeridini ink-panel sağlar; burada yalnız iç yerleşim. */
+.ach-summary-body {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1.5rem;
-  background: radial-gradient(circle at top left, #1a2538 0%, #0e1420 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  padding: 1.25rem 1.75rem;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
-}
-
-@media (max-width: 900px) {
-  .ps-trophy-shelf {
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-  }
+  gap: var(--space-5);
 }
 
 .ps-level-badge {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  padding-right: 1.25rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-@media (max-width: 900px) {
-  .ps-level-badge {
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 0.75rem;
-  }
-}
-
-.ps-level-icon {
-  font-size: 2.2rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 10px rgba(241, 196, 15, 0.7));
+  gap: var(--space-3);
 }
 
 .ps-level-content {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .ps-level-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #94a3b8;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--plate-muted);
+  font-weight: 500;
 }
 
 .ps-level-num {
-  font-size: 2.2rem;
-  font-weight: 900;
-  color: #ffffff;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--plate-ink);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .ps-progress-box {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  min-width: 200px;
+  gap: 6px;
+  min-width: 220px;
 }
 
 .ps-progress-labels {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-}
-
-.ps-progress-title {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: #cbd5e1;
+  font-size: 12px;
+  color: var(--plate-body-ink);
 }
 
 .ps-progress-percent {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #38bdf8;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .ps-progress-bar-wrap {
   width: 100%;
-  height: 8px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 999px;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ps-progress-bar-fill {
+  display: block;
   height: 100%;
-  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #7dd3fc 100%);
-  border-radius: 999px;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
-  transition: width 0.4s ease;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width 0.3s ease;
 }
 
 .ps-trophy-counters {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  align-items: stretch;
+  gap: 0;
   flex-wrap: wrap;
 }
 
 .ps-counter {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.4rem 0.75rem;
-  border-radius: 10px;
-  transition: transform 0.18s ease;
+  gap: 10px;
+  padding: 6px 18px;
+  border-left: 1px solid #eef2f6;
 }
 
-.ps-counter:hover {
-  transform: translateY(-2px);
-}
-
-.ps-counter--plat-unlocked {
-  background: linear-gradient(135deg, rgba(126, 214, 223, 0.25), rgba(72, 52, 212, 0.35));
-  border-color: rgba(126, 214, 223, 0.5);
-  box-shadow: 0 0 14px rgba(126, 214, 223, 0.4);
+.ps-counter:first-child {
+  border-left: none;
+  padding-left: 0;
 }
 
 .ps-counter-info {
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 
 .ps-counter-val {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--plate-ink);
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
 .ps-counter-name {
-  font-size: 0.7rem;
-  color: #94a3b8;
-  font-weight: 600;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  color: var(--plate-muted);
 }
 
-/* --- YOUTUBE PARA KAZANMA MONİTÖRÜ --- */
-.monetization-showcase {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0%, rgba(10, 15, 30, 0.95) 100%);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 14px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+/* Derece mürekkepleri: kupa ikonu ve sayaç değerleri.
+   Bronz arduvaz, Gümüş yeşim, Altın hardal, Platin okyanus. */
+.trophy-icon--bronze {
+  color: var(--plate-muted);
 }
 
-.monetization-showcase-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1.1rem;
-  flex-wrap: wrap;
+.trophy-icon--silver {
+  color: var(--green-on-plate);
 }
 
-.monetization-showcase-title h2 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #e0e7ff;
-  margin: 0 0 0.3rem 0;
+.trophy-icon--gold {
+  color: var(--amber-on-plate);
 }
 
-.monetization-showcase-title p {
-  margin: 0;
-  font-size: 0.86rem;
-  color: #94a3b8;
-  line-height: 1.4;
+.trophy-icon--platinum {
+  color: var(--accent-deep);
 }
 
-.monetization-status-pill {
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+.trophy-icon--locked {
+  color: #b6c2d1;
 }
 
-.monetization-status-pill--active {
-  background: rgba(34, 197, 94, 0.2);
-  border: 1px solid rgba(34, 197, 94, 0.5);
-  color: #4ade80;
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
-}
-
-.monetization-status-pill--progress {
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #fbbf24;
-}
-
+/* --- PARA KAZANMA TAKİBİ: panel içinde ölçülü satırlar --- */
 .monetization-tracks {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0;
 }
 
 .monetization-track-card {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 6px;
+  padding: 14px 18px 16px 0;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.monetization-track-card:last-child {
+  border-bottom: none;
+}
+
+.monetization-track-card + .monetization-track-card {
+  padding-left: 18px;
 }
 
 .monetization-track-top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 0.84rem;
+  gap: var(--space-2);
+  font-size: 12px;
 }
 
 .monetization-track-name {
-  color: #cbd5e1;
-  font-weight: 600;
+  color: var(--plate-body-ink);
+  font-weight: 500;
 }
 
 .monetization-track-val {
-  color: #38bdf8;
-  font-weight: 700;
+  color: var(--plate-muted);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .monetization-track-bar {
   width: 100%;
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
+  background: #e2e8f0;
+  border-radius: 99px;
   overflow: hidden;
 }
 
 .monetization-track-fill {
+  display: block;
   height: 100%;
-  background: linear-gradient(90deg, #6366f1, #38bdf8);
-  border-radius: 999px;
+  border-radius: 99px;
+  background: var(--accent);
   transition: width 0.3s ease;
 }
 
 .monetization-track-note {
-  font-size: 0.74rem;
-  color: #94a3b8;
+  font-size: 11.5px;
+  color: var(--plate-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-/* --- FİLTRE & ARAMA ÇUBUĞU --- */
+.monetization-track-note--done {
+  color: var(--green-on-plate);
+  font-weight: 600;
+}
+
+/* --- FİLTRE & ARAMA: mevcut chip dili --- */
 .achievements-filter-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.85rem;
-  margin-top: 0.5rem;
+  gap: var(--space-2);
 }
 
 .ach-filter-group {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.ach-filter-chip {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
-  padding: 0.35rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.ach-filter-chip:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-}
-
-.ach-filter-chip--active {
-  background: #2563eb;
-  border-color: #3b82f6;
-  color: #ffffff;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
-}
-
-.ach-filter-chip--bronze.ach-filter-chip--active {
-  background: #cd7f32;
-  border-color: #e09867;
-}
-
-.ach-filter-chip--silver.ach-filter-chip--active {
-  background: #718093;
-  border-color: #dcdde1;
-}
-
-.ach-filter-chip--gold.ach-filter-chip--active {
-  background: #d4ac0d;
-  border-color: #f1c40f;
-  color: #000;
-}
-
-.ach-filter-chip--platinum.ach-filter-chip--active {
-  background: linear-gradient(135deg, #4834d4, #7ed6df);
-  border-color: #dff9fb;
-}
-
 .ach-search-input {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  padding: 0.4rem 0.85rem;
-  border-radius: 20px;
-  font-size: 0.85rem;
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-control);
+  color: var(--plate-ink);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-family: var(--font-body);
   width: 220px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s ease;
 }
 
-.ach-search-input:focus {
-  border-color: #38bdf8;
+.ach-search-input::placeholder {
+  color: var(--plate-muted);
 }
 
-/* --- KUPA KARTLARI IZGARASI --- */
+.ach-search-input:focus-visible {
+  border-color: var(--accent-deep);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* --- KUPA KARTLARI: beyaz kart, kilitli = kesikli kontur --- */
 .trophy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
-  gap: 1.1rem;
-}
-
-@media (max-width: 600px) {
-  .trophy-grid {
-    grid-template-columns: 1fr;
-  }
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-3);
 }
 
 .trophy-card {
   display: grid;
-  grid-template-columns: 80px 1fr;
-  background: #111622;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  padding: 1.1rem;
-  gap: 1rem;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  grid-template-columns: 56px 1fr;
+  gap: var(--space-3);
+  padding: 16px 18px;
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  box-shadow: var(--card-shadow);
 }
 
-.trophy-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-}
-
-/* Kupa Derecesine Göre Bordür Vurguları (Açıkken) */
-.trophy-card--unlocked.trophy-card--bronze {
-  border-left: 4px solid #cd7f32;
-}
-
-.trophy-card--unlocked.trophy-card--silver {
-  border-left: 4px solid #c8d6e5;
-}
-
-.trophy-card--unlocked.trophy-card--gold {
-  border-left: 4px solid #f1c40f;
-  background: radial-gradient(circle at top right, rgba(241, 196, 15, 0.05) 0%, #111622 70%);
-}
-
-.trophy-card--unlocked.trophy-card--platinum {
-  border: 1px solid rgba(126, 214, 223, 0.5);
-  border-left: 5px solid #7ed6df;
-  background: radial-gradient(circle at top right, rgba(126, 214, 223, 0.12) 0%, #111622 75%);
-  box-shadow: 0 0 16px rgba(126, 214, 223, 0.25);
-}
-
+/* Kesikli kontur "henüz yok" sözleşmesidir; kilitli kupa düz değil
+   kesikli çizgiyle bekler. */
 .trophy-card--locked {
-  opacity: 0.75;
-  background: #0d111a;
+  border-style: dashed;
+  background: var(--plate);
+}
+
+.trophy-card--locked .trophy-card-title,
+.trophy-card--locked .trophy-card-desc {
+  color: var(--plate-muted);
+}
+
+.trophy-card--locked .trophy-card-title {
+  font-weight: 500;
 }
 
 .trophy-card-icon-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.trophy-card-icon-wrap {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  position: relative;
-}
-
-.trophy-plat-glow-ring {
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 2px dashed rgba(126, 214, 223, 0.6);
-  animation: plat-spin 8s linear infinite;
-}
-
-@keyframes plat-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  gap: 8px;
+  padding-top: 2px;
 }
 
 .trophy-card-tier-pill {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
 }
 
 .trophy-card-tier-pill--bronze {
-  background: rgba(205, 127, 50, 0.2);
-  color: #e09867;
+  background: #e7edf3;
+  color: var(--plate-muted);
 }
 
 .trophy-card-tier-pill--silver {
-  background: rgba(200, 214, 229, 0.2);
-  color: #f5f6fa;
+  background: var(--green-soft);
+  color: var(--green-on-plate);
 }
 
 .trophy-card-tier-pill--gold {
-  background: rgba(241, 196, 15, 0.2);
-  color: #ffeaa7;
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
 }
 
 .trophy-card-tier-pill--platinum {
-  background: rgba(126, 214, 223, 0.25);
-  color: #dff9fb;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
 }
 
 .trophy-card-main-col {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 6px;
+  min-width: 0;
 }
 
 .trophy-card-top-line {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-2);
 }
 
 .trophy-card-category {
-  font-size: 0.75rem;
-  color: #64748b;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.trophy-card-status-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  letter-spacing: 0.04em;
-}
-
-.trophy-card-status-badge--unlocked {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
-}
-
-.trophy-card-status-badge--locked {
-  background: rgba(100, 116, 139, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(100, 116, 139, 0.25);
+  font-size: 12px;
+  color: var(--plate-muted);
+  font-weight: 500;
 }
 
 .trophy-card-title {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #f8fafc;
   margin: 0;
-  line-height: 1.25;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--plate-ink);
+  line-height: 1.35;
 }
 
 .trophy-card-desc {
-  font-size: 0.84rem;
-  color: #94a3b8;
   margin: 0;
-  line-height: 1.4;
+  font-size: 13px;
+  color: var(--plate-body-ink);
+  line-height: 1.45;
 }
 
 .trophy-card-progress-area {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.35rem;
+  gap: 4px;
+  margin-top: 2px;
 }
 
 .trophy-card-progress-labels {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 0.74rem;
+  gap: var(--space-2);
+  font-size: 11.5px;
+  color: var(--plate-muted);
 }
 
 .trophy-card-progress-hint {
-  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trophy-card-progress-pct {
-  font-weight: 700;
-  color: #cbd5e1;
+  font-weight: 600;
+  color: var(--plate-body-ink);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .trophy-card-progress-track {
   width: 100%;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 99px;
   overflow: hidden;
 }
 
 .trophy-card-progress-fill {
+  display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: 99px;
+  background: var(--accent);
   transition: width 0.3s ease;
-}
-
-.trophy-card-progress-fill--bronze {
-  background: #cd7f32;
-}
-
-.trophy-card-progress-fill--silver {
-  background: #c8d6e5;
-}
-
-.trophy-card-progress-fill--gold {
-  background: #f1c40f;
-}
-
-.trophy-card-progress-fill--platinum {
-  background: linear-gradient(90deg, #7ed6df, #4834d4);
 }
 
 .trophy-card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 0.4rem;
-  padding-top: 0.4rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 0.78rem;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #eef2f6;
+  font-size: 12px;
+  color: var(--plate-muted);
 }
 
 .trophy-card-metrics-val {
-  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
 }
 
 .trophy-card-metrics-val strong {
-  color: #f1f5f9;
+  color: var(--plate-ink);
+  font-weight: 600;
 }
 
-.trophy-card-play-sound {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  font-size: 0.74rem;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.trophy-card-play-sound:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-}
-
-/* --- PLAYSTATION KUPA TOAST BİLDİRİMİ (PS5 Pop-up) --- */
+/* --- KUPA TOAST BİLDİRİMİ: mevcut toast dili (beyaz kart) --- */
 .trophy-toast {
   position: fixed;
-  top: 24px;
-  right: 24px;
-  z-index: 99999;
-  width: 380px;
-  max-width: calc(100vw - 32px);
-  background: rgba(13, 17, 26, 0.96);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 14px;
-  padding: 1rem 1.15rem;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 40px));
   display: flex;
+  gap: 12px;
   align-items: flex-start;
-  gap: 0.9rem;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
-  animation: psToastIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  padding: 12px 14px;
+  background: var(--plate);
+  border: 1px solid var(--plate-line);
+  border-radius: var(--radius-print);
+  box-shadow: var(--card-shadow);
+  animation: trophy-toast-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes psToastIn {
+@keyframes trophy-toast-in {
   from {
     opacity: 0;
-    transform: translateX(60px) scale(0.95);
+    transform: translateY(10px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateX(0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
-.trophy-toast--bronze {
-  border-left: 5px solid #cd7f32;
-}
-
-.trophy-toast--silver {
-  border-left: 5px solid #c8d6e5;
-}
-
-.trophy-toast--gold {
-  border-left: 5px solid #f1c40f;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(241, 196, 15, 0.25);
-}
-
-.trophy-toast--platinum {
-  border: 1px solid rgba(126, 214, 223, 0.6);
-  border-left: 5px solid #7ed6df;
-  background: linear-gradient(135deg, rgba(20, 28, 48, 0.98), rgba(12, 16, 26, 0.98));
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(126, 214, 223, 0.4);
+@media (prefers-reduced-motion: reduce) {
+  .trophy-toast {
+    animation: none;
+  }
 }
 
 .trophy-toast-icon-wrap {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
 }
 
-.trophy-toast-plat-halo {
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid rgba(126, 214, 223, 0.8);
-  animation: toastGlow 1.8s infinite alternate ease-in-out;
+.trophy-toast--bronze .trophy-toast-icon-wrap {
+  background: #e7edf3;
+  color: var(--plate-muted);
 }
 
-@keyframes toastGlow {
-  from {
-    transform: scale(0.95);
-    opacity: 0.5;
-  }
-  to {
-    transform: scale(1.1);
-    opacity: 1;
-  }
+.trophy-toast--silver .trophy-toast-icon-wrap {
+  background: var(--green-soft);
+  color: var(--green-on-plate);
+}
+
+.trophy-toast--gold .trophy-toast-icon-wrap {
+  background: var(--amber-soft);
+  color: var(--amber-on-plate);
+}
+
+.trophy-toast--platinum .trophy-toast-icon-wrap {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
 }
 
 .trophy-toast-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 3px;
   min-width: 0;
 }
 
-.trophy-toast-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.trophy-toast-tag {
-  font-size: 0.7rem;
-  font-weight: 800;
-  color: #38bdf8;
-  letter-spacing: 0.1em;
-}
-
-.trophy-toast-tier-pill {
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-.trophy-toast-tier-pill--bronze {
-  background: rgba(205, 127, 50, 0.3);
-  color: #ffd1b3;
-}
-
-.trophy-toast-tier-pill--silver {
-  background: rgba(200, 214, 229, 0.3);
-  color: #ffffff;
-}
-
-.trophy-toast-tier-pill--gold {
-  background: rgba(241, 196, 15, 0.3);
-  color: #fff9e6;
-}
-
-.trophy-toast-tier-pill--platinum {
-  background: rgba(126, 214, 223, 0.35);
-  color: #dff9fb;
-}
-
 .trophy-toast-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.25;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--plate-ink);
+  line-height: 1.4;
 }
 
 .trophy-toast-desc {
-  font-size: 0.8rem;
-  color: #94a3b8;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--plate-muted);
+  word-break: break-word;
 }
 
 .trophy-toast-close {
-  background: transparent;
   border: none;
-  color: #64748b;
-  font-size: 0.95rem;
-  cursor: pointer;
-  padding: 0.2rem;
+  background: transparent;
+  color: var(--plate-muted);
+  font-size: 16px;
   line-height: 1;
-  transition: color 0.15s;
+  padding: 2px 4px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
 }
 
 .trophy-toast-close:hover {
-  color: #ffffff;
+  color: var(--plate-ink);
+  background: var(--accent-soft);
 }
 
+/* --- Sonuç yok: state-box dili --- */
 .ach-no-results {
+  border: 1px dashed var(--plate-line);
+  border-radius: var(--radius-print);
+  background: var(--plate);
+  padding: var(--space-5) var(--space-4);
   text-align: center;
-  padding: 3rem 1rem;
-  color: #94a3b8;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-2);
+}
+
+.ach-no-results p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--plate-muted);
+}
+
+/* --- Kırılımlar --- */
+@media (max-width: 1100px) {
+  .ach-summary-body {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .ps-counter:first-child {
+    padding-left: 18px;
+    border-left: 1px solid #eef2f6;
+  }
+
+  .monetization-track-card {
+    padding-left: 0;
+  }
+
+  .monetization-track-card + .monetization-track-card {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .trophy-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .achievements-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ach-search-input {
+    width: 100%;
+  }
+
+  .ps-counter {
+    padding: 6px 12px;
+  }
 }

@@ -124,11 +124,11 @@
   align-items: center;
   gap: 6px;
   padding: 2px 8px 2px 6px;
-  background: rgba(15, 23, 42, 0.08);
+  background: #eef2f6;
   border-radius: 999px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--ink-heavy, #0f172a);
+  color: var(--plate-ink);
 }
 
 .topbar-channel-dot {
@@ -472,6 +472,8 @@
 
 /* ==========================================================================
    Kanal / Alt Hesap Değiştirici (Channel Switcher)
+   Rayın malzemesiyle: geceyarısı yüzeyler, mavi kenar çizgileri,
+   vurgu yalnız seçimde (okyanus yeşili). Gölge yok — çizgi ayırır.
    ========================================================================== */
 .channel-switcher {
   position: relative;
@@ -485,26 +487,27 @@
   gap: 10px;
   width: 100%;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  background: var(--ink-panel);
+  border: 1px solid var(--ink-border);
+  border-radius: var(--radius-control);
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
   color: var(--cream-text);
   text-decoration: none;
+  font-family: var(--font-body);
 }
 
 .channel-switcher-trigger:hover,
 .channel-switcher-empty-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: var(--ink-ground);
+  border-color: var(--accent);
 }
 
 .channel-switcher-trigger.is-open {
-  background: rgba(255, 255, 255, 0.09);
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .channel-switcher-leading {
@@ -523,8 +526,8 @@
 }
 
 .channel-avatar-dot--empty {
-  background: #4a5b75;
-  border: 1px dashed rgba(255, 255, 255, 0.4);
+  background: #3a4a63;
+  border: 1px dashed rgba(240, 244, 248, 0.4);
 }
 
 .channel-switcher-text {
@@ -577,34 +580,32 @@
   top: calc(100% + 6px);
   left: 0;
   width: 220px;
-  background: #141b26;
-  border: 1px solid #28374d;
-  border-radius: 12px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  background: var(--ink-deep);
+  border: 1px solid var(--ink-border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--card-shadow);
   z-index: 120;
   overflow: hidden;
-  animation: channelDropdownFadeIn 0.15s ease-out;
+  animation: channelDropdownFadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes channelDropdownFadeIn {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 .channel-switcher-dropdown-header {
   padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #64748b;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--faint-on-dark);
+  border-bottom: 1px solid var(--ink-border);
 }
 
 .channel-switcher-list {
@@ -621,18 +622,19 @@
   padding: 8px 10px;
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease;
+  font-family: var(--font-body);
+  transition: background-color 0.15s ease;
 }
 
 .channel-option:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ink-panel);
 }
 
 .channel-option.is-selected {
-  background: rgba(45, 212, 191, 0.12);
+  background: rgba(21, 245, 186, 0.14);
 }
 
 .channel-option-dot {
@@ -680,8 +682,7 @@
 
 .channel-switcher-footer {
   padding: 6px 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.15);
+  border-top: 1px solid var(--ink-border);
 }
 
 .channel-manage-link {
@@ -691,12 +692,12 @@
   font-weight: 500;
   color: var(--accent);
   text-decoration: none;
-  border-radius: 6px;
-  transition: background 0.15s ease;
+  border-radius: var(--radius-control);
+  transition: background-color 0.15s ease;
 }
 
 .channel-manage-link:hover {
-  background: rgba(45, 212, 191, 0.1);
+  background: rgba(21, 245, 186, 0.1);
 }
 
 .channel-switcher--loading {
@@ -706,8 +707,17 @@
 .channel-switcher-skeleton {
   width: 100%;
   height: 42px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  animation: pulse 1.5s infinite;
+  border-radius: var(--radius-control);
+  background: var(--ink-panel);
+  animation: switcher-skeleton 1.5s ease-in-out infinite;
+}
+
+@keyframes switcher-skeleton {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
 }
 

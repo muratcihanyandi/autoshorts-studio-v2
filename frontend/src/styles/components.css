@@ -229,6 +229,33 @@
   flex-shrink: 0;
 }
 
+/* --- kanal hapı: ekran başlığında aktif kanal (pill--idle + kurdele noktası) --- */
+.channel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  width: fit-content;
+}
+
+.channel-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.channel-pill-name {
+  font-weight: 600;
+  color: var(--plate-ink);
+}
+
+.channel-pill-handle {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--plate-muted);
+}
+
 /* --- durum bileşenleri --- */
 .state-box {
   border: 1px solid var(--plate-line);

@@ -10,12 +10,14 @@ interface TrophyNotificationProps {
 }
 
 const TIER_LABELS: Record<string, string> = {
-  bronze: 'Bronz Kupa',
-  silver: 'Gümüş Kupa',
-  gold: 'Altın Kupa',
-  platinum: 'Platin Kupa',
+  bronze: 'Bronz kupa',
+  silver: 'Gümüş kupa',
+  gold: 'Altın kupa',
+  platinum: 'Platin kupa',
 }
 
+/** Kupa bildirimi: stüdyo toast dili (beyaz kart, yumuşak zeminli
+    ikon çipi, 240ms giriş) — dereceye göre tonlanır. */
 export function TrophyNotification({
   achievement,
   onDismiss,
@@ -45,21 +47,14 @@ export function TrophyNotification({
       role="status"
       aria-live="polite"
     >
-      <div className="trophy-toast-icon-wrap">
-        <TrophyIcon tier={achievement.tier} size={36} unlocked={true} />
-        {achievement.tier === 'platinum' && (
-          <span className="trophy-toast-plat-halo" aria-hidden="true" />
-        )}
-      </div>
+      <span className="trophy-toast-icon-wrap">
+        <TrophyIcon tier={achievement.tier} size={16} unlocked={true} />
+      </span>
 
       <div className="trophy-toast-content">
-        <div className="trophy-toast-header">
-          <span className="trophy-toast-tag">KUPA KAZANILDI!</span>
-          <span className={`trophy-toast-tier-pill trophy-toast-tier-pill--${achievement.tier}`}>
-            {tierLabel}
-          </span>
+        <div className="trophy-toast-title">
+          {tierLabel} kazanıldı — {achievement.title}
         </div>
-        <div className="trophy-toast-title">{achievement.title}</div>
         <div className="trophy-toast-desc">{achievement.description}</div>
       </div>
 

@@ -5,6 +5,7 @@ import { fetchPulse, type PulseEvent } from '../api/pulse'
 import { fetchSystemResources } from '../api/system'
 import { fetchMedia } from '../api/media'
 import { useActiveChannel } from '../context/ChannelContext'
+import { ChannelPill } from '../components/ChannelPill'
 import {
   ACTIVITY_LABEL,
   AUTOMATION_STATE_LABEL,
@@ -536,37 +537,7 @@ export function OverviewScreen() {
       <div className="screen-head">
         <div>
           <h1>Genel Bakış</h1>
-          {activeChannel && (
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginTop: '6px',
-                padding: '3px 10px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '999px',
-                fontSize: '12px',
-              }}
-            >
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: activeChannel.ribbon_color || '#3b82f6',
-                }}
-                aria-hidden="true"
-              />
-              <span style={{ fontWeight: 600 }}>{activeChannel.name}</span>
-              {activeChannel.handle && (
-                <span style={{ color: 'var(--muted-on-dark, #888)' }}>
-                  {activeChannel.handle}
-                </span>
-              )}
-            </div>
-          )}
+          {activeChannel && <ChannelPill channel={activeChannel} />}
         </div>
         <span className="screen-sub nums">
           {overview.state.status === 'ok'

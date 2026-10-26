@@ -251,7 +251,7 @@ export function AppShell({
                   >
                     <span
                       className="topbar-channel-dot"
-                      style={{ backgroundColor: activeChannel.ribbon_color || '#3b82f6' }}
+                      style={{ backgroundColor: activeChannel.ribbon_color || '#0e9f6e' }}
                       aria-hidden="true"
                     />
                     <span className="topbar-channel-name">{activeChannel.name}</span>

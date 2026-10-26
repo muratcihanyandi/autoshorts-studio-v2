@@ -10,6 +10,7 @@ import { fetchMe, type UserProfile } from '../api/auth'
 import { computeAchievements } from '../achievements/achievementsList'
 import { TrophyIcon } from '../components/TrophyIcons'
 import { TrophyNotification } from '../components/TrophyNotification'
+import { ChannelPill } from '../components/ChannelPill'
 import type {
   ChannelMetrics,
   ComputedAchievement,
@@ -130,7 +131,7 @@ export function AchievementsScreen() {
   // Ses ayarları
   const [soundEnabled, setSoundEnabled] = useState(true)
 
-  // Kupa pop-up bildirimi (otomatik tek seferlik duyulur)
+  // Kupa bildirimi (otomatik tek seferlik duyulur)
   const [activeToast, setActiveToast] = useState<ComputedAchievement | null>(null)
 
   // Kullanıcı profilini yükle
@@ -238,58 +239,35 @@ export function AchievementsScreen() {
 
   return (
     <div className="achievements-page">
-      {/* PlayStation Kupa Pop-up Bildirimi (Otomatik Tek Seferlik Duyulur) */}
+      {/* Kupa Bildirimi (otomatik tek seferlik duyulur) */}
       <TrophyNotification
         achievement={activeToast}
         onDismiss={() => setActiveToast(null)}
         soundEnabled={soundEnabled}
       />
 
-      {/* Sayfa Üst Başlığı ve Hesap Bilgisi */}
+      {/* Sayfa başlığı: mevcut screen-head dili */}
       <header className="achievements-header">
-        <div className="achievements-header-main">
-          <div className="achievements-title-wrap">
-            <h1 className="achievements-h1">
-              <span className="achievements-h1-icon" aria-hidden="true">
-                🏆
-              </span>
-              Başarımlar
-            </h1>
-            {activeChannel && (
-              <div className="ach-active-channel-banner">
-                <span
-                  className="channel-avatar-dot"
-                  style={{ backgroundColor: activeChannel.ribbon_color || '#3b82f6' }}
-                  aria-hidden="true"
-                />
-                <span className="ach-active-channel-name">{activeChannel.name}</span>
-                {activeChannel.handle && (
-                  <small className="ach-active-channel-handle">{activeChannel.handle}</small>
-                )}
-              </div>
-            )}
-          </div>
+        <div className="achievements-title-wrap">
+          <h1 className="achievements-h1">Başarımlar</h1>
+          <p className="achievements-sub">
+            {currentUser
+              ? `${currentUser.username} · ${currentUser.plan} planı`
+              : 'Kupa ilerlemesi kanal bazında takip edilir'}
+          </p>
+          {activeChannel && <ChannelPill channel={activeChannel} />}
+        </div>
 
-          <div className="achievements-controls">
-            {/* Hesap Rozeti */}
-            {currentUser && (
-              <div className="ach-user-badge" title="Aktif Hesap">
-                <span>👤 {currentUser.username}</span>
-                <span className="ach-user-plan-pill">{currentUser.plan}</span>
-              </div>
-            )}
-
-            {/* Ses Aç / Kapa Butonu */}
-            <button
-              type="button"
-              className={`ach-sound-toggle ${soundEnabled ? 'ach-sound-toggle--on' : ''}`}
-              onClick={() => setSoundEnabled((v) => !v)}
-              title={soundEnabled ? 'Sesler açık' : 'Sesler kapalı'}
-              aria-label="Sesleri aç veya kapat"
-            >
-              {soundEnabled ? '🔊 Ses Açık' : '🔇 Ses Kapalı'}
-            </button>
-          </div>
+        <div className="achievements-controls">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setSoundEnabled((v) => !v)}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? 'Kupa sesleri açık' : 'Kupa sesleri kapalı'}
+          >
+            {soundEnabled ? 'Ses açık' : 'Ses kapalı'}
+          </button>
         </div>
       </header>
 
@@ -299,7 +277,7 @@ export function AchievementsScreen() {
       ) : channels.length === 0 ? (
         <EmptyState
           title="Bağlı kanal bulunamadı"
-          action={<Link to="/kanallar" className="btn btn--primary">Kanallara Git</Link>}
+          action={<Link to="/kanallar" className="btn btn--ghost">Kanallara git</Link>}
         >
           Başarımları görüntülemek için bir kanal bağlayın.
         </EmptyState>
@@ -307,140 +285,122 @@ export function AchievementsScreen() {
         <>
           {errorMsg && (
             <div className="ach-error-banner" role="alert">
-              <span>⚠️ {errorMsg}</span>
+              <span>{errorMsg}</span>
               <button
                 type="button"
-                className="btn btn--sm"
+                className="btn btn--ghost"
                 onClick={() => activeChannelId && void loadChannelData(activeChannelId)}
               >
-                Tekrar Dene
+                Tekrar dene
               </button>
-            </div>
-          )}
-
-          {/* AKTİF KANAL BİLGİ ŞERİDİ */}
-          {selectedChannel && (
-            <div className="ach-active-channel-banner">
-              <div className="ach-active-channel-info">
-                <span
-                  className="ach-active-channel-ribbon-dot"
-                  style={{ backgroundColor: selectedChannel.ribbon_color || '#3b82f6' }}
-                />
-                <h2 className="ach-active-channel-name">{selectedChannel.name}</h2>
-                {selectedChannel.handle && (
-                  <span className="ach-active-channel-handle">{selectedChannel.handle}</span>
-                )}
-              </div>
-              <div className="ach-active-channel-badge">
-                {summary.isMonetized ? '🏆 Para Kazanma Açık' : '⏳ Hedefe Doğru'}
-              </div>
             </div>
           )}
 
           {/* KUPA ÖZETİ PANOSU */}
           <section
-            className="ps-trophy-shelf"
-            aria-label={`${selectedChannel?.name ?? 'Kanal'} Kupa İstatistiği`}
+            className="ink-panel"
+            aria-label={`${selectedChannel?.name ?? 'Kanal'} kupa istatistiği`}
           >
-            <div className="ps-level-badge">
-              <div className="ps-level-icon" aria-hidden="true">
-                ⭐
-              </div>
-              <div className="ps-level-content">
-                <span className="ps-level-tag">SEVİYE</span>
-                <span className="ps-level-num">{summary.level}</span>
-              </div>
-            </div>
-
-            <div className="ps-progress-box">
-              <div className="ps-progress-labels">
-                <span className="ps-progress-title">Genel İlerleme</span>
-                <span className="ps-progress-percent">
-                  %{summary.completionPercentage} ({summary.unlockedCount}/{summary.total})
-                </span>
-              </div>
-              <div className="ps-progress-bar-wrap">
-                <div
-                  className="ps-progress-bar-fill"
-                  style={{ width: `${summary.completionPercentage}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="ps-trophy-counters">
-              <div className="ps-counter ps-counter--bronze" title="Bronz Kupalar">
-                <TrophyIcon tier="bronze" size={24} unlocked={true} />
-                <div className="ps-counter-info">
-                  <span className="ps-counter-val">
-                    {summary.bronze.unlocked}/{summary.bronze.total}
-                  </span>
-                  <span className="ps-counter-name">Bronz</span>
-                </div>
-              </div>
-
-              <div className="ps-counter ps-counter--silver" title="Gümüş Kupalar">
-                <TrophyIcon tier="silver" size={24} unlocked={true} />
-                <div className="ps-counter-info">
-                  <span className="ps-counter-val">
-                    {summary.silver.unlocked}/{summary.silver.total}
-                  </span>
-                  <span className="ps-counter-name">Gümüş</span>
-                </div>
-              </div>
-
-              <div className="ps-counter ps-counter--gold" title="Altın Kupalar">
-                <TrophyIcon tier="gold" size={24} unlocked={true} />
-                <div className="ps-counter-info">
-                  <span className="ps-counter-val">
-                    {summary.gold.unlocked}/{summary.gold.total}
-                  </span>
-                  <span className="ps-counter-name">Altın</span>
-                </div>
-              </div>
-
-              <div
-                className={`ps-counter ps-counter--platinum ${
-                  summary.isMonetized ? 'ps-counter--plat-unlocked' : ''
-                }`}
-                title="Platin Kupa"
-              >
+            <h2>Kupa durumu</h2>
+            <div className="ach-summary-body">
+              <div className="ps-level-badge">
                 <TrophyIcon
                   tier="platinum"
-                  size={26}
+                  size={32}
                   unlocked={summary.isMonetized}
                 />
-                <div className="ps-counter-info">
-                  <span className="ps-counter-val">
-                    {summary.platinum.unlocked}/{summary.platinum.total}
+                <div className="ps-level-content">
+                  <span className="ps-level-tag">Seviye</span>
+                  <span className="ps-level-num">{summary.level}</span>
+                </div>
+              </div>
+
+              <div className="ps-progress-box">
+                <div className="ps-progress-labels">
+                  <span>Genel ilerleme</span>
+                  <span className="ps-progress-percent">
+                    %{summary.completionPercentage} ({summary.unlockedCount}/
+                    {summary.total})
                   </span>
-                  <span className="ps-counter-name">Platin</span>
+                </div>
+                <div
+                  className="ps-progress-bar-wrap"
+                  role="meter"
+                  aria-valuenow={summary.completionPercentage}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Kupa ilerlemesi"
+                >
+                  <div
+                    className="ps-progress-bar-fill"
+                    style={{ width: `${summary.completionPercentage}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="ps-trophy-counters">
+                <div className="ps-counter" title="Bronz kupalar">
+                  <TrophyIcon tier="bronze" size={22} unlocked={true} />
+                  <div className="ps-counter-info">
+                    <span className="ps-counter-val">
+                      {summary.bronze.unlocked}/{summary.bronze.total}
+                    </span>
+                    <span className="ps-counter-name">Bronz</span>
+                  </div>
+                </div>
+
+                <div className="ps-counter" title="Gümüş kupalar">
+                  <TrophyIcon tier="silver" size={22} unlocked={true} />
+                  <div className="ps-counter-info">
+                    <span className="ps-counter-val">
+                      {summary.silver.unlocked}/{summary.silver.total}
+                    </span>
+                    <span className="ps-counter-name">Gümüş</span>
+                  </div>
+                </div>
+
+                <div className="ps-counter" title="Altın kupalar">
+                  <TrophyIcon tier="gold" size={22} unlocked={true} />
+                  <div className="ps-counter-info">
+                    <span className="ps-counter-val">
+                      {summary.gold.unlocked}/{summary.gold.total}
+                    </span>
+                    <span className="ps-counter-name">Altın</span>
+                  </div>
+                </div>
+
+                <div className="ps-counter" title="Platin kupalar">
+                  <TrophyIcon
+                    tier="platinum"
+                    size={22}
+                    unlocked={summary.isMonetized}
+                  />
+                  <div className="ps-counter-info">
+                    <span className="ps-counter-val">
+                      {summary.platinum.unlocked}/{summary.platinum.total}
+                    </span>
+                    <span className="ps-counter-name">Platin</span>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
           {/* PARA KAZANMA TAKİBİ */}
-          <section className="monetization-showcase">
-            <div className="monetization-showcase-header">
-              <div className="monetization-showcase-title">
-                <h2>Para Kazanma (YPP)</h2>
-              </div>
-              <div
-                className={`monetization-status-pill ${
-                  summary.isMonetized
-                    ? 'monetization-status-pill--active'
-                    : 'monetization-status-pill--progress'
-                }`}
+          <section className="ink-panel">
+            <div className="panel-head-row">
+              <h2>Para kazanma (YPP)</h2>
+              <span
+                className={`pill ${summary.isMonetized ? 'pill--ok' : 'pill--warn'}`}
               >
-                {summary.isMonetized ? '✓ Açık' : '⏳ Hedefe Doğru'}
-              </div>
+                {summary.isMonetized ? 'Açık' : 'Hedefe doğru'}
+              </span>
             </div>
-
             <div className="monetization-tracks">
               {/* Kriter 1: Abone Eşiği */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">1.000 Abone</span>
+                  <span className="monetization-track-name">1.000 abone</span>
                   <span className="monetization-track-val">
                     {metrics.subscriberCount.toLocaleString('tr-TR')} / 1.000
                   </span>
@@ -453,9 +413,15 @@ export function AchievementsScreen() {
                     }}
                   />
                 </div>
-                <small className="monetization-track-note">
+                <small
+                  className={`monetization-track-note ${
+                    metrics.subscriberCount >= 1000
+                      ? 'monetization-track-note--done'
+                      : ''
+                  }`}
+                >
                   {metrics.subscriberCount >= 1000
-                    ? '✓ Tamamlandı'
+                    ? 'Tamamlandı'
                     : `Kalan: ${Math.max(0, 1000 - metrics.subscriberCount).toLocaleString('tr-TR')}`}
                 </small>
               </div>
@@ -463,9 +429,9 @@ export function AchievementsScreen() {
               {/* Kriter 2A: 4000 Saat Yatay İzlenme */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">4.000 Saat (Yatay)</span>
+                  <span className="monetization-track-name">4.000 saat (yatay)</span>
                   <span className="monetization-track-val">
-                    {metrics.watchHours.toLocaleString('tr-TR')} / 4.000 Saat
+                    {metrics.watchHours.toLocaleString('tr-TR')} / 4.000 saat
                   </span>
                 </div>
                 <div className="monetization-track-bar">
@@ -476,9 +442,15 @@ export function AchievementsScreen() {
                     }}
                   />
                 </div>
-                <small className="monetization-track-note">
+                <small
+                  className={`monetization-track-note ${
+                    metrics.watchHours >= 4000
+                      ? 'monetization-track-note--done'
+                      : ''
+                  }`}
+                >
                   {metrics.watchHours >= 4000
-                    ? '✓ Tamamlandı'
+                    ? 'Tamamlandı'
                     : `Kalan: ${Math.max(0, 4000 - metrics.watchHours).toLocaleString('tr-TR')} saat`}
                 </small>
               </div>
@@ -486,7 +458,7 @@ export function AchievementsScreen() {
               {/* Kriter 2B: 10 Milyon Shorts İzlenmesi */}
               <div className="monetization-track-card">
                 <div className="monetization-track-top">
-                  <span className="monetization-track-name">10 Milyon Shorts</span>
+                  <span className="monetization-track-name">10 milyon Shorts</span>
                   <span className="monetization-track-val">
                     {metrics.shortsViews.toLocaleString('tr-TR')} / 10.000.000
                   </span>
@@ -499,9 +471,15 @@ export function AchievementsScreen() {
                     }}
                   />
                 </div>
-                <small className="monetization-track-note">
+                <small
+                  className={`monetization-track-note ${
+                    metrics.shortsViews >= 10000000
+                      ? 'monetization-track-note--done'
+                      : ''
+                  }`}
+                >
                   {metrics.shortsViews >= 10000000
-                    ? '✓ Tamamlandı'
+                    ? 'Tamamlandı'
                     : `Kalan: ${Math.max(0, 10000000 - metrics.shortsViews).toLocaleString(
                         'tr-TR',
                       )}`}
@@ -512,63 +490,55 @@ export function AchievementsScreen() {
 
           {/* FİLTRE & ARAMA ÇUBUĞU */}
           <div className="achievements-filter-bar">
-            <div className="ach-filter-group">
+            <div className="ach-filter-group chip-row">
               <button
                 type="button"
-                className={`ach-filter-chip ${tierFilter === 'all' ? 'ach-filter-chip--active' : ''}`}
+                className={`chip ${tierFilter === 'all' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('all')}
               >
                 Tümü ({achievements.length})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ${tierFilter === 'unlocked' ? 'ach-filter-chip--active' : ''}`}
+                className={`chip ${tierFilter === 'unlocked' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('unlocked')}
               >
                 Açılanlar ({summary.unlockedCount})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ${tierFilter === 'locked' ? 'ach-filter-chip--active' : ''}`}
+                className={`chip ${tierFilter === 'locked' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('locked')}
               >
                 Kilitliler ({summary.total - summary.unlockedCount})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ach-filter-chip--bronze ${
-                  tierFilter === 'bronze' ? 'ach-filter-chip--active' : ''
-                }`}
+                className={`chip ${tierFilter === 'bronze' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('bronze')}
               >
-                🥉 Bronz ({summary.bronze.total})
+                Bronz ({summary.bronze.total})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ach-filter-chip--silver ${
-                  tierFilter === 'silver' ? 'ach-filter-chip--active' : ''
-                }`}
+                className={`chip ${tierFilter === 'silver' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('silver')}
               >
-                🥈 Gümüş ({summary.silver.total})
+                Gümüş ({summary.silver.total})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ach-filter-chip--gold ${
-                  tierFilter === 'gold' ? 'ach-filter-chip--active' : ''
-                }`}
+                className={`chip ${tierFilter === 'gold' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('gold')}
               >
-                🥇 Altın ({summary.gold.total})
+                Altın ({summary.gold.total})
               </button>
               <button
                 type="button"
-                className={`ach-filter-chip ach-filter-chip--platinum ${
-                  tierFilter === 'platinum' ? 'ach-filter-chip--active' : ''
-                }`}
+                className={`chip ${tierFilter === 'platinum' ? 'chip--on' : ''}`}
                 onClick={() => setTierFilter('platinum')}
               >
-                🏆 Platin ({summary.platinum.total})
+                Platin ({summary.platinum.total})
               </button>
             </div>
 
@@ -586,23 +556,18 @@ export function AchievementsScreen() {
           {/* KUPA KARTLARI LİSTESİ */}
           <div className="trophy-grid">
             {filteredAchievements.map((ach) => (
-              <div
+              <article
                 key={ach.id}
-                className={`trophy-card trophy-card--${ach.tier} ${
+                className={`trophy-card ${
                   ach.unlocked ? 'trophy-card--unlocked' : 'trophy-card--locked'
                 }`}
               >
                 <div className="trophy-card-icon-col">
-                  <div className="trophy-card-icon-wrap">
-                    <TrophyIcon
-                      tier={ach.tier}
-                      size={48}
-                      unlocked={ach.unlocked}
-                    />
-                    {ach.tier === 'platinum' && ach.unlocked && (
-                      <span className="trophy-plat-glow-ring" aria-hidden="true" />
-                    )}
-                  </div>
+                  <TrophyIcon
+                    tier={ach.tier}
+                    size={40}
+                    unlocked={ach.unlocked}
+                  />
                   <span
                     className={`trophy-card-tier-pill trophy-card-tier-pill--${ach.tier}`}
                   >
@@ -614,13 +579,9 @@ export function AchievementsScreen() {
                   <div className="trophy-card-top-line">
                     <span className="trophy-card-category">{ach.categoryTitle}</span>
                     {ach.unlocked ? (
-                      <span className="trophy-card-status-badge trophy-card-status-badge--unlocked">
-                        ✓ KAZANILDI
-                      </span>
+                      <span className="pill pill--ok">Kazanıldı</span>
                     ) : (
-                      <span className="trophy-card-status-badge trophy-card-status-badge--locked">
-                        🔒 KİLİTLİ
-                      </span>
+                      <span className="pill pill--idle">Kilitli</span>
                     )}
                   </div>
 
@@ -639,7 +600,7 @@ export function AchievementsScreen() {
                     </div>
                     <div className="trophy-card-progress-track">
                       <div
-                        className={`trophy-card-progress-fill trophy-card-progress-fill--${ach.tier}`}
+                        className="trophy-card-progress-fill"
                         style={{ width: `${ach.progressPercent}%` }}
                       />
                     </div>
@@ -653,7 +614,7 @@ export function AchievementsScreen() {
                     </span>
                   </div>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
 
@@ -662,14 +623,14 @@ export function AchievementsScreen() {
               <p>Arama veya filtre kriterlerine uyan bir kupa bulunamadı.</p>
               <button
                 type="button"
-                className="btn btn--sm"
+                className="btn btn--ghost"
                 onClick={() => {
                   setTierFilter('all')
                   setCategoryFilter('all')
                   setSearchQuery('')
                 }}
               >
-                Filtreleri Temizle
+                Filtreleri temizle
               </button>
             </div>
           )}
