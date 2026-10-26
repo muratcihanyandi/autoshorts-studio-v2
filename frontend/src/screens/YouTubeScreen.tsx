@@ -332,6 +332,7 @@ export function YouTubeScreen() {
         note: result.managed
           ? 'Stüdyo kayıtları ve yerel dosyalar da temizlendi.'
           : 'Kayıt dışı videoydu; yalnızca YouTube tarafı silindi.',
+        echoTypes: ['youtube.video_deleted', 'youtube.orphan_deleted'],
       })
       videos.retry()
     } catch (err) {
@@ -373,6 +374,7 @@ export function YouTubeScreen() {
           ? `${deletedCount} kayıt dışı video YouTube'tan toplu temizlendi.`
           : `${deletedCount} video YouTube'tan toplu silindi.`,
         note: lastError ? `Bazı videolarda hata oluştu: ${lastError}` : undefined,
+        echoTypes: ['youtube.video_deleted', 'youtube.orphan_deleted'],
       })
     }
 

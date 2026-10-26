@@ -464,6 +464,14 @@ export function MediaLibraryScreen() {
             ? `${result.errors} kipte hata oluştu — listede işaretliler.`
             : null,
         link: null,
+        // Aynı klipler için sunucu audit olayları da akışa düşer; tek
+        // eylem tek bildirim olarak kalsın (çift toast düzeltmesi).
+        echoTypes:
+          action === 'delete'
+            ? ['media.clip_removed', 'youtube.video_deleted']
+            : action === 'public'
+              ? ['publish.public']
+              : ['publish.private'],
       })
       if (action === 'delete') {
         setSelectedIds([])
@@ -534,6 +542,7 @@ export function MediaLibraryScreen() {
           tone: 'ok',
           sentence: `“${source.title}” sistemden kaldırıldı`,
           note: 'Dosyalar ve kayıtlar temizlendi.',
+          echoTypes: ['media.video_removed'],
         })
       } catch (err) {
         setRemoveError(
@@ -555,6 +564,7 @@ export function MediaLibraryScreen() {
           tone: 'ok',
           sentence: `“${clip.title}” kaldırıldı`,
           note: 'YouTube’daki video ve yerel dosya silindi.',
+          echoTypes: ['media.clip_removed'],
         })
       } catch (err) {
         setRemoveError(

@@ -499,6 +499,9 @@ export function CalendarScreen() {
         tone: 'ok',
         sentence: res.message,
         link: '/takvim',
+        // Aynı cümle yerel pop-up'ta görünüyor; ikinci kart açılmasın.
+        silent: true,
+        echoTypes: ['publish.rescheduled'],
       })
       await calendar.refresh()
     } catch (err) {
@@ -589,6 +592,8 @@ export function CalendarScreen() {
           tone: 'ok',
           sentence: msg,
           link: '/takvim',
+          silent: true,
+          echoTypes: ['publish.rescheduled'],
         })
       } else {
         await rescheduleCalendar(target, moment.toISOString())
@@ -604,6 +609,8 @@ export function CalendarScreen() {
           tone: 'ok',
           sentence: msg,
           link: '/takvim',
+          silent: true,
+          echoTypes: ['publish.rescheduled'],
         })
       }
         await calendar.refresh()

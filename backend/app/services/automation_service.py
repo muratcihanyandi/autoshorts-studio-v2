@@ -506,12 +506,23 @@ class AutomationService:
         Bu olay her yayin denetiminde (yaklasik 10 dakikada bir)
         tekrarlaniyordu ve gunde 100+ kayitla gercek hatalari
         gomuyordu (2026-10-23 kullanci sikayeti). Ayni durum icin son
-        kayittan bir saat gecmeden yenisi yazilmaz."""
+        kayittan bir saat gecmeden yenisi yazilmaz.
+
+        Dikey ve yatay yayin denetimleri eszamanli publish_due isleri
+        olarak calisir; ikisi de ayni anda "son kayit yok" gorup ayni
+        olayi iki kez yaziyordu (2026-10-26 canli olay: 2 ms arayla iki
+        satir, panelde cift bildirim). Kanal satiri kilitlenip kontrol
+        ve yazma tek islemde yapilir."""
         from datetime import UTC, datetime
 
-        from app.models import AuditEvent
+        from app.models import AuditEvent, Channel
 
         async with self._sessionmaker() as session:
+            await session.execute(
+                sa.select(Channel.id)
+                .where(Channel.id == channel_id)
+                .with_for_update()
+            )
             last = (
                 await session.execute(
                     sa.select(AuditEvent.created_at)
@@ -523,11 +534,14 @@ class AutomationService:
                     .limit(1)
                 )
             ).scalar_one_or_none()
-        if last is not None:
-            age = (datetime.now(UTC) - last).total_seconds()
-            if age < 3600:
-                return
-        await self._audit(channel_id, "publish.no_ready", {"today": counts})
+            if last is not None:
+                age = (datetime.now(UTC) - last).total_seconds()
+                if age < 3600:
+                    return
+            record_event(
+                session, channel_id, "publish.no_ready", {"today": counts}
+            )
+            await session.commit()
 
     async def operational_summary(self, channel_id: int) -> dict:
         """Stage counts + today's publishing state; audited."""

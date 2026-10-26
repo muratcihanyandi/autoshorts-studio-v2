@@ -28,6 +28,11 @@ export interface LocalPulse {
   subject?: string | null
   note?: string | null
   link?: string | null
+  /** Ekran aynı mesajı kendi pop-up'ında gösteriyor: toast açma. */
+  silent?: boolean
+  /** Bu eylemin sunucudaki karşılığı olan olay türleri; kısa süre
+   * içinde gelen aynı tür olaylar ikinci kez toast olmaz. */
+  echoTypes?: string[]
 }
 
 interface ToastItem {
@@ -55,6 +60,15 @@ const MAX_EVENTS = 50
 const MAX_TOASTS = 3
 const TOAST_LIFE_MS = 6000
 
+/** Kullanıcının kendi eyleminin sunucudan geri dönen yankısı.
+ *
+ * Ekranlar eylemi bitirir bitirmez bildirir; aynı eylem arka planda
+ * audit kaydı da bırakır ve bir sonraki yoklamada ikinci kez toast
+ * olarak gelirdi (ör. takvimden planlama + "yayın saati güncellendi").
+ * Kısa bir pencerede yalnız o eylemin karşılık türleri susar; olay
+ * "Son olup bitenler" çekmecesinde yine görünür. */
+const ECHO_WINDOW_MS = 120000
+
 export function usePulse(): PulseContextValue {
   const context = useContext(PulseContext)
   if (context === null) {
@@ -71,6 +85,11 @@ export function PulseProvider({ children }: { children: ReactNode }) {
   const cursorRef = useRef<string | null>(null)
   const seenIdsRef = useRef<Set<string>>(new Set())
   const bootedRef = useRef(false)
+  /** Yerel eylemin yankı türleri ve zamanı (sunucu tekrarını susturur). */
+  const echoRef = useRef<{ types: Set<string>; at: number }>({
+    types: new Set(),
+    at: 0,
+  })
 
   const pushToast = useCallback((items: ToastItem[]) => {
     if (items.length === 0) return
@@ -99,11 +118,17 @@ export function PulseProvider({ children }: { children: ReactNode }) {
       if (fresh.length === 0) return
       const ordered = [...feed.events].reverse()
       setEvents(ordered.slice(-MAX_EVENTS).reverse())
+      const echo = echoRef.current
+      const echoing =
+        echo.types.size > 0 && Date.now() - echo.at < ECHO_WINDOW_MS
+      const speakable = fresh.filter(
+        (event) => !(echoing && echo.types.has(event.event_type)),
+      )
       if (bootedRef.current) {
-        setUnread((count) => count + fresh.length)
+        setUnread((count) => count + speakable.length)
         // Uzun süre uzak kalındıysa yalnız en yeni üçü konuşur; gerisi
         // çekmeceyi bekler.
-        const speak = fresh
+        const speak = speakable
           .slice(0, MAX_TOASTS)
           .reverse()
           .map((event) => {
@@ -137,6 +162,10 @@ export function PulseProvider({ children }: { children: ReactNode }) {
   }, [pushToast])
 
   const notify = useCallback((pulse: LocalPulse) => {
+    if (pulse.echoTypes && pulse.echoTypes.length > 0) {
+      echoRef.current = { types: new Set(pulse.echoTypes), at: Date.now() }
+    }
+    if (pulse.silent) return
     pushToast([
       {
         key: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,

@@ -414,6 +414,7 @@ export function ChannelSettingsModal({
                           tone: 'ok',
                           sentence: `“${channelName}” takvimi güncellendi. Zirve saat: ${res.peak_hour}.`,
                           link: '/takvim',
+                          echoTypes: ['publish.rescheduled'],
                         })
                         setSavedNote(true)
                       } catch {

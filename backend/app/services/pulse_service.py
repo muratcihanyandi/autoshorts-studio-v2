@@ -15,6 +15,7 @@ istemci tarafında olay kimliğiyle (id) tekilleme yapılır.
 """
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -29,6 +30,10 @@ from app.services.pipeline_view import PipelineViewService
 # gösterir; imleçli çağrılar yalnız yenileri alır.
 LOOKBACK_DEFAULT = timedelta(hours=24)
 EVENT_LIMIT = 50
+
+# Aynı olayın bu pencere içindeki kopyaları tek kayda iner (çift
+# bildirim düzeltmesi; bkz. _collapse_duplicates).
+DUPLICATE_WINDOW = timedelta(seconds=90)
 
 # Denetim olaylarının ruh tonları (arayüz hap rengiyle eşleşir).
 _AUDIT_TONES: dict[str, str] = {
@@ -50,6 +55,16 @@ _AUDIT_TONES: dict[str, str] = {
 # Detayda gösterilecek kısa anahtarlar (duyarlı olmayan bağlam).
 _DETAIL_KEYS = ("title", "note", "reason", "orientation", "visibility", "count")
 
+# Panele hiç girmeyen teknik gürültü. Token yenileme bir kullanıcı olayı
+# değil, altyapı adımıdır; eşzamanlı iki API çağrısı aynı anı iki kez
+# damgalayınca panelde çift bildirim olarak görünüyordu. Denetim izi
+# (audit_events) ve Günlükler ekranı kaydı aynen korur.
+_HIDDEN_EVENT_TYPES = (
+    "discovery.run",
+    "ops.summary",
+    "oauth.token_refreshed",
+)
+
 
 def _parse_since(value: str | None) -> datetime | None:
     if not value:
@@ -69,6 +84,58 @@ def _iso(moment: datetime | None) -> str | None:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(UTC).isoformat()
+
+
+def _event_signature(event: dict[str, Any]) -> tuple:
+    """Tekilleştirme anahtarı: panelde görünen tüm alanlar.
+
+    Denetim olaylarında ``_dedupe`` ham ayrıntıyı taşır (istemciye
+    dönmez): iki farklı video/plan ayrı kalırken birebir aynı iki satır
+    birleşir. İş olaylarında görünür alanlar yeterlidir — aynı türdeki
+    işler (ör. dikey ve yatay publish_due) aynı cümleye çevriliyorsa
+    tek bildirim olmalıdır."""
+    visible = json.dumps(event.get("detail"), sort_keys=True, default=str)
+    return (
+        event.get("kind"),
+        event.get("event_type"),
+        event.get("channel_id"),
+        event.get("title"),
+        event.get("_dedupe", visible),
+    )
+
+
+def _collapse_duplicates(
+    events: list[dict[str, Any]], window: timedelta = DUPLICATE_WINDOW
+) -> list[dict[str, Any]]:
+    """Aynı olayın kısa sürede iki kez yazılmış kopyalarını tekilleştirir.
+
+    Bazı yazıcılar (eşzamanlı publish_due işleri, eşzamanlı token
+    yenileme) aynı olayı milisaniyeler arayla iki satır olarak
+    bırakabiliyor; panel bunu iki ayrı bildirim gibi gösteriyordu
+    (2026-10-26 kullanıcı bildirimi). Liste yeniden eskiye sıralı
+    geldiğinden en yenisi korunur; gerçek tekrarlar (farklı video,
+    farklı ayrıntı ya da pencere dışı) etkilenmez."""
+    kept: list[tuple[datetime | None, tuple]] = []
+    unique: list[dict[str, Any]] = []
+    for event in events:
+        moment = _parse_since(event.get("created_at"))
+        signature = _event_signature(event)
+        duplicate = any(
+            seen_signature == signature
+            and moment is not None
+            and seen_at is not None
+            and abs(moment - seen_at) <= window
+            for seen_at, seen_signature in kept
+        )
+        if duplicate:
+            continue
+        kept.append((moment, signature))
+        unique.append(event)
+    return unique
+
+
+def _strip_private(event: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in event.items() if not key.startswith("_")}
 
 
 class PulseService:
@@ -97,8 +164,9 @@ class PulseService:
             events.extend(await self._job_events(session, window_start, now))
             events.extend(await self._audit_events(session, window_start))
             events.sort(key=lambda item: item["created_at"], reverse=True)
+            collapsed = _collapse_duplicates(events)[:limit]
             return {
-                "events": events[:limit],
+                "events": [_strip_private(event) for event in collapsed],
                 "now": _iso(now),
             }
 
@@ -163,7 +231,7 @@ class PulseService:
                 .outerjoin(Channel, AuditEvent.channel_id == Channel.id)
                 .where(
                     AuditEvent.created_at >= window_start,
-                    AuditEvent.event_type.notin_(("discovery.run", "ops.summary")),
+                    AuditEvent.event_type.notin_(_HIDDEN_EVENT_TYPES),
                 )
                 .order_by(AuditEvent.created_at.desc())
                 .limit(EVENT_LIMIT)
@@ -186,6 +254,12 @@ class PulseService:
                     "channel_name": channel_name,
                     "detail": safe_detail or None,
                     "created_at": _iso(event.created_at),
+                    # Ham ayrıntı: iki farklı video/plan ayrı kalır,
+                    # birebir aynı iki satır (çift yazım) birleşir.
+                    "_dedupe": (
+                        f"{event.event_type}|{event.channel_id}|"
+                        f"{json.dumps(detail, sort_keys=True, default=str)}"
+                    ),
                 }
             )
         return events
