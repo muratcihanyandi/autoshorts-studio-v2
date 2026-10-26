@@ -18,6 +18,7 @@ const PRIMARY_NAV = [
   { to: '/karakterler', label: 'Karakterler' },
   { to: '/medya', label: 'Medya Kütüphanesi' },
   { to: '/youtube', label: 'YouTube' },
+  { to: '/basarimlar', label: 'Başarımlar' },
   { to: '/takvim', label: 'Takvim' },
   { to: '/otomasyon', label: 'Otomasyon' },
   { to: '/rehber', label: 'Rehber' },

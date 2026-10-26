@@ -30,6 +30,7 @@ from app.api.routes.sources import router as sources_router
 from app.api.routes.system import router as system_router
 from app.api.routes.whisper import router as whisper_router
 from app.api.routes.youtube import router as youtube_router
+from app.api.routes.achievements import router as achievements_router
 from app.config import Settings, get_settings
 from app.db import create_engine_and_sessionmaker
 from app.logging_config import setup_logging
@@ -146,6 +147,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(automation_router, prefix="/api")
     app.include_router(whisper_router, prefix="/api")
     app.include_router(youtube_router, prefix="/api")
+    app.include_router(achievements_router, prefix="/api")
     from app.services.auth_service import install_auth_middleware
 
     install_auth_middleware(app, settings)

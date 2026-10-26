@@ -17,6 +17,7 @@ import { LlmProvidersScreen } from './screens/LlmProvidersScreen'
 import { LogsScreen } from './screens/LogsScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { GuideScreen } from './screens/GuideScreen'
+import { AchievementsScreen } from './screens/AchievementsScreen'
 
 type AuthState =
   | { status: 'loading' }
@@ -115,6 +116,7 @@ function App() {
             <Route path="karakterler" element={<CharactersScreen />} />
             <Route path="medya" element={<MediaLibraryScreen />} />
             <Route path="youtube" element={<YouTubeScreen />} />
+            <Route path="basarimlar" element={<AchievementsScreen />} />
             <Route path="takvim" element={<CalendarScreen />} />
             <Route path="otomasyon" element={<AutomationScreen />} />
             <Route path="hesap" element={<AccountScreen />} />
