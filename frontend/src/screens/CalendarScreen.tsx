@@ -169,9 +169,15 @@ function CalendarChip({
         onHoverTime(null)
         onDragEnd()
       }}
-      onDragEnter={() => onHoverTime(slotTimeOf(entry))}
-      onDragOver={() => onHoverTime(slotTimeOf(entry))}
-      onDragLeave={() => onHoverTime(null)}
+      onDragEnter={(event) => {
+        event.stopPropagation()
+        onHoverTime(slotTimeOf(entry))
+      }}
+      onDragOver={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onHoverTime(slotTimeOf(entry))
+      }}
       className={`cal-chip ${orientationClass}${
         entry.status === 'empty' ? ' cal-chip--empty' : ''
       }${clickable ? '' : ' cal-chip--static'}${
@@ -615,6 +621,14 @@ export function CalendarScreen() {
   const dragEntryRef = useRef<CalendarEntry | null>(null)
   const hoveredSlotTimeRef = useRef<string | null>(null)
 
+  const cleanupDrag = useCallback(() => {
+    dragEntryRef.current = null
+    setDraggingEntry(null)
+    hoveredSlotTimeRef.current = null
+    setHoveredSlotTime(null)
+    setDragOverDate(null)
+  }, [])
+
   const fetchCb = useCallback(
     () => fetchCalendar(cursor.year, cursor.month),
     [cursor],
@@ -825,17 +839,32 @@ export function CalendarScreen() {
                 <div className="cal-month-head">
                   <h2>{data.month_label}</h2>
                 </div>
-                <div className="cal-scroll">
+                <div
+                  className="cal-scroll"
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverDate(null)
+                      setHoveredSlotTime(null)
+                      hoveredSlotTimeRef.current = null
+                    }
+                  }}
+                >
                   <div className="cal-grid" role="grid">
                     {WEEKDAYS.map((day) => (
                       <div key={day} className="cal-weekday" role="columnheader">
                         {day}
                       </div>
                     ))}
-                    {grid.map((cell) => {
+                    {grid.map((cell, cellIndex) => {
                       const entries = byDate.get(cell.date) ?? []
                       const isHoveredDay =
                         dragOverDate === cell.date && draggingEntry !== null
+                      const colIndex = cellIndex % 7
+                      const rowIndex = Math.floor(cellIndex / 7)
+                      const totalRows = Math.ceil(grid.length / 7)
+                      const alignRight = colIndex >= 4
+                      const alignBottom = rowIndex >= totalRows - 2
+
                       return (
                         <div
                           key={cell.date}
@@ -846,16 +875,20 @@ export function CalendarScreen() {
                           }`}
                           role="gridcell"
                           aria-label={cell.date}
+                          onDragEnter={(event) => {
+                            if (!dragEntryRef.current && !draggingEntry) return
+                            event.preventDefault()
+                            if (dragOverDate !== cell.date) {
+                              setDragOverDate(cell.date)
+                            }
+                          }}
                           onDragOver={(event) => {
                             if (!dragEntryRef.current && !draggingEntry) return
                             event.preventDefault()
                             event.dataTransfer.dropEffect = 'move'
-                            setDragOverDate(cell.date)
-                          }}
-                          onDragLeave={() => {
-                            setDragOverDate((current) =>
-                              current === cell.date ? null : current,
-                            )
+                            if (dragOverDate !== cell.date) {
+                              setDragOverDate(cell.date)
+                            }
                           }}
                           onDrop={(event) => {
                             event.preventDefault()
@@ -863,11 +896,7 @@ export function CalendarScreen() {
                               dragEntryRef.current || draggingEntry
                             const hoveredTime =
                               hoveredSlotTimeRef.current || hoveredSlotTime
-                            dragEntryRef.current = null
-                            setDraggingEntry(null)
-                            hoveredSlotTimeRef.current = null
-                            setHoveredSlotTime(null)
-                            setDragOverDate(null)
+                            cleanupDrag()
                             if (entry && canSchedule(entry)) {
                               void handleDropSchedule(
                                 entry,
@@ -883,25 +912,71 @@ export function CalendarScreen() {
 
                           {isHoveredDay && (
                             <div
-                              className="cal-hourly-overlay"
+                              className={`cal-hourly-overlay${
+                                alignRight
+                                  ? ' cal-hourly-overlay--right'
+                                  : ' cal-hourly-overlay--left'
+                              }${
+                                alignBottom
+                                  ? ' cal-hourly-overlay--bottom'
+                                  : ' cal-hourly-overlay--top'
+                              }`}
                               onDragOver={(e) => {
                                 e.preventDefault()
+                                e.stopPropagation()
                                 e.dataTransfer.dropEffect = 'move'
                               }}
                             >
-                              <div className="cal-hourly-head">
-                                <span className="cal-hourly-title">
-                                  {formatScheduleDate(cell.date)}
-                                </span>
+                              <div
+                                className="cal-hourly-head"
+                                onDragOver={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  e.dataTransfer.dropEffect = 'move'
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  const entry =
+                                    dragEntryRef.current || draggingEntry
+                                  cleanupDrag()
+                                  if (entry && canSchedule(entry)) {
+                                    void handleDropSchedule(
+                                      entry,
+                                      cell.date,
+                                      null,
+                                    )
+                                  }
+                                }}
+                              >
+                                <div className="cal-hourly-head-top">
+                                  <span className="cal-hourly-title">
+                                    {formatScheduleDate(cell.date)}
+                                  </span>
+                                  <span className="cal-hourly-drop-hint">
+                                    Güne Bırak
+                                  </span>
+                                </div>
                                 <span className="cal-hourly-sub">
                                   Saate Bırakın (1 Saat Aralıklarla)
                                 </span>
                               </div>
                               <div className="cal-hourly-grid">
                                 {HOURLY_SLOTS.map((hour) => {
+                                  const activeEntryId =
+                                    dragEntryRef.current?.id ||
+                                    draggingEntry?.id
+                                  const isCurrentSlot =
+                                    dragEntryRef.current &&
+                                    dragEntryRef.current.local_date ===
+                                      cell.date &&
+                                    entryTime(
+                                      dragEntryRef.current.scheduled_at,
+                                    ) === hour
                                   const occupied = entries.find(
                                     (e) =>
                                       e.status !== 'empty' &&
+                                      e.id !== activeEntryId &&
                                       entryTime(e.scheduled_at) === hour,
                                   )
                                   const isCardHover =
@@ -911,7 +986,9 @@ export function CalendarScreen() {
                                     <div
                                       key={hour}
                                       className={`cal-hour-card${
-                                        occupied
+                                        isCurrentSlot
+                                          ? ' cal-hour-card--current'
+                                          : occupied
                                           ? ' cal-hour-card--occupied'
                                           : ' cal-hour-card--free'
                                       }${
@@ -919,21 +996,20 @@ export function CalendarScreen() {
                                           ? ' cal-hour-card--hover'
                                           : ''
                                       }`}
+                                      onDragEnter={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        if (
+                                          hoveredSlotTimeRef.current !== hour
+                                        ) {
+                                          hoveredSlotTimeRef.current = hour
+                                          setHoveredSlotTime(hour)
+                                        }
+                                      }}
                                       onDragOver={(e) => {
                                         e.preventDefault()
                                         e.stopPropagation()
                                         e.dataTransfer.dropEffect = 'move'
-                                        setHoveredSlotTime(hour)
-                                        hoveredSlotTimeRef.current = hour
-                                      }}
-                                      onDragLeave={() => {
-                                        if (
-                                          hoveredSlotTimeRef.current ===
-                                          hour
-                                        ) {
-                                          setHoveredSlotTime(null)
-                                          hoveredSlotTimeRef.current = null
-                                        }
                                       }}
                                       onDrop={(e) => {
                                         e.preventDefault()
@@ -941,11 +1017,7 @@ export function CalendarScreen() {
                                         const entry =
                                           dragEntryRef.current ||
                                           draggingEntry
-                                        dragEntryRef.current = null
-                                        setDraggingEntry(null)
-                                        hoveredSlotTimeRef.current = null
-                                        setHoveredSlotTime(null)
-                                        setDragOverDate(null)
+                                        cleanupDrag()
                                         if (entry && canSchedule(entry)) {
                                           void handleDropSchedule(
                                             entry,
@@ -958,13 +1030,17 @@ export function CalendarScreen() {
                                       <span className="cal-hour-time nums">
                                         {hour}
                                       </span>
-                                      {occupied ? (
+                                      {isCurrentSlot ? (
+                                        <span className="cal-hour-curr">
+                                          Şu anki
+                                        </span>
+                                      ) : occupied ? (
                                         <span
                                           className="cal-hour-tag"
                                           title={occupied.title ?? ''}
                                         >
                                           {occupied.title
-                                            ? occupied.title.slice(0, 10)
+                                            ? occupied.title.slice(0, 8)
                                             : 'Dolu'}
                                         </span>
                                       ) : (
@@ -990,10 +1066,7 @@ export function CalendarScreen() {
                                 setDraggingEntry(picked)
                               }}
                               onDragEnd={() => {
-                                dragEntryRef.current = null
-                                setDraggingEntry(null)
-                                hoveredSlotTimeRef.current = null
-                                setHoveredSlotTime(null)
+                                cleanupDrag()
                               }}
                               onHoverTime={(time) => {
                                 hoveredSlotTimeRef.current = time
