@@ -17,11 +17,13 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import JSON as JSONVariant
 from sqlalchemy.dialects.postgresql import JSONB
@@ -624,6 +626,16 @@ class Job(Base):
     """
 
     __tablename__ = "jobs"
+    __table_args__ = (
+        Index(
+            "ix_jobs_claim",
+            "status",
+            "priority",
+            "id",
+            postgresql_where=text("status = 'queued'"),
+            sqlite_where=text("status = 'queued'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     job_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
@@ -1042,6 +1054,14 @@ class PublishedVideo(Base):
     __table_args__ = (
         UniqueConstraint(
             "clip_candidate_id", "orientation", name="uq_published_candidate_orientation"
+        ),
+        Index(
+            "uq_published_full_cut",
+            "source_video_id",
+            "orientation",
+            unique=True,
+            postgresql_where=text("clip_candidate_id IS NULL"),
+            sqlite_where=text("clip_candidate_id IS NULL"),
         ),
     )
 

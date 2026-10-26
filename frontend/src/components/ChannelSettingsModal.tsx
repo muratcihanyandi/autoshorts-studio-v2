@@ -12,6 +12,8 @@ import {
   type SettingMode,
 } from '../api/automation'
 import { fetchCharacters, type CharacterOut } from '../api/characters'
+import { rebuildCalendar } from '../api/calendar'
+import { notifyPulse } from '../pulse/bus'
 
 type ModalTab = 'settings' | 'horizontal' | 'shorts'
 
@@ -392,8 +394,35 @@ export function ChannelSettingsModal({
 
                 <div className="modal-actions">
                   {savedNote && <small className="save-note">Kaydedildi.</small>}
-                  <button className="btn" onClick={() => void save()} disabled={saving}>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => void save()}
+                    disabled={saving}
+                  >
                     {saving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={async () => {
+                      await save()
+                      try {
+                        const res = await rebuildCalendar(channelId)
+                        notifyPulse({
+                          tone: 'ok',
+                          sentence: `“${channelName}” takvimi güncellendi. Zirve saat: ${res.peak_hour}.`,
+                          link: '/takvim',
+                        })
+                        setSavedNote(true)
+                      } catch {
+                        // hata olursa bildirim verme
+                      }
+                    }}
+                    disabled={saving}
+                    title="Yeni kotaları kaydeder ve takvimi bu kotalara göre baştan kurar"
+                  >
+                    ⚡ Kaydet ve Takvimi Yeniden Oluştur
                   </button>
                 </div>
               </>

@@ -98,7 +98,7 @@ function SourceRow({
     }
   }
 
-  const setPermission = (status: 'authorized' | 'pending') =>
+  const setPermission = (status: 'authorized' | 'rejected') =>
     run(async () => {
       await updateSource(source.id, { permission_status: status })
       setNote(status === 'authorized' ? 'İzin verildi.' : 'İzin geri çekildi.')
@@ -238,7 +238,7 @@ function SourceRow({
               type="button"
               className="btn--ghost btn-sm"
               disabled={busy}
-              onClick={() => void setPermission('pending')}
+              onClick={() => void setPermission('rejected')}
               title="İzni geçici olarak geri çek"
             >
               İzni Geri Çek

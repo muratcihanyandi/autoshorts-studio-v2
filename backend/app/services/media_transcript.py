@@ -154,17 +154,27 @@ def parse_sidecar_text(text: str) -> list[dict]:
     return parse_srt(text)
 
 
-def find_sidecar(media_path: str | Path) -> Path | None:
-    """Caption file next to the media: exact stem first, then
-    language-suffixed names (yt-dlp writes '<id>.tr.vtt')."""
+def find_sidecar(
+    media_path: str | Path, preferred_lang: str = "tr"
+) -> Path | None:
+    """Caption file next to the media: exact stem first, then preferred
+    language (Türkçe: '<id>.tr.vtt'), then other language-suffixed names."""
     media = Path(media_path)
-    candidates: list[Path] = []
+    # 1. Tam dosya adı eşleşmesi (<id>.vtt / <id>.srt)
     for suffix in (".vtt", ".srt"):
         exact = media.with_suffix(suffix)
-        candidates.append(exact)
+        if exact.is_file():
+            return exact
+    # 2. Öncelikli dil eki (<id>.tr.vtt / <id>.tr.srt)
+    for suffix in (".vtt", ".srt"):
+        pref = media.parent / f"{media.stem}.{preferred_lang}{suffix}"
+        if pref.is_file():
+            return pref
+    # 3. Diğer yan altyazı dosyaları
+    candidates: list[Path] = []
+    for suffix in (".vtt", ".srt"):
         candidates.extend(
             p for p in sorted(media.parent.glob(f"{media.stem}.*{suffix}"))
-            if p != exact
         )
     for candidate in candidates:
         if candidate.is_file():

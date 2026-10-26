@@ -114,3 +114,19 @@ async def reschedule(request: Request, data: CalendarRescheduleIn) -> dict:
         return result
     except PublishingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class CalendarRebuildIn(BaseModel):
+    """Takvimi yeniden oluşturma girdisi (isteğe bağlı kanal kimliği)."""
+
+    channel_id: int | None = None
+
+
+@router.post("/calendar/rebuild")
+async def rebuild_calendar(
+    request: Request, data: CalendarRebuildIn | None = None
+) -> dict:
+    """Takvimi kanal ayarlarındaki güncel kotalar ve zirve saat analizine göre baştan kur."""
+    service = _service(request)
+    channel_id = data.channel_id if data else None
+    return await service.rebuild_schedule(channel_id)

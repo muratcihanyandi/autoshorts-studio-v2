@@ -290,17 +290,21 @@ class PublishingService:
                 context["channel_id"], http=client
             )
             uploader = YouTubeUploadClient(token)
-            session_uri = row.upload_session_uri or await uploader.start_session(
-                client,
-                title=metadata.title,
-                description=metadata.description,
-                tags=list(metadata.tags),
-            )
-            await self._save_session_uri(row.id, session_uri)
-            video_id = await uploader.upload_file(
-                client, session_uri, context["render"].file_path
-            )
-            await self._mark(row.id, "uploaded", youtube_video_id=video_id)
+            if row.youtube_video_id:
+                # Önceki denemede yükleme başarılı olduysa dosyayı tekrar yükleme
+                video_id = row.youtube_video_id
+            else:
+                session_uri = row.upload_session_uri or await uploader.start_session(
+                    client,
+                    title=metadata.title,
+                    description=metadata.description,
+                    tags=list(metadata.tags),
+                )
+                await self._save_session_uri(row.id, session_uri)
+                video_id = await uploader.upload_file(
+                    client, session_uri, context["render"].file_path
+                )
+                await self._mark(row.id, "uploaded", youtube_video_id=video_id)
             status = await uploader.fetch_status(client, video_id)
             if status.privacy_status != "private":
                 raise UploadError(
@@ -871,7 +875,7 @@ class PublishingService:
             "metadata": metadata,
             "published_row": published_row,
             "already_published": published_row is not None
-            and published_row.status in ("uploaded", "verified"),
+            and published_row.status in ("uploading", "uploaded", "verified"),
             "auto_approve": bool(
                 profile and profile.settings.get("auto_approve_metadata")
             ),
@@ -919,40 +923,17 @@ class PublishingService:
             .scalars()
             .one_or_none()
         )
-        # TODO(integration): PublishedVideo'da source_video_id FK'si yok
-        # (Task 0'da sema donduruldu); tam kesit yinelenen yayini su an
-        # baslik eslesmesiyle onleniyor (metaveri zinciri kaynak basina
-        # tektir). Kalici cozum sema degisikligi ister.
-        published_row = None
-        if metadata is not None:
-            revision_titles = (
-                (
-                    await session.execute(
-                        sa.select(ClipMetadata.title).where(
-                            ClipMetadata.source_video_id == source_video_id,
-                            ClipMetadata.clip_candidate_id.is_(None),
-                        )
-                    )
+        # Yatay tam kesit yayını doğrudan source_video_id üzerinden eşleştirilir.
+        published_row = (
+            await session.execute(
+                sa.select(PublishedVideo).where(
+                    PublishedVideo.channel_id == source.channel_id,
+                    PublishedVideo.source_video_id == source_video_id,
+                    PublishedVideo.orientation == "horizontal",
+                    PublishedVideo.clip_candidate_id.is_(None),
                 )
-                .scalars()
-                .all()
             )
-            if revision_titles:
-                published_row = (
-                    (
-                        await session.execute(
-                            sa.select(PublishedVideo).where(
-                                PublishedVideo.channel_id
-                                == source.channel_id,
-                                PublishedVideo.orientation == "horizontal",
-                                PublishedVideo.clip_candidate_id.is_(None),
-                                PublishedVideo.title.in_(revision_titles),
-                            )
-                        )
-                    )
-                    .scalars()
-                    .one_or_none()
-                )
+        ).scalars().one_or_none()
         profile = (
             (
                 await session.execute(
@@ -973,7 +954,7 @@ class PublishingService:
             "metadata": metadata,
             "published_row": published_row,
             "already_published": published_row is not None
-            and published_row.status in ("uploaded", "verified"),
+            and published_row.status in ("uploading", "uploaded", "verified"),
             "auto_approve": bool(
                 profile and profile.settings.get("auto_approve_metadata")
             ),

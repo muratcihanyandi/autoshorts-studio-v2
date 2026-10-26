@@ -93,14 +93,31 @@ class YouTubeUploadClient:
         path = Path(file_path)
         if not path.is_file():
             raise UploadError(f"Yuklenecek dosya yok: {path}")
-        data = await _read_bytes(path)
+        file_size = path.stat().st_size
+
+        # RAM optimizasyonu: 8MB'tan büyük dosyalarda tüm dosyayı belleğe
+        # almak yerine 4MB'lık parçalarla akış (stream) olarak gönderilir.
+        if file_size < 8 * 1024 * 1024:
+            content = await _read_bytes(path)
+        else:
+
+            async def _file_stream():
+                with open(path, "rb") as f:
+                    while True:
+                        chunk = f.read(4 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        yield chunk
+
+            content = _file_stream()
+
         response = await http.put(
             session_uri,
             headers={
                 "Content-Type": "video/mp4",
-                "Content-Length": str(len(data)),
+                "Content-Length": str(file_size),
             },
-            content=data,
+            content=content,
         )
         if response.status_code not in (200, 201):
             raise UploadError(

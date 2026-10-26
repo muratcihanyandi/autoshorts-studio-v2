@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class PublishResult(BaseModel):
@@ -51,6 +52,17 @@ class PublishingProfileIn(BaseModel):
     publish_times_vertical: list[str] | None = None
     auto_approve_metadata: bool | None = None
     paused: bool | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_tz(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        try:
+            ZoneInfo(v)
+        except Exception as exc:
+            raise ValueError(f"Geçersiz saat dilimi: {v}") from exc
+        return v
 
 
 class PublishingProfileOut(BaseModel):

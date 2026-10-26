@@ -102,3 +102,24 @@ export function rescheduleCalendar(
     return result
   })
 }
+
+export interface RebuildCalendarResult {
+  channel_id: number | null
+  peak_hour: string
+  rebuilt_count: number
+  message: string
+}
+
+/** Takvimi güncel kanal kotaları ve zirve saat analizine göre baştan oluştur. */
+export function rebuildCalendar(channelId?: number): Promise<RebuildCalendarResult> {
+  return sendJson<RebuildCalendarResult>(
+    '/api/calendar/rebuild',
+    'POST',
+    channelId ? { channel_id: channelId } : {},
+  ).then((result) => {
+    if (result === null) {
+      throw new ApiError(204, 'Takvim yeniden oluşturma yanıtı boş döndü')
+    }
+    return result
+  })
+}

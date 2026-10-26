@@ -37,7 +37,13 @@ def _default_http_client() -> httpx.AsyncClient:
 
 
 def _today() -> date:
-    return datetime.now(UTC).date()
+    # Google YouTube API günlük kotası Pasifik saat diliminde (PT) sıfırlanır.
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/Los_Angeles")).date()
+    except Exception:
+        return datetime.now(UTC).date()
 
 
 # Süreç-genel TTL önbelleği: istekler arası da yaşar (polling ucuz kalır).
@@ -132,11 +138,13 @@ class YouTubeDataClient:
 
     async def get_uploads_playlist_id(self, youtube_channel_id: str) -> str | None:
         self._check_configured()
-        if self._quota is not None:
+        params = {"part": "contentDetails", "id": youtube_channel_id}
+        key = f"/channels?{sorted(params.items())}"
+        if self._cached(key) is None and self._quota is not None:
             await self._quota.try_spend(COST_CHANNELS_LIST)
         data = await self._get_json(
             "/channels",
-            {"part": "contentDetails", "id": youtube_channel_id},
+            params,
         )
         items = data.get("items") or []
         if not items:
@@ -150,15 +158,17 @@ class YouTubeDataClient:
     ) -> list[dict[str, Any]]:
         """Latest uploads as [{video_id, title, published_at}]."""
         self._check_configured()
-        if self._quota is not None:
+        params = {
+            "part": "snippet",
+            "playlistId": uploads_playlist_id,
+            "maxResults": str(max_results),
+        }
+        key = f"/playlistItems?{sorted(params.items())}"
+        if self._cached(key) is None and self._quota is not None:
             await self._quota.try_spend(COST_PLAYLIST_ITEMS)
         data = await self._get_json(
             "/playlistItems",
-            {
-                "part": "snippet",
-                "playlistId": uploads_playlist_id,
-                "maxResults": str(max_results),
-            },
+            params,
         )
         videos: list[dict[str, Any]] = []
         for item in data.get("items") or []:

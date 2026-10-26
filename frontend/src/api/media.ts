@@ -330,19 +330,47 @@ export interface BulkClipActionResult {
   }[]
 }
 
-export function bulkClipAction(
+export async function bulkClipAction(
   action: BulkClipAction,
   renderIds: number[],
 ): Promise<BulkClipActionResult> {
-  return sendJson<BulkClipActionResult>('/api/media/clips/bulk', 'POST', {
-    action,
-    render_ids: renderIds,
-  }).then((body) => {
-    if (body === null) {
-      throw new ApiError(204, 'Toplu eylem yanıtı boş döndü')
+  if (renderIds.length === 0) {
+    return {
+      action,
+      total: 0,
+      ok: 0,
+      skipped: 0,
+      errors: 0,
+      results: [],
     }
-    return body
-  })
+  }
+  const CHUNK_SIZE = 50
+  const combined: BulkClipActionResult = {
+    action,
+    total: renderIds.length,
+    ok: 0,
+    skipped: 0,
+    errors: 0,
+    results: [],
+  }
+  for (let i = 0; i < renderIds.length; i += CHUNK_SIZE) {
+    const chunk = renderIds.slice(i, i + CHUNK_SIZE)
+    const body = await sendJson<BulkClipActionResult>(
+      '/api/media/clips/bulk',
+      'POST',
+      {
+        action,
+        render_ids: chunk,
+      },
+    )
+    if (body) {
+      combined.ok += body.ok
+      combined.skipped += body.skipped
+      combined.errors += body.errors
+      combined.results.push(...body.results)
+    }
+  }
+  return combined
 }
 
 /** Seçili klibi tarayıcıya indirme adresi (?download=true ekte gelir). */

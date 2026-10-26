@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   fetchCalendar,
+  rebuildCalendar,
   rescheduleCalendar,
   type CalendarEntry,
   type CalendarData,
@@ -14,6 +15,12 @@ import { ClipDetailModal } from '../components/ClipDetailModal'
 import { notifyPulse } from '../pulse/bus'
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
+
+/** Günlük 1 saat aralıklı zaman dilimleri (00:00 - 23:00) */
+const HOURLY_SLOTS = Array.from(
+  { length: 24 },
+  (_, i) => `${String(i).padStart(2, '0')}:00`,
+)
 
 /** Ay etiketleri (planlama penceresinde "27 Ekim 2026" gibi okunur). */
 const MONTH_NAMES = [
@@ -453,6 +460,9 @@ export function CalendarScreen() {
   /** Kayıt sonrası taşıma onayı: tarih gerçekten değişti mi görünsün. */
   const [notice, setNotice] = useState<string | null>(null)
   const [dragOverDate, setDragOverDate] = useState<string | null>(null)
+  const [draggingEntry, setDraggingEntry] = useState<CalendarEntry | null>(null)
+  const [hoveredSlotTime, setHoveredSlotTime] = useState<string | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
   const [toastMessage, setToastMessage] = useState<{
     id: number
     text: string
@@ -466,6 +476,35 @@ export function CalendarScreen() {
     }, 4500)
     return () => clearTimeout(timer)
   }, [toastMessage])
+
+  async function handleRebuildCalendar() {
+    setRebuilding(true)
+    try {
+      const res = await rebuildCalendar()
+      setToastMessage({
+        id: Date.now(),
+        text: `Takvim yeniden oluşturuldu! En çok izlenen saat (${res.peak_hour}) 1. sıraya yerleştirildi (${res.rebuilt_count} video planlandı).`,
+        tone: 'ok',
+      })
+      notifyPulse({
+        tone: 'ok',
+        sentence: res.message,
+        link: '/takvim',
+      })
+      await calendar.refresh()
+    } catch (err) {
+      setToastMessage({
+        id: Date.now(),
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Takvim yeniden oluşturulamadı.',
+        tone: 'error',
+      })
+    } finally {
+      setRebuilding(false)
+    }
+  }
 
   async function handleDropSchedule(
     entry: CalendarEntry,
@@ -552,7 +591,7 @@ export function CalendarScreen() {
           link: '/takvim',
         })
       }
-      calendar.retry()
+        await calendar.refresh()
     } catch (err) {
       const gateInfo = gateFromError(err)
       if (gateInfo) {
@@ -659,41 +698,54 @@ export function CalendarScreen() {
             saate koy
           </span>
         </div>
-        <div className="cal-nav" role="group" aria-label="Ay gezinme">
+        <div className="cal-actions-head">
           <button
             type="button"
-            className="btn btn--ghost"
-            onClick={() =>
-              setCursor((current) =>
-                shiftMonth(current.year, current.month, -1),
-              )
-            }
+            className="btn btn--primary cal-rebuild-btn"
+            disabled={rebuilding}
+            onClick={() => void handleRebuildCalendar()}
+            title="Kanal ayarlarındaki kotalarla takvimi baştan kurar ve zirve saate 1 video yerleştirir"
           >
-            ‹ Önceki
+            {rebuilding
+              ? 'Yeniden Oluşturuluyor…'
+              : '⚡ Takvimi Yeniden Oluştur'}
           </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() =>
-              setCursor({
-                year: new Date().getFullYear(),
-                month: new Date().getMonth() + 1,
-              })
-            }
-          >
-            Bugün
-          </button>
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() =>
-              setCursor((current) =>
-                shiftMonth(current.year, current.month, 1),
-              )
-            }
-          >
-            Sonraki ›
-          </button>
+          <div className="cal-nav" role="group" aria-label="Ay gezinme">
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() =>
+                setCursor((current) =>
+                  shiftMonth(current.year, current.month, -1),
+                )
+              }
+            >
+              ‹ Önceki
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() =>
+                setCursor({
+                  year: new Date().getFullYear(),
+                  month: new Date().getMonth() + 1,
+                })
+              }
+            >
+              Bugün
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() =>
+                setCursor((current) =>
+                  shiftMonth(current.year, current.month, 1),
+                )
+              }
+            >
+              Sonraki ›
+            </button>
+          </div>
         </div>
       </div>
 
@@ -782,47 +834,151 @@ export function CalendarScreen() {
                     ))}
                     {grid.map((cell) => {
                       const entries = byDate.get(cell.date) ?? []
+                      const isHoveredDay =
+                        dragOverDate === cell.date && draggingEntry !== null
                       return (
                         <div
                           key={cell.date}
                           className={`cal-cell${
                             cell.inMonth ? '' : ' cal-cell--out'
                           }${cell.isToday ? ' cal-cell--today' : ''}${
-                            dragOverDate === cell.date
-                              ? ' cal-cell--dragover'
-                              : ''
+                            isHoveredDay ? ' cal-cell--dragover' : ''
                           }`}
                           role="gridcell"
                           aria-label={cell.date}
                           onDragOver={(event) => {
-                            // preventDefault HER ZAMAN: state gecikse bile
-                            // birakma reddedilmesin (sessiz "hiçbir şey
-                            // olmadı" hatasının kökü buydu, 2026-10-25).
-                            if (!dragEntryRef.current) return
+                            if (!dragEntryRef.current && !draggingEntry) return
                             event.preventDefault()
                             event.dataTransfer.dropEffect = 'move'
                             setDragOverDate(cell.date)
                           }}
-                          onDragLeave={() =>
+                          onDragLeave={() => {
                             setDragOverDate((current) =>
                               current === cell.date ? null : current,
                             )
-                          }
+                          }}
                           onDrop={(event) => {
                             event.preventDefault()
-                            const entry = dragEntryRef.current
-                            const hoveredTime = hoveredSlotTimeRef.current
+                            const entry =
+                              dragEntryRef.current || draggingEntry
+                            const hoveredTime =
+                              hoveredSlotTimeRef.current || hoveredSlotTime
                             dragEntryRef.current = null
+                            setDraggingEntry(null)
                             hoveredSlotTimeRef.current = null
+                            setHoveredSlotTime(null)
                             setDragOverDate(null)
                             if (entry && canSchedule(entry)) {
-                              void handleDropSchedule(entry, cell.date, hoveredTime)
+                              void handleDropSchedule(
+                                entry,
+                                cell.date,
+                                hoveredTime,
+                              )
                             }
                           }}
                         >
                           <span className="cal-daynum nums">
                             {Number(cell.date.slice(-2))}
                           </span>
+
+                          {isHoveredDay && (
+                            <div
+                              className="cal-hourly-overlay"
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.dataTransfer.dropEffect = 'move'
+                              }}
+                            >
+                              <div className="cal-hourly-head">
+                                <span className="cal-hourly-title">
+                                  {formatScheduleDate(cell.date)}
+                                </span>
+                                <span className="cal-hourly-sub">
+                                  Saate Bırakın (1 Saat Aralıklarla)
+                                </span>
+                              </div>
+                              <div className="cal-hourly-grid">
+                                {HOURLY_SLOTS.map((hour) => {
+                                  const occupied = entries.find(
+                                    (e) =>
+                                      e.status !== 'empty' &&
+                                      entryTime(e.scheduled_at) === hour,
+                                  )
+                                  const isCardHover =
+                                    (hoveredSlotTimeRef.current ||
+                                      hoveredSlotTime) === hour
+                                  return (
+                                    <div
+                                      key={hour}
+                                      className={`cal-hour-card${
+                                        occupied
+                                          ? ' cal-hour-card--occupied'
+                                          : ' cal-hour-card--free'
+                                      }${
+                                        isCardHover
+                                          ? ' cal-hour-card--hover'
+                                          : ''
+                                      }`}
+                                      onDragOver={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        e.dataTransfer.dropEffect = 'move'
+                                        setHoveredSlotTime(hour)
+                                        hoveredSlotTimeRef.current = hour
+                                      }}
+                                      onDragLeave={() => {
+                                        if (
+                                          hoveredSlotTimeRef.current ===
+                                          hour
+                                        ) {
+                                          setHoveredSlotTime(null)
+                                          hoveredSlotTimeRef.current = null
+                                        }
+                                      }}
+                                      onDrop={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        const entry =
+                                          dragEntryRef.current ||
+                                          draggingEntry
+                                        dragEntryRef.current = null
+                                        setDraggingEntry(null)
+                                        hoveredSlotTimeRef.current = null
+                                        setHoveredSlotTime(null)
+                                        setDragOverDate(null)
+                                        if (entry && canSchedule(entry)) {
+                                          void handleDropSchedule(
+                                            entry,
+                                            cell.date,
+                                            hour,
+                                          )
+                                        }
+                                      }}
+                                    >
+                                      <span className="cal-hour-time nums">
+                                        {hour}
+                                      </span>
+                                      {occupied ? (
+                                        <span
+                                          className="cal-hour-tag"
+                                          title={occupied.title ?? ''}
+                                        >
+                                          {occupied.title
+                                            ? occupied.title.slice(0, 10)
+                                            : 'Dolu'}
+                                        </span>
+                                      ) : (
+                                        <span className="cal-hour-free">
+                                          + Boş
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+
                           {entries.map((entry) => (
                             <CalendarChip
                               key={entry.id}
@@ -831,13 +987,17 @@ export function CalendarScreen() {
                               onOpen={openDetail}
                               onDragStart={(picked) => {
                                 dragEntryRef.current = picked
+                                setDraggingEntry(picked)
                               }}
                               onDragEnd={() => {
                                 dragEntryRef.current = null
+                                setDraggingEntry(null)
                                 hoveredSlotTimeRef.current = null
+                                setHoveredSlotTime(null)
                               }}
                               onHoverTime={(time) => {
                                 hoveredSlotTimeRef.current = time
+                                setHoveredSlotTime(time)
                               }}
                             />
                           ))}
@@ -970,7 +1130,7 @@ export function CalendarScreen() {
                 movedTo.date,
               )} · ${movedTo.time}`,
             )
-            calendar.retry()
+            void calendar.refresh()
           }}
         />
       )}

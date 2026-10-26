@@ -452,15 +452,22 @@ export function SettingsScreen() {
           ))}
         </div>
 
+        {loadError && (
+          <div className="action-error" role="alert" style={{ margin: '16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Ayarlar okunamadı: {loadError}.</span>
+            <button
+              type="button"
+              className="btn btn--ghost btn-sm"
+              onClick={() => void loadSettings()}
+            >
+              Yeniden Dene
+            </button>
+          </div>
+        )}
+
         {tab === 'connection' && (
           <section className="plate settings-form" aria-label="Bağlantı ayarları">
             <h2 className="panel-title">YouTube &amp; Google Bağlantısı</h2>
-            {loadError && (
-              <div className="action-error" role="alert">
-                Ayarlar okunamadı: {loadError}. Veritabanı hazır olduğunda bu
-                ekran yapılandırma formuna döner.
-              </div>
-            )}
             {!view && !loadError && (
               <p className="plate-note">Ayarlar okunuyor…</p>
             )}
@@ -578,7 +585,7 @@ export function SettingsScreen() {
         {tab === 'production' && (
           <section className="plate settings-form" aria-label="Üretim ayarları">
             <h2 className="panel-title">Üretim ve Limitler</h2>
-            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {!view && !loadError && <p className="plate-note">Ayarlar okunuyor…</p>}
             {view && form && (
               <>
                 <p className="plate-note">
@@ -735,7 +742,7 @@ export function SettingsScreen() {
         {tab === 'shorts' && (
           <section className="plate settings-form" aria-label="Shorts ayarları">
             <h2 className="panel-title">Shorts (Dikey Klipler)</h2>
-            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {!view && !loadError && <p className="plate-note">Ayarlar okunuyor…</p>}
             {view && form && (
               <>
                 <p className="plate-note">
@@ -973,7 +980,7 @@ export function SettingsScreen() {
         {tab === 'horizontal' && (
           <section className="plate settings-form" aria-label="Yatay video ayarları">
             <h2 className="panel-title">Yatay Video (Tam Kesit)</h2>
-            {!view && <p className="plate-note">Ayarlar okunuyor…</p>}
+            {!view && !loadError && <p className="plate-note">Ayarlar okunuyor…</p>}
             {view && form && (
               <>
                 <p className="plate-note">

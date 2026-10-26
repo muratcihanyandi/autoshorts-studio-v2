@@ -19,7 +19,7 @@ yatay videolar KENDİ slot setlerinde simüle edilir (shorts prime time).
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -849,4 +849,228 @@ class CalendarViewService:
             "status": row.status,
             "content_warning": row.content_warning,
             "ai_disclosure": row.ai_disclosure,
+        }
+
+    async def detect_peak_view_hour(
+        self, session: AsyncSession, channel_id: int
+    ) -> str:
+        """Kanalın YouTube'daki ve yerel veri tabanındaki en çok izlenen videolarını
+        tarayarak en yüksek izlenme getiren yayın saatini tespit eder."""
+        profile = (
+            await session.execute(
+                sa.select(PublishingProfile).where(
+                    PublishingProfile.channel_id == channel_id
+                )
+            )
+        ).scalars().one_or_none()
+
+        tz_name = profile.timezone if profile and profile.timezone else DEFAULT_TIMEZONE
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo(DEFAULT_TIMEZONE)
+
+        hourly_views: dict[int, int] = {h: 0 for h in range(24)}
+        hourly_counts: dict[int, int] = {h: 0 for h in range(24)}
+
+        # 1. YouTube API üzerinden canlı video istatistikleri (varsa)
+        try:
+            import httpx
+            from app.services.youtube_manage import YouTubeManageService
+
+            manage = YouTubeManageService(self._sessionmaker, self._settings)
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                snapshot = await manage._snapshot(channel_id, http)
+                videos = snapshot.get("videos") or []
+                for v in videos:
+                    pub = v.get("published_at")
+                    views = int(v.get("view_count") or 0)
+                    if not pub:
+                        continue
+                    try:
+                        dt = datetime.fromisoformat(
+                            pub.replace("Z", "+00:00")
+                        ).astimezone(tz)
+                        hourly_views[dt.hour] += views
+                        hourly_counts[dt.hour] += 1
+                    except Exception:
+                        pass
+        except Exception:
+            # YouTube bağlı değilse veya kota/ağ hatasında sessizce yerel DB'ye geç
+            pass
+
+        # 2. Yerel PublishedVideo kayıtları (önceki yayınlar)
+        local_rows = (
+            await session.execute(
+                sa.select(PublishedVideo).where(
+                    PublishedVideo.channel_id == channel_id,
+                    PublishedVideo.public_at.is_not(None),
+                )
+            )
+        ).scalars().all()
+        for row in local_rows:
+            if row.public_at:
+                try:
+                    dt = row.public_at.astimezone(tz)
+                    hourly_counts[dt.hour] += 1
+                except Exception:
+                    pass
+
+        # En yüksek izlenmeyi getiren saati bul
+        best_hour = None
+        max_views = 0
+        for h, views in hourly_views.items():
+            if views > max_views:
+                max_views = views
+                best_hour = h
+
+        if best_hour is None or max_views == 0:
+            max_count = 0
+            for h, count in hourly_counts.items():
+                if count > max_count:
+                    max_count = count
+                    best_hour = h
+
+        if best_hour is None:
+            best_hour = 19  # Varsayılan Türkiye/küresel akşam prime time'ı (19:00)
+
+        return f"{best_hour:02d}:00"
+
+    async def rebuild_schedule(
+        self, channel_id: int | None = None
+    ) -> dict[str, Any]:
+        """Kanal ayarlarında belirlenen güncel kotalar (dikey/yatay) ve en çok
+        izlenen saat analizine göre takvimi baştan oluşturur.
+
+        Günlük kotanın 1 tanesi en çok izlenen zirve saate konur; kalan kotalar
+        diğer yayın saatlerine paylaştırılır."""
+        now = datetime.now(UTC)
+        total_rebuilt = 0
+        peak_hours: dict[int, str] = {}
+
+        async with self._sessionmaker() as session:
+            stmt = (
+                sa.select(PublishingProfile, Channel)
+                .join(Channel, PublishingProfile.channel_id == Channel.id)
+                .where(Channel.status == "connected")
+            )
+            if channel_id is not None:
+                stmt = stmt.where(PublishingProfile.channel_id == channel_id)
+
+            rows = (await session.execute(stmt)).all()
+            if not rows:
+                return {
+                    "channel_id": channel_id,
+                    "peak_hour": "19:00",
+                    "rebuilt_count": 0,
+                    "message": "İşlem yapılacak bağlı kanal bulunamadı.",
+                }
+
+            for profile, channel in rows:
+                c_id = channel.id
+                peak_hour = await self.detect_peak_view_hour(session, c_id)
+                peak_hours[c_id] = peak_hour
+
+                tz_name = profile.timezone or DEFAULT_TIMEZONE
+                try:
+                    tz = ZoneInfo(tz_name)
+                except Exception:
+                    tz = ZoneInfo(DEFAULT_TIMEZONE)
+
+                # Profil ayarlarında zirve saatin olmasını sağla
+                settings_dict = dict(profile.settings or {})
+                v_slots_raw = list(
+                    settings_dict.get("publish_times_vertical")
+                    or ["12:00", "17:00", "21:00"]
+                )
+                if peak_hour not in v_slots_raw:
+                    v_slots_raw.append(peak_hour)
+                    v_slots_raw.sort()
+                settings_dict["publish_times_vertical"] = v_slots_raw
+
+                h_slots_raw = list(
+                    settings_dict.get("publish_times")
+                    or ["09:00", "14:00", "18:00"]
+                )
+                if peak_hour not in h_slots_raw:
+                    h_slots_raw.append(peak_hour)
+                    h_slots_raw.sort()
+                settings_dict["publish_times"] = h_slots_raw
+                profile.settings = settings_dict
+
+                # Hazır (verified + private) videoları topla
+                for orientation in ("vertical", "horizontal"):
+                    daily_limit = (
+                        profile.daily_clip_target
+                        if orientation == "vertical"
+                        else profile.daily_horizontal_limit
+                    )
+                    if daily_limit <= 0:
+                        daily_limit = 1
+
+                    v_stmt = (
+                        sa.select(PublishedVideo)
+                        .outerjoin(
+                            ClipCandidate,
+                            PublishedVideo.clip_candidate_id == ClipCandidate.id,
+                        )
+                        .where(
+                            PublishedVideo.channel_id == c_id,
+                            PublishedVideo.orientation == orientation,
+                            PublishedVideo.status == "verified",
+                            PublishedVideo.visibility == "private",
+                        )
+                    )
+                    if orientation == "vertical":
+                        v_stmt = v_stmt.order_by(
+                            sa.desc(sa.func.coalesce(ClipCandidate.score, 0)),
+                            PublishedVideo.id.asc(),
+                        )
+                    else:
+                        v_stmt = v_stmt.order_by(PublishedVideo.id.asc())
+
+                    video_rows = list((await session.execute(v_stmt)).scalars().all())
+                    if not video_rows:
+                        continue
+
+                    # Günlük slotlar: zirve saat 1. sıraya konur ("kotanın 1 tanesi o saate")
+                    orient_slots = (
+                        v_slots_raw if orientation == "vertical" else h_slots_raw
+                    )
+                    ordered_slots = [peak_hour] + [
+                        s for s in orient_slots if s != peak_hour
+                    ]
+                    daily_slots = ordered_slots[:daily_limit]
+                    daily_slots.sort()
+
+                    today_local = now.astimezone(tz).date()
+                    day = today_local
+                    v_idx = 0
+                    total_videos = len(video_rows)
+
+                    while v_idx < total_videos:
+                        for s_str in daily_slots:
+                            if v_idx >= total_videos:
+                                break
+                            hour_int, min_int = map(int, s_str.split(":"))
+                            s_time = time(hour_int, min_int)
+                            s_utc = datetime.combine(
+                                day, s_time, tzinfo=tz
+                            ).astimezone(UTC)
+                            if s_utc <= now:
+                                continue  # Geçmiş saati atla
+
+                            video_rows[v_idx].scheduled_at = s_utc
+                            v_idx += 1
+                            total_rebuilt += 1
+                        day += timedelta(days=1)
+
+            await session.commit()
+
+        sample_peak = next(iter(peak_hours.values())) if peak_hours else "19:00"
+        return {
+            "channel_id": channel_id,
+            "peak_hour": sample_peak,
+            "rebuilt_count": total_rebuilt,
+            "message": f"Takvim güncel ayarlarla yeniden oluşturuldu. En çok izlenen saat ({sample_peak}) takvime yerleştirildi.",
         }

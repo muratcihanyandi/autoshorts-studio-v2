@@ -53,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # her API isteği ekstra DB sorgusu yapmasın. Şema yoksa (saf
         # sağlık testleri) giriş yapılandırılmamış sayılır.
         app.state.auth_config = None
+        app.state.auth_db_error = False
         if sessionmaker is not None:
             from app.services.auth_service import AuthService
 
@@ -60,8 +61,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.auth_config = await AuthService(
                     sessionmaker, settings
                 ).get_config()
-            except Exception:  # noqa: BLE001 - şema yoksa giriş kapalı değil
-                app.state.auth_config = None
+            except Exception as exc:  # noqa: BLE001 - şema yoksa giriş kapalı değil
+                msg = str(exc).lower()
+                if (
+                    "no such table" in msg
+                    or "undefinedtable" in msg
+                    or "does not exist" in msg
+                ):
+                    app.state.auth_config = None
+                    app.state.auth_db_error = False
+                else:
+                    import logging
+
+                    logging.getLogger("uvicorn.error").error(
+                        "AuthService get_config veritabani hatasi: %s", exc
+                    )
+                    app.state.auth_config = None
+                    app.state.auth_db_error = True
         # Medya klasör ağacı: volume bağlıysa etiketli klasörleri kur.
         if settings.media_root:
             from app.services.media_storage import ensure_media_tree
@@ -82,6 +98,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             worker = JobWorker(sessionmaker, settings)
             worker_task = asyncio.create_task(worker.run_forever())
+
+            def _on_worker_done(t: asyncio.Task) -> None:
+                if not t.cancelled() and t.exception():
+                    import logging
+
+                    logging.getLogger("uvicorn.error").critical(
+                        "Worker gorevi beklenmedik sekilde durdu: %s",
+                        t.exception(),
+                        exc_info=t.exception(),
+                    )
+
+            worker_task.add_done_callback(_on_worker_done)
         app.state.worker_task = worker_task
         yield
         if worker_task is not None:

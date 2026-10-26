@@ -1223,7 +1223,20 @@ class JobWorker:
         self._started_at = datetime.now(UTC).isoformat()
         try:
             # Yeniden başlatma kurtarması: sessiz kalmış running işleri geri al.
-            await self._jobs.recover_stale()
+            # Veritabanı geç başlasa bile worker çökmez; kurtarma başarılı olana dek dener.
+            stale_recovered = False
+            while not stale_recovered:
+                try:
+                    await self._jobs.recover_stale()
+                    stale_recovered = True
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "Worker baslangic stale kurtarma denemesi basarisiz (%s); 3s sonra tekrar denenecek",
+                        exc,
+                    )
+                    await asyncio.sleep(3.0)
             while True:
                 try:
                     await self.refresh_effective_settings()

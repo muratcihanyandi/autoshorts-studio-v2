@@ -218,7 +218,8 @@ export function LogsScreen() {
     [category, channelId],
   )
   const view = usePolling(fetchCb, 5000)
-  const errorsView = usePolling(() => fetchLogErrors(60), 15000)
+  const fetchErrorsCb = useCallback(() => fetchLogErrors(60), [])
+  const errorsView = usePolling(fetchErrorsCb, 15000)
 
   // Filtre değişince yüklenmiş geçmiş sayfalar anlamsızlaşır: sıfırla.
   useEffect(() => {

@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-SOURCE_PERMISSION_VALUES = ("authorized", "rejected")
+SOURCE_PERMISSION_VALUES = ("authorized", "rejected", "pending")
 RULE_KEYS = {"exclude_title_patterns", "max_age_days", "require_reaction_content"}
 OUTPUT_ORIENTATION_VALUES = ("auto", "vertical", "horizontal")
 
@@ -130,6 +131,20 @@ class ManualVideoCreate(BaseModel):
 
     url: str = Field(min_length=1, max_length=2048)
     title: str = Field(min_length=1, max_length=500)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not (
+            trimmed.startswith("http://")
+            or trimmed.startswith("https://")
+            or Path(trimmed).is_file()
+        ):
+            raise ValueError(
+                "URL http/https adresi veya geçerli bir dosya yolu olmalı."
+            )
+        return trimmed
 
 
 class SourceVideoStatusIn(BaseModel):

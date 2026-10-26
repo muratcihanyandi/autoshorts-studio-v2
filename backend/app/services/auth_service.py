@@ -173,9 +173,9 @@ def authenticate(
 ) -> bool:
     if config is None:
         return False
-    if not hmac.compare_digest(
-        str(config.get("username") or ""), username.strip()
-    ):
+    stored_username = str(config.get("username") or "").encode("utf-8")
+    provided_username = username.strip().encode("utf-8")
+    if not hmac.compare_digest(stored_username, provided_username):
         return False
     return verify_password(password, str(config.get("password_hash") or ""))
 
@@ -594,6 +594,14 @@ def install_auth_middleware(app: Any, settings: Settings) -> None:
             for prefix in PUBLIC_API_PREFIXES
         ):
             return await call_next(request)
+
+        if getattr(request.app.state, "auth_db_error", False):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Veritabanı bağlantısı kurulamadı; güvenlik nedeniyle API kilitlendi."
+                },
+            )
 
         config = getattr(request.app.state, "auth_config", None)
         if config is None:

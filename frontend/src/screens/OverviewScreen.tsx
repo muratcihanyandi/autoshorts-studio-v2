@@ -708,7 +708,7 @@ export function OverviewScreen() {
 
               <section className="ink-panel" aria-label="Boru hattı">
                 <h2>Boru hattı</h2>
-                <div className="table-scroll">
+                <div className="pipeline-summary-table">
                   <table className="info-table">
                     <tbody>
                       <tr

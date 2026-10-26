@@ -2804,6 +2804,7 @@
 }
 
 .cal-cell {
+  position: relative;
   min-height: 104px;
   padding: 6px;
   display: flex;
@@ -2884,6 +2885,141 @@
   outline: 2px dashed var(--accent-deep);
   outline-offset: -2px;
   background: var(--accent-soft);
+}
+
+.cal-actions-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cal-rebuild-btn {
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+  transition: all 160ms ease;
+}
+
+.cal-rebuild-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+/* 1 saat aralıklı zaman dilimleri kart paneli (sürükle-bırak saat seçici) */
+.cal-hourly-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-width: 240px;
+  min-height: 250px;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--accent-deep);
+  border-radius: var(--radius-print);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: calOverlayFade 140ms ease-out;
+  pointer-events: auto;
+}
+
+@keyframes calOverlayFade {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.cal-hourly-head {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid var(--plate-line);
+}
+
+.cal-hourly-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--plate-ink);
+}
+
+.cal-hourly-sub {
+  font-size: 10px;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.cal-hourly-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 195px;
+  padding-right: 2px;
+}
+
+.cal-hour-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 2px;
+  border-radius: 6px;
+  border: 1px solid var(--plate-line);
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 120ms ease;
+  min-height: 38px;
+}
+
+.cal-hour-card--free {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.cal-hour-card--occupied {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.cal-hour-card:hover,
+.cal-hour-card--hover {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent-deep) !important;
+  transform: scale(1.04);
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
+  z-index: 2;
+}
+
+.cal-hour-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--plate-ink);
+  line-height: 1;
+}
+
+.cal-hour-tag {
+  font-size: 9px;
+  color: #dc2626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 48px;
+}
+
+.cal-hour-free {
+  font-size: 9px;
+  color: #16a34a;
+  font-weight: 600;
 }
 
 /* Takvim/klip detayındaki satır içi planlama formu. */
@@ -4638,12 +4774,16 @@ button:active:not(:disabled),
   }
 }
 
-/* İç kaydırma alanları kaydırma zincirini sayfaya taşımaz. */
+/* İç kaydırma alanları kaydırma zincirini sayfaya taşımaz; ancak yatay tablolar dikey tekerlek hareketini engellemez. */
 .modal-backdrop,
 .drawer-scroll,
-.activity-list,
-.table-scroll {
+.activity-list {
   overscroll-behavior: contain;
+}
+
+.table-scroll {
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
 }
 
 /* ============================================================
@@ -4923,7 +5063,15 @@ button:active:not(:disabled),
   gap: 8px;
   padding: 16px 18px;
   overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.pipeline-summary-table {
+  width: 100%;
+  overflow: visible;
 }
 
 .pipeline-track-item {

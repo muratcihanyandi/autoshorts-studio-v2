@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type PollState<T> =
   | { status: 'loading' }
@@ -9,13 +9,15 @@ interface UsePolling {
   <T>(fetcher: () => Promise<T>, intervalMs?: number): {
     state: PollState<T>
     retry: () => void
+    refresh: () => Promise<void>
   }
 }
 
 /**
  * Periyodik veri çekme: yükleme / tamam / hata durumları ve yeniden deneme.
- * Bağlantı koparken eldeki son veri korunur (stale) — izleme panosu
- * geçici bir hatada boş ekrana düşmez.
+ * Veri zaten yüklendiyse yeniden denemede (retry) veya yenilemede (refresh)
+ * ekran yükleme durumuna düşürülmez (flicker/sayfa yenilenmesi engellenir);
+ * eldeki son veri stale olarak korunur.
  */
 export const usePolling: UsePolling = <T,>(
   fetcher: () => Promise<T>,
@@ -23,6 +25,9 @@ export const usePolling: UsePolling = <T,>(
 ) => {
   const [state, setState] = useState<PollState<T>>({ status: 'loading' })
   const [attempt, setAttempt] = useState(0)
+
+  const fetcherRef = useRef(fetcher)
+  fetcherRef.current = fetcher
 
   useEffect(() => {
     let cancelled = false
@@ -54,9 +59,20 @@ export const usePolling: UsePolling = <T,>(
   }, [fetcher, intervalMs, attempt])
 
   const retry = useCallback(() => {
-    setState({ status: 'loading' })
+    setState((prev) =>
+      prev.status === 'ok' ? { ...prev, stale: true } : { status: 'loading' },
+    )
     setAttempt((a) => a + 1)
   }, [])
 
-  return { state, retry }
+  const refresh = useCallback(async () => {
+    try {
+      const data = await fetcherRef.current()
+      setState({ status: 'ok', data, stale: false })
+    } catch {
+      // Arkaplan yenileme hatası mevcut veriyi silmez
+    }
+  }, [])
+
+  return { state, retry, refresh }
 }

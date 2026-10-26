@@ -363,6 +363,7 @@ async def validate_output(
     expected_size: tuple[int, int] = (OUT_W, OUT_H),
     duration_tolerance: float = 0.75,
     sync_tolerance: float = 0.25,
+    expect_audio: bool = True,
 ) -> ValidationReport:
     """Re-probe the render: resolution, duration, audio, A/V sync."""
     try:
@@ -408,7 +409,7 @@ async def validate_output(
         problems.append(
             f"sure {duration:.2f}s, beklenen {expected_duration:.2f}s"
         )
-    if not has_audio:
+    if expect_audio and not has_audio:
         problems.append("ses akisi yok")
     if audio is not None and av_delta > sync_tolerance:
         problems.append(f"ses/goruntu suresi farki {av_delta:.2f}s")
