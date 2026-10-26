@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { fetchClipDetail, type ClipDetail } from '../api/media'
 import { rescheduleCalendar } from '../api/calendar'
@@ -122,7 +123,7 @@ export function ClipDetailModal({
     detail?.render.orientation === 'horizontal' ? 'Yatay tam kesit' : 'Dikey Shorts'
   const chips = detail ? filterChips(detail.filters) : []
 
-  return (
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal clip-detail"
@@ -436,6 +437,7 @@ export function ClipDetailModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

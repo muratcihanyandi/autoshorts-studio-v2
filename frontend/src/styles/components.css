@@ -895,24 +895,32 @@
 /* --- kanal ayarları modalı (Start/Stop dönemi) --- */
 .modal-backdrop {
   position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.55);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.65);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 6vh 16px;
-  z-index: 60;
+  padding: 24px 16px;
+  z-index: 9999;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .modal {
   background: var(--paper-white, #fff);
   border: 1px solid var(--plate-line, #e3e8ee);
   border-radius: var(--radius-print, 10px);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
   width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .modal-head {

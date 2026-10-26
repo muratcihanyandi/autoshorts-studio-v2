@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   fetchCalendar,
@@ -262,7 +263,7 @@ function ScheduleModal({
     }
   }
 
-  return (
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal"
@@ -349,7 +350,8 @@ function ScheduleModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -362,7 +364,7 @@ function EntryDetailModal({
   onClose: () => void
   onReschedule: (entry: CalendarEntry) => void
 }) {
-  return (
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal"
@@ -445,7 +447,8 @@ function EntryDetailModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -529,6 +532,12 @@ export function CalendarScreen() {
       } else {
         finalTime = '18:00'
       }
+    }
+
+    // 1. Madde: Aynı gün ve aynı saate bırakıldıysa saat değişimi yapılmamış gibi hiçbir şey yapma
+    const currentSlotTime = entryTime(entry.scheduled_at)
+    if (entry.local_date === targetDate && currentSlotTime === finalTime) {
+      return
     }
 
     let moment = new Date(`${targetDate}T${finalTime}:00`)

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   fetchChannelSettings,
   fetchChannelShorts,
@@ -203,7 +204,7 @@ export function ChannelSettingsModal({
     }
   }
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
       role="dialog"
@@ -504,6 +505,7 @@ export function ChannelSettingsModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
