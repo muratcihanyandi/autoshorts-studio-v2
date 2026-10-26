@@ -43,6 +43,7 @@ PUBLIC_API_PREFIXES = (
     "/api/health",
     "/api/auth/status",
     "/api/auth/setup",
+    "/api/auth/signup",
     "/api/auth/login",
     "/api/auth/logout",
 )

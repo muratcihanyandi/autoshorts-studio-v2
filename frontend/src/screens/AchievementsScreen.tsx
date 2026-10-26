@@ -9,11 +9,6 @@ import {
 import { computeAchievements } from '../achievements/achievementsList'
 import { TrophyIcon } from '../components/TrophyIcons'
 import { TrophyNotification } from '../components/TrophyNotification'
-import {
-  playPlatinumTrophySound,
-  playStandardTrophySound,
-  playTrophySound,
-} from '../audio/trophySound'
 import type {
   ChannelMetrics,
   ComputedAchievement,
@@ -304,27 +299,6 @@ export function AchievementsScreen() {
               {soundEnabled ? '🔊 Ses Açık' : '🔇 Ses Kapalı'}
             </button>
           </div>
-        </div>
-
-        {/* Ses Test Çubuğu */}
-        <div className="achievements-sound-tester">
-          <span className="ach-sound-tester-label">Kupa Sesi Önizleme:</span>
-          <button
-            type="button"
-            className="ach-test-btn ach-test-btn--standard"
-            onClick={() => playStandardTrophySound()}
-            title="Standart PlayStation Kupa sesini çal"
-          >
-            🔔 Standart Kupa Sesi (Ching)
-          </button>
-          <button
-            type="button"
-            className="ach-test-btn ach-test-btn--plat"
-            onClick={() => playPlatinumTrophySound()}
-            title="Görkemli Platin Zafer sesini çal"
-          >
-            ⭐ Platin Zafer Sesi (Fanfare)
-          </button>
         </div>
       </header>
 
@@ -662,22 +636,12 @@ export function AchievementsScreen() {
                     </div>
                   </div>
 
-                  {/* Kart alt bilgisi ve Ses Dinleme */}
+                  {/* Kart alt bilgisi */}
                   <div className="trophy-card-footer">
                     <span className="trophy-card-metrics-val">
                       Şu an: <strong>{ach.currentValue.toLocaleString('tr-TR')}</strong> /{' '}
                       {ach.targetValue.toLocaleString('tr-TR')} {ach.unit}
                     </span>
-
-                    <button
-                      type="button"
-                      className="trophy-card-play-sound"
-                      onClick={() => playTrophySound(ach.tier)}
-                      title={`${ach.title} kupa sesini dinle`}
-                      aria-label="Kupa sesini çal"
-                    >
-                      🔊 Sesi Dinle
-                    </button>
                   </div>
                 </div>
               </div>

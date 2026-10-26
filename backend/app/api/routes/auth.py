@@ -118,26 +118,7 @@ async def auth_status(request: Request) -> AuthStatus:
         configured=config is not None,
         authenticated=user is not None,
         username=user.username if user else None,
-        signup_open=config is None,
-    )
-
-
-async def _create_first_account(
-    request: Request, response: Response, body: Credentials
-) -> AuthStatus:
-    """İlk hesap: yalnızca henüz kullanıcı yokken çalışır."""
-    service = _service(request)
-    try:
-        config, user = await service.setup(body.username, body.password)
-    except AuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    request.app.state.auth_config = config
-    _set_cookie(response, request, AuthService.user_token_for(config, user))
-    return AuthStatus(
-        configured=True,
-        authenticated=True,
-        username=user.username,
-        signup_open=False,
+        signup_open=True,
     )
 
 
@@ -145,8 +126,35 @@ async def _create_first_account(
 async def signup(
     request: Request, response: Response, body: Credentials
 ) -> AuthStatus:
-    """İlk stüdyo hesabını oluştur (kayıt dönemi)."""
-    return await _create_first_account(request, response, body)
+    """Kullanıcı kaydı: Sistemde hiç hesap yoksa ilk hesap yönetici olarak
+    kurulur; sistem kuruluysa yeni operatör (ücretsiz plan) hesabı açılır."""
+    service = _service(request)
+    config = getattr(request.app.state, "auth_config", None)
+    if config is None:
+        config = await service.get_config()
+        request.app.state.auth_config = config
+
+    if config is None:
+        try:
+            config, user = await service.setup(body.username, body.password)
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        request.app.state.auth_config = config
+    else:
+        try:
+            user = await service.create_user(
+                body.username, body.password, role="operator", plan="free"
+            )
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    _set_cookie(response, request, AuthService.user_token_for(config, user))
+    return AuthStatus(
+        configured=True,
+        authenticated=True,
+        username=user.username,
+        signup_open=True,
+    )
 
 
 @router.post("/setup", response_model=AuthStatus, status_code=201)
@@ -154,7 +162,7 @@ async def setup(
     request: Request, response: Response, body: Credentials
 ) -> AuthStatus:
     """Geriye dönük uyumluluk: eski istemciler için /signup ile aynı."""
-    return await _create_first_account(request, response, body)
+    return await signup(request, response, body)
 
 
 @router.post("/login", response_model=AuthStatus)
@@ -181,7 +189,7 @@ async def login(
         configured=True,
         authenticated=True,
         username=user.username,
-        signup_open=False,
+        signup_open=True,
     )
 
 

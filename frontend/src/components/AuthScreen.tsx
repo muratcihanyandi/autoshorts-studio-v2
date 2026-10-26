@@ -8,11 +8,11 @@ type Mode = 'login' | 'signup'
 
 export function AuthScreen({
   initialMode,
-  signupOpen,
+  signupOpen: _signupOpen,
   onAuthenticated,
 }: {
   initialMode: Mode
-  signupOpen: boolean
+  signupOpen?: boolean
   onAuthenticated: (username: string) => void
 }) {
   const [mode, setMode] = useState<Mode>(initialMode)
@@ -22,7 +22,6 @@ export function AuthScreen({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const isSignup = mode === 'signup'
-  const signupBlocked = isSignup && !signupOpen
 
   function switchMode(next: Mode) {
     setMode(next)
@@ -33,7 +32,6 @@ export function AuthScreen({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (signupBlocked) return
     setError(null)
     if (isSignup) {
       if (password.length < 8) {
@@ -96,23 +94,11 @@ export function AuthScreen({
           <h2>{isSignup ? 'Hesap oluştur' : 'Giriş yap'}</h2>
           <p className="auth-help">
             {isSignup
-              ? 'Stüdyo hesabını oluştur.'
+              ? 'Yeni stüdyo hesabı oluştur (Ücretsiz plan).'
               : 'Devam etmek için kullanıcı adı ve şifrenle giriş yap.'}
           </p>
 
-          {signupBlocked ? (
-            <div className="auth-closed" role="status">
-              <p>Stüdyo hesabı zaten oluşturulmuş.</p>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                onClick={() => switchMode('login')}
-              >
-                Giriş ekranına dön
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={submit} className="auth-form">
+          <form onSubmit={submit} className="auth-form">
               <label>
                 Kullanıcı adı
                 <input
@@ -170,7 +156,6 @@ export function AuthScreen({
                     : 'Giriş yap'}
               </button>
             </form>
-          )}
         </div>
       </section>
     </div>
