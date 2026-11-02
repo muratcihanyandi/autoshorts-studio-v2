@@ -711,6 +711,8 @@ async def refill_channel_stock(
     # Gunluk yatay indirme kotasi (2026-11-02, Murat istegi): stok bos
     # olsa bile gunde en fazla N yatay kaynak indirilir. Kota dolunca
     # gun sonuna kadar yeni indirme baslamaz; yayinlama etkilenmez.
+    # Basarisiz isler kotayi YAKMAZ: indirme hic gerceklesmediyse
+    # Pi'yi yormadi, siradaki video denenebilir.
     daily_limit = int(
         getattr(settings, "daily_horizontal_download_limit", 0) or 0
     )
@@ -742,6 +744,8 @@ async def refill_channel_stock(
                             Job.job_type == "media_process",
                             Job.created_at >= day_start_utc,
                             Job.created_at < day_start_utc + timedelta(days=1),
+                            # Basarisiz isler sayilmaz (bkz. yukarida).
+                            Job.status != "failed",
                         )
                     )
                 ).scalar()
