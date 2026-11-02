@@ -69,6 +69,11 @@ EDITABLE_FIELDS = (
     "retry_backoff_seconds",
     "horizontal_stock_target_default",
     "shorts_per_video",
+    # Agir is penceresi + gunluk indirme kotasi (2026-11-02).
+    "heavy_window_enabled",
+    "heavy_window_start",
+    "heavy_window_end",
+    "daily_horizontal_download_limit",
     "clip_min_seconds",
     "clip_max_seconds",
     "min_free_disk_gb",
@@ -115,6 +120,7 @@ INT_FIELDS: dict[str, tuple[int, int]] = {
     "subtitle_pos_x_percent": (0, 100),
     "subtitle_pos_y_percent": (0, 100),
     "shorts_webcam_percent": (20, 50),
+    "daily_horizontal_download_limit": (0, 50),
 }
 
 FLOAT_FIELDS: dict[str, tuple[float, float]] = {
@@ -132,7 +138,10 @@ CHOICE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-BOOL_FIELDS = ("burn_subtitles",)
+BOOL_FIELDS = ("burn_subtitles", "heavy_window_enabled")
+
+# 'HH:MM' bicimli saat alanlari (agir is penceresi).
+TIME_FIELDS = ("heavy_window_start", "heavy_window_end")
 
 # Sadece okunur goruntelenen ortam alanlari (degistirilmesi calisan
 # dosya yollarini bozar); ayarlar ekraninda bilgi amaclidir.
@@ -183,6 +192,16 @@ def _validate(field: str, value: object) -> None:
             raise SettingsServiceError(
                 f"{field} şu değerlerden biri olmalı: {', '.join(allowed)}."
             )
+    elif field in TIME_FIELDS:
+        text = str(value).strip()
+        try:
+            hours, minutes = text.split(":")
+            if not (0 <= int(hours) <= 23 and 0 <= int(minutes) <= 59):
+                raise ValueError
+        except (ValueError, AttributeError) as exc:
+            raise SettingsServiceError(
+                f"{field} 'HH:MM' biçiminde geçerli bir saat olmalı."
+            ) from exc
     elif field == "metadata_system_prompt":
         if len(str(value)) > METADATA_PROMPT_MAX_LENGTH:
             raise SettingsServiceError(
@@ -295,6 +314,15 @@ class SettingsService:
             subtitle_pos_x_percent=number("subtitle_pos_x_percent"),
             subtitle_pos_y_percent=number("subtitle_pos_y_percent"),
             shorts_webcam_percent=number("shorts_webcam_percent"),
+            heavy_window_enabled=BoolSettingOut(
+                value=bool(effective.heavy_window_enabled),
+                source=self._source_of("heavy_window_enabled", overrides),
+            ),
+            heavy_window_start=plain("heavy_window_start"),
+            heavy_window_end=plain("heavy_window_end"),
+            daily_horizontal_download_limit=number(
+                "daily_horizontal_download_limit"
+            ),
             media_root=PlainSettingOut(
                 value=str(effective.media_root or ""),
                 source=SettingSource.environment,

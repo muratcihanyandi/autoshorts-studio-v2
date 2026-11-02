@@ -114,6 +114,21 @@ class Settings(BaseSettings):
     # Bir yatay videodan cikarilacak en fazla Shorts sayisi.
     shorts_per_video: int = 3
 
+    # --- Agir is penceresi (2026-11-02, Murat istegi) ---
+    # indirme/analiz/transkript/render gibi CPU-yogun isler yalnizca bu
+    # yerel saat araliginda calisir. Gunduz Pi 5 diger hizmetlere
+    # (OpenClaw, Immich, n8n, freqtrade) kalir. Pencere disinda worker
+    # yalnizca hafif isleri (yayinlama, kesif) yurutur. Kapatmak icin
+    # heavy_window_enabled=false; baslangic > bitis ise gece yarisini
+    # asan pencere sayilir (orn. 23:00 -> 06:00).
+    heavy_window_enabled: bool = False
+    heavy_window_start: str = "01:00"
+    heavy_window_end: str = "07:00"
+    # Gunluk yatay indirme kotasi: bir gunde en fazla bu kadar yatay
+    # kaynak indirilir. 0 = sinirsiz. Stok hedefi doluysa zaten
+    # indirilmez; bu kota stok bos olsa bile gunluk yuku sinirlar.
+    daily_horizontal_download_limit: int = 1
+
     # Studio girişi: ilk ziyaret parolayı app_meta'da oluşturur; sonraki
     # ziyaretler imzalı HttpOnly çerezle açılır. HTTPS arkasında
     # AUTH_COOKIE_SECURE=true yapılmalı (LAN HTTP'de çerez gitmez).

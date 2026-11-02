@@ -708,6 +708,56 @@ async def refill_channel_stock(
             "target": target,
         }
 
+    # Gunluk yatay indirme kotasi (2026-11-02, Murat istegi): stok bos
+    # olsa bile gunde en fazla N yatay kaynak indirilir. Kota dolunca
+    # gun sonuna kadar yeni indirme baslamaz; yayinlama etkilenmez.
+    daily_limit = int(
+        getattr(settings, "daily_horizontal_download_limit", 0) or 0
+    )
+    if daily_limit > 0:
+        from datetime import UTC, datetime, timedelta
+
+        # Yerel gun baslangici (Europe/Istanbul = UTC+3 sabit degil;
+        # profil saat dilimi kullanilir).
+        try:
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo(profile.timezone or "Europe/Istanbul")
+        except Exception:  # noqa: BLE001 - bozuk saat dilimi
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo("Europe/Istanbul")
+        local_now = datetime.now(tz)
+        day_start_utc = (
+            local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            .astimezone(UTC)
+        )
+        async with sessionmaker() as session:
+            started_today = int(
+                (
+                    await session.execute(
+                        sa.select(sa.func.count())
+                        .select_from(Job)
+                        .where(
+                            Job.job_type == "media_process",
+                            Job.created_at >= day_start_utc,
+                            Job.created_at < day_start_utc + timedelta(days=1),
+                        )
+                    )
+                ).scalar()
+                or 0
+            )
+        if started_today >= daily_limit:
+            return {
+                "channel_id": channel_id,
+                "enqueued": False,
+                "reason": "gunluk yatay indirme kotasi doldu",
+                "stock": stock,
+                "target": target,
+                "daily_limit": daily_limit,
+                "started_today": started_today,
+            }
+
     followed = await status.followed_character_ids(channel_id)
     next_video_id: int | None = None
     async with sessionmaker() as session:

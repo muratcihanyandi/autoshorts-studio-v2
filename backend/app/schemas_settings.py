@@ -76,6 +76,11 @@ class SettingsOut(BaseModel):
     subtitle_pos_x_percent: IntSettingOut
     subtitle_pos_y_percent: IntSettingOut
     shorts_webcam_percent: IntSettingOut
+    # Agir is penceresi + gunluk indirme kotasi.
+    heavy_window_enabled: BoolSettingOut
+    heavy_window_start: PlainSettingOut
+    heavy_window_end: PlainSettingOut
+    daily_horizontal_download_limit: IntSettingOut
     media_root: PlainSettingOut
 
 
@@ -116,3 +121,7 @@ class SettingsUpdate(BaseModel):
     subtitle_pos_x_percent: int | None = None
     subtitle_pos_y_percent: int | None = None
     shorts_webcam_percent: int | None = None
+    heavy_window_enabled: bool | None = None
+    heavy_window_start: str | None = None
+    heavy_window_end: str | None = None
+    daily_horizontal_download_limit: int | None = None

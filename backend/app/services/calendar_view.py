@@ -852,14 +852,21 @@ class CalendarViewService:
         }
 
     async def detect_peak_view_hour(
-        self, session: AsyncSession, channel_id: int
+        self, session: AsyncSession, channel_id: int, orientation: str = "vertical"
     ) -> str:
-        """Kanalın YouTube'daki ve yerel veri tabanındaki en çok izlenen videolarını
-        tarayarak en yüksek etkileşim getiren gündüz/akşam prime time saatini tespit eder.
+        """Kanalın gerçek izlenme verisinden, YÖN BAZLI en verimli yayın
+        saatini çıkarır (2026-11-02 yeniden yazımı).
 
-        Gece ölü saatler (23:00 - 09:00) elenir; YouTube Shorts ve video ekosisteminde
-        kabul gören makul izleyici kuşakları (10:00 - 22:00) değerlendirilir.
-        Yeterli veri yoksa varsayılan akşam prime time'ı olan 19:00 döndürülür.
+        Eski sürüm 23:00-09:00 arasını tamamen eliyordu; oysa kanalın en
+        çok izlenen Shorts'ları 03:00 slotunda çıkmıştı (saat başına
+        ortalama izlenme hızı 17:00'nin ~2.5 katı). Sonuç: kod hep veri
+        olmayan 19:00'ı öneriyor, gerçek zirve hiç görülmüyordu.
+
+        Yeni ölçüt: saat başına ortalama izlenme HIZI (views / yaş^0.5).
+        Beğeni, hız skorunu yalnızca küçük bir oranla destekler; sabit
+        "akşam prime time" ağırlığı kaldırıldı — veri konuşsun.
+
+        Yeterli veri yoksa yön varsayılanına döner (dikey 17:00, yatay 14:00).
         """
         profile = (
             await session.execute(
@@ -875,23 +882,23 @@ class CalendarViewService:
         except Exception:
             tz = ZoneInfo(DEFAULT_TIMEZONE)
 
-        # Yalnızca makul içerik üretici yayın saatleri (10:00 - 22:00)
-        PRIME_CANDIDATE_HOURS = list(range(10, 23))  # 10:00'dan 22:00'a kadar
-        AUDIENCE_WEIGHTS = {
-            19: 1.30,  # Akşam ana zirve
-            20: 1.25,
-            21: 1.20,
-            18: 1.20,
-            17: 1.15,  # İş/okul çıkışı
-            12: 1.15,  # Öğle arası
-            13: 1.10,
-        }
-
-        hourly_scores: dict[int, float] = {h: 0.0 for h in PRIME_CANDIDATE_HOURS}
-        hourly_counts: dict[int, int] = {h: 0 for h in PRIME_CANDIDATE_HOURS}
+        # 24 saatin tamamı aday: gece slotu da gerçek veriyle yarışır.
+        hourly_score: dict[int, float] = {h: 0.0 for h in range(24)}
+        hourly_count: dict[int, int] = {h: 0 for h in range(24)}
         now = datetime.now(UTC)
 
-        # 1. YouTube API üzerinden canlı video istatistikleri (varsa)
+        def add_sample(dt_utc: datetime, views: int, likes: int) -> None:
+            if views <= 0:
+                return
+            age_days = max(0.5, (now - dt_utc).total_seconds() / 86400.0)
+            velocity = views / (age_days ** 0.5)
+            # Beğeni hızın yerine geçmesin, sadece desteklesin.
+            score = velocity + (likes * 0.5)
+            h = dt_utc.astimezone(tz).hour
+            hourly_score[h] += score
+            hourly_count[h] += 1
+
+        # 1. YouTube canlı istatistikleri (mümkünse)
         try:
             import httpx
             from app.services.youtube_manage import YouTubeManageService
@@ -899,77 +906,75 @@ class CalendarViewService:
             manage = YouTubeManageService(self._sessionmaker, self._settings)
             async with httpx.AsyncClient(timeout=10.0) as http:
                 snapshot = await manage._snapshot(channel_id, http)
-                videos = snapshot.get("videos") or []
-                for v in videos:
+                for v in snapshot.get("videos") or []:
                     pub = v.get("published_at")
-                    views = int(v.get("view_count") or 0)
-                    likes = int(v.get("like_count") or 0)
                     if not pub:
                         continue
                     try:
-                        dt_utc = datetime.fromisoformat(
-                            pub.replace("Z", "+00:00")
-                        )
+                        dt_utc = datetime.fromisoformat(pub.replace("Z", "+00:00"))
                         if dt_utc.tzinfo is None:
                             dt_utc = dt_utc.replace(tzinfo=UTC)
-                        dt_local = dt_utc.astimezone(tz)
-                        h = dt_local.hour
-
-                        # Gece saatlerini (23:00 - 09:00) yayın saati olarak önerme
-                        if h in hourly_scores:
-                            age_days = max(1.0, (now - dt_utc).total_seconds() / 86400.0)
-                            # Yaş normalizasyonu (yeni videoların hızını adil karşılaştır)
-                            velocity = views / (age_days ** 0.5)
-                            score = velocity + (likes * 5.0)
-                            weight = AUDIENCE_WEIGHTS.get(h, 1.0)
-                            hourly_scores[h] += score * weight
-                            hourly_counts[h] += 1
+                        add_sample(
+                            dt_utc,
+                            int(v.get("view_count") or 0),
+                            int(v.get("like_count") or 0),
+                        )
                     except Exception:
-                        pass
+                        continue
         except Exception:
-            # YouTube bağlı değilse veya kota/ağ hatasında sessizce yerel DB'ye geç
+            # YouTube bağlı değil / kota / ağ hatası: yerel veriyle devam.
             pass
 
-        # 2. Yerel PublishedVideo kayıtları (önceki yayınlar)
+        # 2. Yerel yayın kayıtları: yön bazlı filtre (dikey ve yatay
+        # Shorts'lar farklı saatlerde farklı davranır).
         local_rows = (
             await session.execute(
                 sa.select(PublishedVideo).where(
                     PublishedVideo.channel_id == channel_id,
                     PublishedVideo.public_at.is_not(None),
+                    PublishedVideo.orientation == orientation,
                 )
             )
         ).scalars().all()
         for row in local_rows:
-            if row.public_at:
-                try:
-                    dt = row.public_at.astimezone(tz)
-                    h = dt.hour
-                    if h in hourly_scores:
-                        weight = AUDIENCE_WEIGHTS.get(h, 1.0)
-                        hourly_scores[h] += 10.0 * weight
-                        hourly_counts[h] += 1
-                except Exception:
-                    pass
+            if not row.public_at:
+                continue
+            try:
+                moment = (
+                    row.public_at.replace(tzinfo=UTC)
+                    if row.public_at.tzinfo is None
+                    else row.public_at
+                )
+                # Yerel tabloda izlenme sayısı tutulmuyor; bu satırlar
+                # yalnızca "hangi saatte yayınlandı" bilgisini besler.
+                # Puanı YouTube anlık görüntüsü verir; burada sadece
+                # adet sayılır (hiç veri yoksa yedek sıralama).
+                hourly_count[moment.astimezone(tz).hour] += 1
+            except Exception:
+                continue
 
-        # En yüksek etkileşim skorunu alan uygun saati bul
+        # Yerel kayıtlarda izlenme sayısı yok; YouTube anlık görüntüsü
+        # zaten aynı videoları kapsıyor. Aşağıdaki yedek: adet bazlı.
         best_hour = None
-        max_score = 0.0
-        for h, score in hourly_scores.items():
-            if score > max_score:
-                max_score = score
+        best_avg = 0.0
+        for h, total in hourly_score.items():
+            if hourly_count[h] <= 0:
+                continue
+            avg = total / hourly_count[h]
+            if avg > best_avg:
+                best_avg = avg
                 best_hour = h
 
-        if best_hour is None or max_score <= 0.0:
-            # Skor yoksa yayın sıklığına bak
-            max_count = 0
-            for h, count in hourly_counts.items():
-                if count > max_count:
-                    max_count = count
+        if best_hour is None:
+            # Hiç izlenme verisi yok: yayın sıklığına bak.
+            best_count = 0
+            for h, count in hourly_count.items():
+                if count > best_count:
+                    best_count = count
                     best_hour = h
 
-        # Hiç veri yoksa veya tüm adaylar 0 ise, YouTube için altın saat 19:00'dur
         if best_hour is None:
-            best_hour = 19
+            best_hour = 17 if orientation == "vertical" else 14
 
         return f"{best_hour:02d}:00"
 
@@ -984,6 +989,7 @@ class CalendarViewService:
         now = datetime.now(UTC)
         total_rebuilt = 0
         peak_hours: dict[int, str] = {}
+        peak_hours_h: dict[int, str] = {}
 
         async with self._sessionmaker() as session:
             stmt = (
@@ -1005,8 +1011,17 @@ class CalendarViewService:
 
             for profile, channel in rows:
                 c_id = channel.id
-                peak_hour = await self.detect_peak_view_hour(session, c_id)
-                peak_hours[c_id] = peak_hour
+                # Yön bazlı zirve: dikey ve yatay videolar farklı
+                # saatlerde farklı performans gösterebiliyor (2026-11-02).
+                peak_vertical = await self.detect_peak_view_hour(
+                    session, c_id, "vertical"
+                )
+                peak_horizontal = await self.detect_peak_view_hour(
+                    session, c_id, "horizontal"
+                )
+                peak_hour = peak_vertical
+                peak_hours[c_id] = peak_vertical
+                peak_hours_h[c_id] = peak_horizontal
 
                 tz_name = profile.timezone or DEFAULT_TIMEZONE
                 try:
@@ -1029,8 +1044,8 @@ class CalendarViewService:
                     settings_dict.get("publish_times")
                     or ["09:00", "14:00", "18:00"]
                 )
-                if peak_hour not in h_slots_raw:
-                    h_slots_raw.append(peak_hour)
+                if peak_horizontal not in h_slots_raw:
+                    h_slots_raw.append(peak_horizontal)
                     h_slots_raw.sort()
                 settings_dict["publish_times"] = h_slots_raw
                 profile.settings = settings_dict
@@ -1074,8 +1089,13 @@ class CalendarViewService:
                     orient_slots = (
                         v_slots_raw if orientation == "vertical" else h_slots_raw
                     )
-                    ordered_slots = [peak_hour] + [
-                        s for s in orient_slots if s != peak_hour
+                    orient_peak = (
+                        peak_vertical
+                        if orientation == "vertical"
+                        else peak_horizontal
+                    )
+                    ordered_slots = [orient_peak] + [
+                        s for s in orient_slots if s != orient_peak
                     ]
                     daily_slots = ordered_slots[:daily_limit]
                     daily_slots.sort()
@@ -1104,10 +1124,19 @@ class CalendarViewService:
 
             await session.commit()
 
-        sample_peak = next(iter(peak_hours.values())) if peak_hours else "19:00"
+        sample_peak = next(iter(peak_hours.values())) if peak_hours else "17:00"
+        sample_peak_h = (
+            next(iter(peak_hours_h.values())) if peak_hours_h else "14:00"
+        )
         return {
             "channel_id": channel_id,
             "peak_hour": sample_peak,
+            "peak_hour_vertical": sample_peak,
+            "peak_hour_horizontal": sample_peak_h,
             "rebuilt_count": total_rebuilt,
-            "message": f"Takvim güncel ayarlarla yeniden oluşturuldu. En çok izlenen saat ({sample_peak}) takvime yerleştirildi.",
+            "message": (
+                "Takvim güncel ayarlarla yeniden oluşturuldu. "
+                f"Dikey zirve ({sample_peak}), yatay zirve "
+                f"({sample_peak_h}) takvime yerleştirildi."
+            ),
         }

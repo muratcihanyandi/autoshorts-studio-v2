@@ -38,6 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.services.heavy_window import describe_window, window_open
 from app.services.job_service import JobService
 from app.services.settings_service import SettingsService
 
@@ -423,6 +424,7 @@ class JobWorker:
         self._last_state_write = 0.0
         self._jobs_processed = 0
         self._last_resource_warning = 0.0
+        self._last_window_warning = 0.0
         self._started_at: str | None = None
         # Efektif ayarlar her dongude tazelenebilir (site ayarlari
         # yeniden baslatma olmadan gecerli olur).
@@ -537,6 +539,31 @@ class JobWorker:
             return False
         return True
 
+    def _heavy_window_allowed(self) -> bool:
+        """Ağır iş penceresi açık mı? Pencere kapalıyken Pi 5 diğer
+        hizmetlere kalır; yalnız hafif işler (yayınlama, keşif) akar.
+        Uyarı dakikada bir kez loglanır (log şişmesin)."""
+        effective = self._effective
+        if not getattr(effective, "heavy_window_enabled", False):
+            return True
+        is_open = window_open(
+            enabled=True,
+            start=effective.heavy_window_start,
+            end=effective.heavy_window_end,
+        )
+        if not is_open:
+            now = time.monotonic()
+            if now - self._last_window_warning > 300:
+                self._last_window_warning = now
+                logger.info(
+                    "agir is penceresi kapali (%s); indirme/render bekliyor, "
+                    "hafif isler suruyor",
+                    describe_window(
+                        effective.heavy_window_start, effective.heavy_window_end
+                    ),
+                )
+        return is_open
+
     async def claim_batch(self) -> int:
         """Claim jobs up to the concurrency limit; heavy jobs are
         additionally capped by max_heavy_jobs and at most ONE video
@@ -552,6 +579,10 @@ class JobWorker:
             )
             exclude: set[str] = set()
             if running_heavy >= self._effective.max_heavy_jobs:
+                exclude |= set(HEAVY_JOB_TYPES)
+            # Gece penceresi disinda agir isler hic baslamaz (Pi 5 korumasi).
+            heavy_allowed = self._heavy_window_allowed()
+            if not heavy_allowed:
                 exclude |= set(HEAVY_JOB_TYPES)
             if any(
                 job_type in PROCESSING_JOB_TYPES
