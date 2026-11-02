@@ -46,6 +46,7 @@ type NumberKey =
   | 'clip_max_seconds'
   | 'download_rate_limit_kbps'
   | 'planned_poll_interval_minutes'
+  | 'daily_horizontal_download_limit'
 
 type TabKey = 'connection' | 'production' | 'shorts' | 'horizontal' | 'system'
 
@@ -124,6 +125,13 @@ const NUMBER_FIELDS: {
     key: 'download_rate_limit_kbps',
     label: 'İndirme Hız Limiti (KB/s)',
     help: 'yt-dlp --limit-rate olarak uygulanır. 0 = limitsiz.',
+    min: 0,
+    group: 'engine',
+  },
+  {
+    key: 'daily_horizontal_download_limit',
+    label: 'Günlük Yatay İndirme Kotası',
+    help: 'Günde en fazla kaç yatay kaynak indirilir (stok boş olsa bile). 0 = sınırsız.',
     min: 0,
     group: 'engine',
   },
@@ -235,6 +243,9 @@ interface FormState {
   whisperModel: string
   whisperLanguage: string
   subtitleBurn: boolean
+  heavyWindowEnabled: boolean
+  heavyWindowStart: string
+  heavyWindowEnd: string
   subtitleFontSize: string
   subtitleStyleKey: string
   subtitlePosX: string
@@ -266,6 +277,9 @@ function initForm(view: SettingsView): FormState {
     whisperModel: view.whisper_model.value,
     whisperLanguage: view.whisper_language.value,
     subtitleBurn: view.burn_subtitles.value,
+    heavyWindowEnabled: view.heavy_window_enabled.value,
+    heavyWindowStart: view.heavy_window_start.value || '01:00',
+    heavyWindowEnd: view.heavy_window_end.value || '07:00',
     subtitleFontSize: String(view.subtitle_font_size.value),
     subtitleStyleKey: view.subtitle_style_preset.value || 'klasik',
     subtitlePosX: String(view.subtitle_pos_x_percent.value ?? DEFAULT_POS_X),
@@ -360,6 +374,15 @@ export function SettingsScreen() {
     }
     if (form.subtitleBurn !== view.burn_subtitles.value) {
       patch.burn_subtitles = form.subtitleBurn
+    }
+    if (form.heavyWindowEnabled !== view.heavy_window_enabled.value) {
+      patch.heavy_window_enabled = form.heavyWindowEnabled
+    }
+    if (form.heavyWindowStart.trim() !== view.heavy_window_start.value) {
+      patch.heavy_window_start = form.heavyWindowStart.trim()
+    }
+    if (form.heavyWindowEnd.trim() !== view.heavy_window_end.value) {
+      patch.heavy_window_end = form.heavyWindowEnd.trim()
     }
     const subtitleSize = Number(form.subtitleFontSize)
     if (
@@ -593,6 +616,79 @@ export function SettingsScreen() {
                   döngüde yeniden okur, yeniden başlatma gerekmez. Pi'nin
                   8 GB RAM sınırı için varsayılanlar muhafazakârdır.
                 </p>
+                <h3 className="settings-group-title">Gece Çalışma Penceresi</h3>
+                <p className="settings-note">
+                  Ağır işler (indirme, analiz, transkript, render) yalnızca bu
+                  saat aralığında koşar. Dışında Pi diğer hizmetlere kalır;
+                  yayınlama ve keşif çalışmaya devam eder.
+                </p>
+                <div className="settings-grid">
+                  <div className="field">
+                    <label htmlFor="set-heavy-window">
+                      Pencereyi Kullan
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.heavy_window_enabled.source]}
+                      </span>
+                    </label>
+                    <label className="check-row">
+                      <input
+                        id="set-heavy-window"
+                        type="checkbox"
+                        checked={form.heavyWindowEnabled}
+                        onChange={(e) =>
+                          setForm((f) =>
+                            f
+                              ? { ...f, heavyWindowEnabled: e.target.checked }
+                              : f,
+                          )
+                        }
+                      />
+                      <span>Ağır işleri saat aralığına hapset</span>
+                    </label>
+                    <span className="field-help">
+                      Varsayılan 01:00-07:00. Başlangıç bitişten büyükse gece
+                      yarısını aşan aralık sayılır (örn. 23:00-06:00).
+                    </span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="set-heavy-start">
+                      Başlangıç
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.heavy_window_start.source]}
+                      </span>
+                    </label>
+                    <input
+                      id="set-heavy-start"
+                      className="nums"
+                      type="time"
+                      value={form.heavyWindowStart}
+                      onChange={(e) =>
+                        setForm((f) =>
+                          f ? { ...f, heavyWindowStart: e.target.value } : f,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="set-heavy-end">
+                      Bitiş
+                      <span className="source-badge">
+                        {SOURCE_LABEL[view.heavy_window_end.source]}
+                      </span>
+                    </label>
+                    <input
+                      id="set-heavy-end"
+                      className="nums"
+                      type="time"
+                      value={form.heavyWindowEnd}
+                      onChange={(e) =>
+                        setForm((f) =>
+                          f ? { ...f, heavyWindowEnd: e.target.value } : f,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
                 <h3 className="settings-group-title">Motor ve İş Limitleri</h3>
                 <div className="settings-grid">
                   {NUMBER_FIELDS.filter((f) => f.group === 'engine').map(({ key, label, help, min }) => (

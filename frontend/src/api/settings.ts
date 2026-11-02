@@ -56,6 +56,10 @@ export interface SettingsView {
   subtitle_pos_x_percent: IntSetting
   subtitle_pos_y_percent: IntSetting
   shorts_webcam_percent: IntSetting
+  heavy_window_enabled: BoolSetting
+  heavy_window_start: PlainSetting
+  heavy_window_end: PlainSetting
+  daily_horizontal_download_limit: IntSetting
   media_root: PlainSetting
 }
 
@@ -93,6 +97,10 @@ export type SettingsPatch = Partial<{
   subtitle_pos_x_percent: number
   subtitle_pos_y_percent: number
   shorts_webcam_percent: number
+  heavy_window_enabled: boolean
+  heavy_window_start: string
+  heavy_window_end: string
+  daily_horizontal_download_limit: number
 }>
 
 export function fetchSettings(): Promise<SettingsView> {
