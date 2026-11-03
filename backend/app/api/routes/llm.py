@@ -17,6 +17,7 @@ from app.schemas_llm import (
     LlmRequestLogsOut,
     LlmTestResult,
 )
+from app.services.auth_service import require_admin
 from app.services.llm_service import LlmProviderService, LlmServiceError
 
 router = APIRouter(tags=["llm"])
@@ -35,6 +36,7 @@ async def _service(request: Request) -> LlmProviderService:
 
 @router.get("/llm/providers", response_model=LlmProvidersOut)
 async def list_providers(request: Request) -> LlmProvidersOut:
+    require_admin(request)
     service = await _service(request)
     providers = await service.list_providers()
     return LlmProvidersOut(
@@ -52,6 +54,7 @@ async def list_providers(request: Request) -> LlmProvidersOut:
 async def create_provider(
     request: Request, data: LlmProviderCreate
 ) -> LlmProviderOut:
+    require_admin(request)
     service = await _service(request)
     try:
         return await service.create_provider(data)
@@ -63,6 +66,7 @@ async def create_provider(
 async def update_provider(
     request: Request, provider_id: int, data: LlmProviderUpdate
 ) -> LlmProviderOut:
+    require_admin(request)
     service = await _service(request)
     try:
         return await service.update_provider(provider_id, data)
@@ -74,6 +78,7 @@ async def update_provider(
     "/llm/providers/{provider_id}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def delete_provider(request: Request, provider_id: int) -> None:
+    require_admin(request)
     service = await _service(request)
     try:
         await service.delete_provider(provider_id)
@@ -90,6 +95,7 @@ async def duplicate_provider(
     request: Request, provider_id: int
 ) -> LlmProviderOut:
     """Same provider / another model: clone the row with its stored key."""
+    require_admin(request)
     service = await _service(request)
     try:
         return await service.duplicate_provider(provider_id)
@@ -99,6 +105,7 @@ async def duplicate_provider(
 
 @router.post("/llm/providers/{provider_id}/test", response_model=LlmTestResult)
 async def test_provider(request: Request, provider_id: int) -> LlmTestResult:
+    require_admin(request)
     service = await _service(request)
     try:
         result = await service.test_provider(provider_id)
@@ -109,6 +116,7 @@ async def test_provider(request: Request, provider_id: int) -> LlmTestResult:
 
 @router.get("/llm/logs", response_model=LlmRequestLogsOut)
 async def list_llm_logs(request: Request, limit: int = 50) -> LlmRequestLogsOut:
+    require_admin(request)
     service = await _service(request)
     logs = await service.recent_logs(limit=limit)
     return LlmRequestLogsOut(

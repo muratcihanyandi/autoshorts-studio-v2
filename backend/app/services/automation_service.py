@@ -368,36 +368,18 @@ class AutomationService:
         return await self._publishing.today_published_counts(channel_id)
 
     async def stock_level(self, channel_id: int) -> int:
-        """Ready unpublished clips: rendered, rights-authorized, not
-        published. Empty stock must never trigger unsafe publication."""
-        return (
-            await self._count(
-                sa.select(sa.func.count())
-                .select_from(ClipCandidate)
-                .join(
-                    SourceVideo,
-                    ClipCandidate.source_video_id == SourceVideo.id,
-                )
-                .join(
-                    SourceChannel,
-                    SourceVideo.source_channel_id == SourceChannel.id,
-                )
-                .join(
-                    RenderedClip,
-                    RenderedClip.clip_candidate_id == ClipCandidate.id,
-                )
-                .outerjoin(
-                    PublishedVideo,
-                    PublishedVideo.clip_candidate_id == ClipCandidate.id,
-                )
-                .where(
-                    SourceChannel.channel_id == channel_id,
-                    SourceChannel.permission_status == "authorized",
-                    RenderedClip.status == "rendered",
-                    PublishedVideo.id.is_(None),
-                )
-            )
-        )
+        """Yayına hazır stok: render edilmiş, yüklenmemiş dikey shortlar
+        + yatay tam kesitler.
+
+        Sayım StatusService'e devredilir: yatay tam kesitlerin aday
+        kimliği yoktur (clip_candidate_id NULL) ve burada ayrı bir
+        sorgu tutmak iki farklı "stok" sayısı üretiyordu (Özet 1,
+        Genel Bakış 2 — 2026-11-03)."""
+        from app.services.status_service import StatusService
+
+        return await StatusService(
+            self._sessionmaker, self._settings
+        ).ready_clip_stock(channel_id)
 
     async def daily_published_count(self, channel_id: int) -> int:
         """Publications since local midnight (profile timezone)."""
@@ -645,15 +627,20 @@ async def refill_channel_stock(
     settings: Settings,
     channel_id: int,
 ) -> dict[str, Any]:
-    """Ready-clip-stock-aware horizontal refill for one channel (Görev 2).
+    """Yön farkındalıklı stok beslemesi (2026-11-03).
 
-    The production gate counts READY UNPUBLISHED CLIPS (rendered vertical
-    shorts + horizontal full cuts with no PublishedVideo row). While that
-    stock is at or above the channel target no new source is downloaded;
-    as clips get shared the stock depletes and production resumes. The
-    global single-source rule still keeps at most one horizontal source
-    in the pipeline at any time. Sources bound to unfollowed characters
-    are skipped when the channel has a follow list.
+    Üretim kapısı yayına hazır (render edilmiş, yüklenmemiş) kliplere
+    bakar. Toplam stok hedefi korunur; ek olarak her yönün günlük
+    yayın planını karşılayacak kadar stoğu olmalıdır:
+
+    - dikey taban = max(1, günlük dikey limit)
+    - yatay taban = max(1, günlük yatay limit)
+
+    Böylece dikey klipler birikip yatay stok sıfırlandığında indirme
+    durmaz; yatay dilimler boş kalmaz. Aynı anda tek kaynak kuralı ve
+    günlük yatay indirme kotası aynen geçerlidir. Kota yalnız gerçekten
+    indirilmiş işleri sayar: başarısız/iptal edilmiş veya elle
+    sürdürülmüş işler kotadan düşmez.
     """
     from app.services.job_service import JobService
     from app.services.status_service import StatusService
@@ -663,23 +650,33 @@ async def refill_channel_stock(
     service = AutomationService(sessionmaker, settings)
 
     profile = await service.profile(channel_id)
+    vertical_stock, horizontal_stock = (
+        await status.ready_clip_stock_by_orientation(channel_id)
+    )
+    stock = vertical_stock + horizontal_stock
+    target = profile.horizontal_stock_target
+    # Her indirme hem bir yatay tam kesit hem dikey shortlar uretir;
+    # bu yuzden toplam hazir stok hedefi tek dogru kapidir. Yon kirilimi
+    # yanitla birlikte doner (teshis icin), karara katilmaz.
     if profile.automation_state not in WORK_STATES:
         return {
             "channel_id": channel_id,
             "enqueued": False,
             "reason": "otomasyon calismiyor",
-            "stock": await status.ready_clip_stock(channel_id),
-            "target": profile.horizontal_stock_target,
+            "stock": stock,
+            "vertical_stock": vertical_stock,
+            "horizontal_stock": horizontal_stock,
+            "target": target,
         }
 
-    stock = await status.ready_clip_stock(channel_id)
-    target = profile.horizontal_stock_target
     if stock >= target:
         return {
             "channel_id": channel_id,
             "enqueued": False,
             "reason": "stok hedefte",
             "stock": stock,
+            "vertical_stock": vertical_stock,
+            "horizontal_stock": horizontal_stock,
             "target": target,
         }
 
@@ -705,22 +702,23 @@ async def refill_channel_stock(
             "enqueued": False,
             "reason": "baska bir yatay kaynak isleniyor",
             "stock": stock,
+            "vertical_stock": vertical_stock,
+            "horizontal_stock": horizontal_stock,
             "target": target,
         }
 
     # Gunluk yatay indirme kotasi (2026-11-02, Murat istegi): stok bos
     # olsa bile gunde en fazla N yatay kaynak indirilir. Kota dolunca
     # gun sonuna kadar yeni indirme baslamaz; yayinlama etkilenmez.
-    # Basarisiz isler kotayi YAKMAZ: indirme hic gerceklesmediyse
-    # Pi'yi yormadi, siradaki video denenebilir.
+    # Basarisiz/iptal isler ve elle sürdürülen isler kotayi YAKMAZ:
+    # indirme hic gerceklesmediyse siradaki video denenebilir.
     daily_limit = int(
         getattr(settings, "daily_horizontal_download_limit", 0) or 0
     )
     if daily_limit > 0:
         from datetime import UTC, datetime, timedelta
 
-        # Yerel gun baslangici (Europe/Istanbul = UTC+3 sabit degil;
-        # profil saat dilimi kullanilir).
+        # Yerel gun baslangici (profil saat dilimi kullanilir).
         try:
             from zoneinfo import ZoneInfo
 
@@ -735,28 +733,34 @@ async def refill_channel_stock(
             .astimezone(UTC)
         )
         async with sessionmaker() as session:
-            started_today = int(
-                (
-                    await session.execute(
-                        sa.select(sa.func.count())
-                        .select_from(Job)
-                        .where(
-                            Job.job_type == "media_process",
-                            Job.created_at >= day_start_utc,
-                            Job.created_at < day_start_utc + timedelta(days=1),
-                            # Basarisiz isler sayilmaz (bkz. yukarida).
-                            Job.status != "failed",
-                        )
+            rows = (
+                await session.execute(
+                    sa.select(Job.status, Job.payload).where(
+                        Job.job_type == "media_process",
+                        Job.created_at >= day_start_utc,
+                        Job.created_at < day_start_utc + timedelta(days=1),
                     )
-                ).scalar()
-                or 0
-            )
+                )
+            ).all()
+        started_today = 0
+        for job_status, payload in rows:
+            # Basarisiz/iptal edilen deneme indirme yapmadi: kotadan
+            # dusmez (kullanici kurali).
+            if job_status in ("failed", "cancelled", "cancelling"):
+                continue
+            # Elle "kaldigi yerden surdur" isleri otomatik indirme
+            # kotasindan sayilmaz; indirme zaten daha once denenmis.
+            if (payload or {}).get("manual"):
+                continue
+            started_today += 1
         if started_today >= daily_limit:
             return {
                 "channel_id": channel_id,
                 "enqueued": False,
                 "reason": "gunluk yatay indirme kotasi doldu",
                 "stock": stock,
+                "vertical_stock": vertical_stock,
+                "horizontal_stock": horizontal_stock,
                 "target": target,
                 "daily_limit": daily_limit,
                 "started_today": started_today,
@@ -806,6 +810,8 @@ async def refill_channel_stock(
             "enqueued": False,
             "reason": "islenecek uygun kaynak yok",
             "stock": stock,
+            "vertical_stock": vertical_stock,
+            "horizontal_stock": horizontal_stock,
             "target": target,
         }
 
@@ -818,6 +824,8 @@ async def refill_channel_stock(
         "enqueued": enqueued,
         "source_video_id": next_video_id,
         "stock": stock,
+        "vertical_stock": vertical_stock,
+        "horizontal_stock": horizontal_stock,
         "target": target,
     }
 

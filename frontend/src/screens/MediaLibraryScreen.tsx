@@ -610,8 +610,12 @@ export function MediaLibraryScreen() {
     { key: 'islenen', label: 'İşlenen', count: data?.sources_total ?? null },
     {
       key: 'hazir',
+      // Sekme sayısı listenin kendi uzunluğudur; üstteki kartlar yalnız
+      // yayına HAZIR (yüklenmemiş) videoları sayar. İki sayının farklı
+      // olması doğaldır: yayınlanmış klipler listede kalır, "hazır"
+      // sayılmaz (2026-11-03 kullanıcı bildirimi).
       label: 'Hazır videolar',
-      count: verticalCount + horizontalCount,
+      count: data?.clips_total ?? null,
     },
     { key: 'haric', label: 'Hariç tutulanlar', count: excludedTotal },
   ]

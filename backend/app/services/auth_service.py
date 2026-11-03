@@ -327,6 +327,181 @@ async def ensure_channel_access(request: Request, channel_id: int) -> None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
 
 
+async def owned_channel_ids(request: Request) -> set[int] | None:
+    """Oturum sahibinin erişebildiği kanal kimlikleri.
+
+    None = kapsam yok (auth kapalı ya da admin): tüm kanallar görünür.
+    Operatörde yalnız kendi kanalları; başka kullanıcıların verisi
+    liste uçlarında görünmez (çok kullanıcılı sızıntıyı kapatır).
+    """
+    user = getattr(request.state, "auth_user", None)
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if user is None or sessionmaker is None or user.is_admin:
+        return None
+    from app.models import Channel
+
+    async with sessionmaker() as session:
+        rows = (
+            await session.execute(
+                select(Channel.id).where(Channel.owner_user_id == user.id)
+            )
+        ).scalars()
+        return {int(value) for value in rows}
+
+
+async def ensure_source_video_access(
+    request: Request, source_video_id: int
+) -> None:
+    """Kaynak video sahiplik kapısı (medya/resume/sil uçları)."""
+    allowed = await owned_channel_ids(request)
+    if allowed is None:
+        return
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.models import SourceChannel, SourceVideo
+
+    async with sessionmaker() as session:
+        channel_id = (
+            await session.execute(
+                select(SourceChannel.channel_id)
+                .join(SourceVideo, SourceVideo.source_channel_id == SourceChannel.id)
+                .where(SourceVideo.id == source_video_id)
+            )
+        ).scalar_one_or_none()
+    if channel_id is None or int(channel_id) not in allowed:
+        raise HTTPException(status_code=404, detail="Video bulunamadı.")
+
+
+async def ensure_source_access(request: Request, source_id: int) -> None:
+    """Kaynak kanal sahiplik kapısı (kaynak ayarı/kalibrasyon uçları)."""
+    allowed = await owned_channel_ids(request)
+    if allowed is None:
+        return
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.models import SourceChannel
+
+    async with sessionmaker() as session:
+        channel_id = (
+            await session.execute(
+                select(SourceChannel.channel_id).where(SourceChannel.id == source_id)
+            )
+        ).scalar_one_or_none()
+    if channel_id is None or int(channel_id) not in allowed:
+        raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
+
+
+async def ensure_clip_candidate_access(
+    request: Request, clip_candidate_id: int
+) -> None:
+    """Klip adayı sahiplik kapısı (onay/yayın uçları)."""
+    allowed = await owned_channel_ids(request)
+    if allowed is None:
+        return
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.models import ClipCandidate, SourceChannel, SourceVideo
+
+    async with sessionmaker() as session:
+        channel_id = (
+            await session.execute(
+                select(SourceChannel.channel_id)
+                .join(SourceVideo, SourceVideo.source_channel_id == SourceChannel.id)
+                .join(
+                    ClipCandidate,
+                    ClipCandidate.source_video_id == SourceVideo.id,
+                )
+                .where(ClipCandidate.id == clip_candidate_id)
+            )
+        ).scalar_one_or_none()
+    if channel_id is None or int(channel_id) not in allowed:
+        raise HTTPException(status_code=404, detail="Klip bulunamadı.")
+
+
+async def ensure_published_video_access(
+    request: Request, published_video_id: int
+) -> None:
+    """Yayın kaydı sahiplik kapısı (takvim yeniden planlama)."""
+    allowed = await owned_channel_ids(request)
+    if allowed is None:
+        return
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.models import PublishedVideo
+
+    async with sessionmaker() as session:
+        channel_id = (
+            await session.execute(
+                select(PublishedVideo.channel_id).where(
+                    PublishedVideo.id == published_video_id
+                )
+            )
+        ).scalar_one_or_none()
+    if channel_id is None or int(channel_id) not in allowed:
+        raise HTTPException(status_code=404, detail="Yayın kaydı bulunamadı.")
+
+
+def current_user(request: Request) -> SessionUser | None:
+    return getattr(request.state, "auth_user", None)
+
+
+def require_admin(request: Request) -> None:
+    """Yönetici kapısı: auth açıkken (kullanıcı yok) serbest; oturum
+    varsa yalnız admin geçer. Site ayarları, LLM anahtarları, günlükler
+    ve sistem uçları bu kapıyı kullanır — operatör hesapları küresel
+    yapılandırmayı değiştiremez (2026-11-03 güvenlik turu)."""
+    user = current_user(request)
+    if user is None:
+        return
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Bu işlem için yönetici yetkisi gerekir.",
+        )
+
+
+async def ensure_render_access(request: Request, render_id: int) -> None:
+    """Üretilmiş klip sahiplik kapısı (detay/oynatma/kapak/sil)."""
+    allowed = await owned_channel_ids(request)
+    if allowed is None:
+        return
+    sessionmaker = getattr(request.app.state, "sessionmaker", None)
+    if sessionmaker is None:
+        return
+    from app.models import (
+        ClipCandidate,
+        RenderedClip,
+        SourceChannel,
+        SourceVideo,
+    )
+
+    async with sessionmaker() as session:
+        render = await session.get(RenderedClip, render_id)
+        if render is None:
+            raise HTTPException(status_code=404, detail="Klip bulunamadı.")
+        source_video_id = render.source_video_id
+        if render.clip_candidate_id is not None:
+            candidate = await session.get(ClipCandidate, render.clip_candidate_id)
+            if candidate is not None:
+                source_video_id = candidate.source_video_id
+        video = (
+            await session.get(SourceVideo, source_video_id)
+            if source_video_id is not None
+            else None
+        )
+        source = (
+            await session.get(SourceChannel, video.source_channel_id)
+            if video is not None
+            else None
+        )
+    if source is None or int(source.channel_id) not in allowed:
+        raise HTTPException(status_code=404, detail="Klip bulunamadı.")
+
+
 class AuthService:
     """Read/write the single ``studio_auth`` row in ``app_meta``."""
 

@@ -98,7 +98,15 @@ async def upload_photo(
     """Validate the upload (jpg/png/webp, <=8MB) and refresh the stored
     photo plus the cropped reference face."""
     service = _service(request)
-    data = await file.read()
+    # Boyut sinirini okumadan ONCE uygula: 8 MB ustu bir istek belleğe
+    # alinmaz (2026-11-03 denetimi: sinirsiz dosya RAM'e okunuyordu).
+    from app.services.character_service import MAX_PHOTO_BYTES
+
+    data = await file.read(MAX_PHOTO_BYTES + 1)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=400, detail="Fotoğraf en fazla 8 MB olabilir."
+        )
     try:
         character = await service.set_photo(character_id, data)
     except CharacterServiceError as exc:

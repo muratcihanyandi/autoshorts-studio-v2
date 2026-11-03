@@ -71,6 +71,40 @@ WORKER_STATE_KEY = "worker_state"
 FULLCUT_QUEUE_AHEAD = 2
 
 
+def _cgroup_cpu_usage_usec() -> int | None:
+    """Container'in toplam CPU kullanim suresi (cgroup v2).
+
+    Host CPU yuzdesi diger CasaOS servislerini de sayar; bu yuzden
+    Pi mesgulken motor hic is almiyordu (2026-11-03 canli olay: CPU
+    %90-97, 40+ dakika yeni is yok). Cgroup olcumu yalniz bu
+    container'in gercek tuketimini verir."""
+    try:
+        with open("/sys/fs/cgroup/cpu.stat", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("usage_usec"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _cgroup_memory_percent() -> float | None:
+    """Container bellek limitine gore doluluk yuzdesi (cgroup v2)."""
+    try:
+        with open("/sys/fs/cgroup/memory.current", encoding="ascii") as handle:
+            current = int(handle.read().strip())
+        with open("/sys/fs/cgroup/memory.max", encoding="ascii") as handle:
+            raw = handle.read().strip()
+        if raw == "max":
+            return None
+        limit = int(raw)
+        if limit <= 0:
+            return None
+        return current / limit * 100.0
+    except (OSError, ValueError):
+        return None
+
+
 async def resolve_job_channel(
     sessionmaker: async_sessionmaker[AsyncSession],
     job_type: str,
@@ -424,6 +458,7 @@ class JobWorker:
         self._last_state_write = 0.0
         self._jobs_processed = 0
         self._last_resource_warning = 0.0
+        self._last_cpu_sample: tuple[float, int] | None = None
         self._last_window_warning = 0.0
         self._started_at: str | None = None
         # Efektif ayarlar her dongude tazelenebilir (site ayarlari
@@ -452,6 +487,10 @@ class JobWorker:
             await handler(job.payload or {})
             await self._jobs.succeed(job_id)
             self._jobs_processed += 1
+            # Yükleme tamamlandı: videoyu saatiyle takvime yaz (plan
+            # yalnız takvim ekranı açılınca oluşmasın).
+            if job.job_type in ("publish_clip", "publish_full_cut"):
+                await self._schedule_after_upload(job.payload or {})
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - iş hatası kayda geçer
@@ -478,6 +517,37 @@ class JobWorker:
                 )
         finally:
             beat.cancel()
+
+    async def _schedule_after_upload(self, payload: dict[str, Any]) -> None:
+        """Gizli yükleme sonrası takvim yerleştirmesi (best-effort).
+
+        Bir video YouTube'a gizli yüklendiği anda yayın saati atanır;
+        böylece "paylaşılacak video hazır ama takvimde yok" durumu
+        oluşmaz. Takvim görünümü de aynı yerleştirmeyi idempotent
+        olarak tekrar çalıştırır."""
+        channel_id = await resolve_job_channel(
+            self._sessionmaker, "publish_clip", payload
+        )
+        if channel_id is None:
+            return
+        try:
+            from app.services.calendar_view import CalendarViewService
+
+            placed = await CalendarViewService(
+                self._sessionmaker, self._effective
+            ).schedule_pending_verified(channel_id)
+            if placed:
+                logger.info(
+                    "yuklenen videolar takvime yerlestirildi (kanal %s, %s kayit)",
+                    channel_id,
+                    placed,
+                )
+        except Exception:  # noqa: BLE001 - planlama yukleme sonucunu bozmaz
+            logger.warning(
+                "yukleme sonrasi takvim yerlesimi basarisiz (kanal %s)",
+                channel_id,
+                exc_info=True,
+            )
 
     async def _heartbeat_loop(self, job_id: int) -> None:
         try:
@@ -512,28 +582,50 @@ class JobWorker:
 
     def _resource_ok(self) -> bool:
         """CPU/RAM hedefleri asildiysa yeni is almaya bekle (is kilidi
-        yok; asiri yuk gectiginde kendiliginden toparlanir)."""
+        yok; asiri yuk gectiginde kendiliginden toparlanir).
+
+        Container icinde olcum konteynerin KENDI tuketimidir: host CPU
+        yuzdesi diger CasaOS servislerini de kapsadigi icin motor
+        mesgul sunucuda hic is alamiyordu (2026-11-03 canli olay).
+        cgroup v2 yoksa (gelistirme makinesi) psutil'e dusulur."""
         cpu_target = self._effective.cpu_target_percent
         ram_target = self._effective.ram_target_percent
         if cpu_target <= 0 and ram_target <= 0:
             return True
-        try:
-            import psutil
+        cpu: float | None = None
+        ram: float | None = None
+        usage = _cgroup_cpu_usage_usec()
+        if usage is not None:
+            now = time.monotonic()
+            previous = getattr(self, "_last_cpu_sample", None)
+            self._last_cpu_sample = (now, usage)
+            if previous is not None:
+                elapsed = now - previous[0]
+                if elapsed > 0.2:
+                    # usage_usec -> CPU cekirdek-saniye; yuzde = oran.
+                    cpu = (usage - previous[1]) / (elapsed * 1_000_000) * 100.0
+            ram = _cgroup_memory_percent()
+        else:
+            try:
+                import psutil
 
-            cpu = psutil.cpu_percent(interval=None)
-            ram = psutil.virtual_memory().percent
-        except Exception:  # noqa: BLE001 - olcum yoksa kisit uygulanmaz
-            return True
-        if cpu > cpu_target > 0 or ram > ram_target > 0:
+                cpu = psutil.cpu_percent(interval=None)
+                ram = psutil.virtual_memory().percent
+            except Exception:  # noqa: BLE001 - olcum yoksa kisit uygulanmaz
+                return True
+        # Ilk ornekte CPU henuz hesaplanmamis olabilir; RAM yine denetlenir.
+        cpu_over = cpu is not None and cpu_target > 0 and cpu > cpu_target
+        ram_over = ram is not None and ram_target > 0 and ram > ram_target
+        if cpu_over or ram_over:
             now = time.monotonic()
             if now - self._last_resource_warning > 60:
                 self._last_resource_warning = now
                 logger.warning(
                     "kaynak limiti asildi (CPU %s%%/%s, RAM %s%%/%s); "
                     "yeni isler bekliyor",
-                    round(cpu, 1),
+                    round(cpu, 1) if cpu is not None else "?",
                     cpu_target,
-                    round(ram, 1),
+                    round(ram, 1) if ram is not None else "?",
                     ram_target,
                 )
             return False

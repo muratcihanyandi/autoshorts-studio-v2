@@ -196,16 +196,41 @@ class PublishingService:
 
     async def today_published_counts(self, channel_id: int) -> dict:
         """Bugun herkese acik yapilan videolarin yon bazli sayilari.
-        published_at yalniz public aninda yazilir, sayim ona baglidir."""
-        start_of_day = datetime.now(UTC).replace(
+
+        Gun siniri kanal profilinin saat dilimine gore yerel gece
+        yarisidir. Eskiden UTC gece yarisi kullaniliyordu; takvim yerel
+        gunu gosterirken yayin limiti UTC gununu sayiyor, 03:00 (00:00
+        UTC) civarinda lig gunde iki farkli "bugun" olusuyordu."""
+        async with self._sessionmaker() as session:
+            profile = (
+                (
+                    await session.execute(
+                        sa.select(PublishingProfile).where(
+                            PublishingProfile.channel_id == channel_id
+                        )
+                    )
+                )
+                .scalars()
+                .one_or_none()
+            )
+        tz_name = (profile.timezone if profile else None) or "UTC"
+        try:
+            from zoneinfo import ZoneInfo
+
+            tz = ZoneInfo(tz_name)
+        except Exception:  # noqa: BLE001 - bozuk saat dilimi: UTC
+            tz = UTC
+        local_now = datetime.now(tz)
+        start_of_day = local_now.replace(
             hour=0, minute=0, second=0, microsecond=0
-        )
+        ).astimezone(UTC)
         async with self._sessionmaker() as session:
             rows = (
                 (
                     await session.execute(
                         sa.select(PublishedVideo.orientation).where(
                             PublishedVideo.channel_id == channel_id,
+                            PublishedVideo.published_at.is_not(None),
                             PublishedVideo.published_at >= start_of_day,
                         )
                     )

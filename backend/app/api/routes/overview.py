@@ -27,6 +27,20 @@ router = APIRouter(tags=["overview"])
 WORKER_LIVENESS_GRACE_SECONDS = 60.0
 
 
+def _iso_or_none(value) -> str | None:
+    """datetime ya da sürücüden gelen ISO metnini ISO dizgesine çevir."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    text_value = str(value)
+    try:
+        parsed = datetime.fromisoformat(text_value)
+    except ValueError:
+        return text_value
+    return parsed.isoformat()
+
+
 async def _database_state(request: Request) -> str:
     engine = getattr(request.app.state, "engine", None)
     if engine is None:
@@ -361,9 +375,10 @@ async def _today_job_counts(request: Request, database: str) -> dict:
 async def _next_publish(
     request: Request, database: str, channel_id: int | None = None
 ) -> dict | None:
-    """Sıradaki yayın: takvimden elle planlanmış en yakın saat. Elle
-    plan yoksa gizli yüklenmiş klip sayısıyla 'otomatik slot bekleniyor'
-    anlatılır — uydurma saat gösterilmez."""
+    """Sıradaki yayın: gizli yüklenmiş en yakın planlı saat.
+
+    Ham SQL kullanıldığı için sürücü tarih sütununu metin döndürebilir
+    (SQLite); dönüşüm _iso_or_none ile normalize edilir."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if database != "reachable" or sessionmaker is None:
         return None
@@ -430,10 +445,8 @@ async def _next_publish(
                     )
                 ).scalar()
         return {
-            "scheduled_at": (
-                scheduled.scheduled_at.isoformat()
-                if scheduled is not None and scheduled.scheduled_at
-                else None
+            "scheduled_at": _iso_or_none(
+                scheduled.scheduled_at if scheduled is not None else None
             ),
             "title": scheduled.title if scheduled is not None else None,
             "orientation": (
@@ -445,4 +458,12 @@ async def _next_publish(
             "waiting_count": int(waiting or 0),
         }
     except Exception:  # noqa: BLE001 - migration'dan geride şema
+        # Sessiz yutma boş bir "planlanmış yayın yok" görüntüsü üretiyordu
+        # (2026-11-03 yerel testte yakalandı: SQLite ham SQL'den datetime
+        # metni döndürür, .isoformat() patlar). Tanılama için logla.
+        import logging
+
+        logging.getLogger("app.api.overview").warning(
+            "next_publish hesaplanamadi", exc_info=True
+        )
         return None

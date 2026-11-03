@@ -7,7 +7,9 @@ startup so polled values are meaningful immediately.
 from __future__ import annotations
 
 import psutil
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+
+from app.services.auth_service import require_admin
 
 router = APIRouter(tags=["system"])
 
@@ -26,7 +28,8 @@ def _first_temperature() -> float | None:
 
 
 @router.get("/system")
-async def system_resources() -> dict:
+async def system_resources(request: Request) -> dict:
+    require_admin(request)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     return {

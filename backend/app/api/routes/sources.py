@@ -23,6 +23,11 @@ from app.services.channel_service import ChannelService
 from app.services.discovery_service import DiscoveryService
 from app.services.job_service import JobService
 from app.services.planning_service import PlanningService
+from app.services.auth_service import (
+    ensure_channel_access,
+    ensure_source_access,
+    ensure_source_video_access,
+)
 from app.services.source_service import SourceService, SourceServiceError
 from app.services.webcam_calibration import (
     CalibrationError,
@@ -54,6 +59,7 @@ def _with_character_name(source, names: dict[int, str]) -> SourceOut:
 @router.get("/channels/{channel_id}/sources", response_model=SourcesOut)
 async def list_sources(request: Request, channel_id: int) -> SourcesOut:
     sources_service, channels_service = _services(request)
+    await ensure_channel_access(request, channel_id)
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     sources = await sources_service.list_sources(channel_id)
@@ -79,6 +85,7 @@ async def add_source(
     request: Request, channel_id: int, data: SourceCreate
 ) -> SourceOut:
     sources_service, channels_service = _services(request)
+    await ensure_channel_access(request, channel_id)
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     try:
@@ -95,6 +102,7 @@ async def add_source(
 async def update_source(
     request: Request, source_id: int, data: SourceUpdate
 ) -> SourceOut:
+    await ensure_source_access(request, source_id)
     sources_service, _ = _services(request)
     try:
         source = await sources_service.update_source(source_id, data)
@@ -110,6 +118,7 @@ async def update_source(
 
 @router.delete("/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_source(request: Request, source_id: int) -> None:
+    await ensure_source_access(request, source_id)
     sources_service, _ = _services(request)
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is not None:
@@ -136,6 +145,7 @@ async def add_manual_video(
 ) -> SourceVideoOut:
     """Manuel VOD içe aktarımı (twitch/kick): kayıt 'planned' olarak
     doğar ve media_process işini kuyruklar (URL içe aktarım yolu)."""
+    await ensure_source_access(request, source_id)
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         raise HTTPException(
@@ -169,6 +179,7 @@ async def set_video_status(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Veritabanı yapılandırılmadı; video yönetimi kapalı.",
         )
+    await ensure_source_video_access(request, video_id)
     sources_service = SourceService(sessionmaker)
     try:
         video = await sources_service.set_video_status(video_id, data.status)
@@ -196,6 +207,7 @@ async def set_videos_status_bulk(
     results = []
     for video_id in dict.fromkeys(data.ids):
         try:
+            await ensure_source_video_access(request, video_id)
             video = await sources_service.set_video_status(
                 video_id, data.status
             )
@@ -215,6 +227,7 @@ async def set_videos_status_bulk(
 @router.post("/channels/{channel_id}/discover", response_model=DiscoverResult)
 async def discover_channel(request: Request, channel_id: int) -> DiscoverResult:
     _, channels_service = _services(request)
+    await ensure_channel_access(request, channel_id)
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     discovery = DiscoveryService(
@@ -232,6 +245,7 @@ async def list_channel_videos(
     request: Request, channel_id: int, status: str | None = None
 ) -> SourceVideosOut:
     _, channels_service = _services(request)
+    await ensure_channel_access(request, channel_id)
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     discovery = DiscoveryService(
@@ -247,6 +261,7 @@ async def list_channel_videos(
 @router.post("/channels/{channel_id}/plan", response_model=PlanningResult)
 async def plan_channel(request: Request, channel_id: int) -> PlanningResult:
     _, channels_service = _services(request)
+    await ensure_channel_access(request, channel_id)
     if await channels_service.get_channel(channel_id) is None:
         raise HTTPException(status_code=404, detail="Kanal bulunamadı.")
     planning = PlanningService(request.app.state.sessionmaker)
@@ -265,6 +280,7 @@ async def get_webcam_calibration(request: Request, source_id: int):
             status_code=503,
             detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
         )
+    await ensure_source_access(request, source_id)
     sources_service, _ = _services(request)
     if await sources_service.get_source(source_id) is None:
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
@@ -287,6 +303,7 @@ async def set_webcam_calibration(
             status_code=503,
             detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
         )
+    await ensure_source_access(request, source_id)
     sources_service, _ = _services(request)
     if await sources_service.get_source(source_id) is None:
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")
@@ -314,6 +331,7 @@ async def delete_webcam_calibration(request: Request, source_id: int) -> None:
             status_code=503,
             detail="Veritabanı yapılandırılmadı; kalibrasyon kapalı.",
         )
+    await ensure_source_access(request, source_id)
     sources_service, _ = _services(request)
     if await sources_service.get_source(source_id) is None:
         raise HTTPException(status_code=404, detail="Kaynak kanal bulunamadı.")

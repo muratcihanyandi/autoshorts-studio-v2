@@ -133,17 +133,43 @@ class StatusService:
             )
 
     async def shorts_count(self, channel_id: int) -> int:
-        """Ready Shorts in the local stock (rendered vertical clips)."""
-        return await self._rendered_count(channel_id, "vertical")
+        """Yayına hazır dikey Shorts: render edilmiş ve henüz
+        yüklenmemiş (PublishedVideo satırı olmayan) klipler. Yayınlanmış
+        klipler 'hazır' sayılmaz — kütüphane sayacı yayına hazır stoğu
+        göstermelidir (2026-11-03 kullanıcı bildirimi: 34 dikey 'hazır'
+        görünüyordu, hepsi zaten yayındaydı)."""
+        return await self._rendered_count(
+            channel_id, "vertical", unpublished_only=True
+        )
 
     async def full_cut_count(self, channel_id: int) -> int:
-        return await self._rendered_count(channel_id, "horizontal")
+        """Yayına hazır yatay tam kesitler (yüklenmemiş). Yatay satırlar
+        aday kimliği taşımaz (clip_candidate_id NULL); eski sayım her
+        zaman 0 dönüyordu."""
+        return await self._rendered_count(
+            channel_id, "horizontal", unpublished_only=True
+        )
 
     async def ready_clip_stock(self, channel_id: int) -> int:
         """Hazır video stoğu (Görev 2): render edilmiş ama henüz yüklenmemiş
         (PublishedVideo satırı olmayan) dikey shortlar + yatay tam kesitler.
         Üretim kapısı bu sayıya bakar — hedefe ulaşınca yeni kaynak
         indirilmez, videolar paylaşıldıkça stok azalır ve üretim sürer."""
+        vertical, horizontal = await self.ready_clip_stock_by_orientation(
+            channel_id
+        )
+        return vertical + horizontal
+
+    async def ready_clip_stock_by_orientation(
+        self, channel_id: int
+    ) -> tuple[int, int]:
+        """(dikey, yatay) yayına hazır stok.
+
+        Üretim kapısı yön bazlı çalışır: günlük 2 dikey + 1 yatay
+        yayınlanacaksa yalnız toplam stoğa bakmak yetmez. Dikey klipler
+        birikip yatay stok sıfırlanınca eski kapı yeni indirmeyi
+        durduruyor ve yatay dilimler sürekli boş kalıyordu (2026-11-03
+        kullanıcı bildirimi)."""
         async with self._sessionmaker() as session:
             vertical = int(
                 (
@@ -164,7 +190,11 @@ class StatusService:
                         )
                         .outerjoin(
                             PublishedVideo,
-                            PublishedVideo.clip_candidate_id == ClipCandidate.id,
+                            sa.and_(
+                                PublishedVideo.clip_candidate_id
+                                == ClipCandidate.id,
+                                PublishedVideo.orientation == "vertical",
+                            ),
                         )
                         .where(
                             SourceChannel.channel_id == channel_id,
@@ -210,36 +240,63 @@ class StatusService:
                 ).scalar()
                 or 0
             )
-        return vertical + horizontal
+        return vertical, horizontal
 
-    async def _rendered_count(self, channel_id: int, orientation: str) -> int:
-        async with self._sessionmaker() as session:
-            return int(
-                (
-                    await session.execute(
-                        sa.select(sa.func.count())
-                        .select_from(RenderedClip)
-                        .join(
-                            ClipCandidate,
-                            RenderedClip.clip_candidate_id == ClipCandidate.id,
-                        )
-                        .join(
-                            SourceVideo,
-                            ClipCandidate.source_video_id == SourceVideo.id,
-                        )
-                        .join(
-                            SourceChannel,
-                            SourceVideo.source_channel_id == SourceChannel.id,
-                        )
-                        .where(
-                            SourceChannel.channel_id == channel_id,
-                            RenderedClip.status == "rendered",
-                            RenderedClip.orientation == orientation,
-                        )
-                    )
-                ).scalar()
-                or 0
+    async def _rendered_count(
+        self,
+        channel_id: int,
+        orientation: str,
+        unpublished_only: bool = False,
+    ) -> int:
+        """Render edilmiş klip sayısı.
+
+        Dikey klipler adaya (clip_candidate_id), yatay tam kesitler
+        doğrudan kaynak videoya bağlıdır; kaynak video kimliği iki
+        şekilden türetilir. ``unpublished_only`` yayına hazır stoğu
+        verir: yayınlanmış satırlar sayılmaz."""
+        source_video_id = sa.func.coalesce(
+            ClipCandidate.source_video_id, RenderedClip.source_video_id
+        )
+        published_exists = sa.exists(
+            sa.select(PublishedVideo.id).where(
+                PublishedVideo.orientation == orientation,
+                sa.or_(
+                    sa.and_(
+                        RenderedClip.clip_candidate_id.is_not(None),
+                        PublishedVideo.clip_candidate_id
+                        == RenderedClip.clip_candidate_id,
+                    ),
+                    sa.and_(
+                        RenderedClip.clip_candidate_id.is_(None),
+                        PublishedVideo.source_video_id
+                        == RenderedClip.source_video_id,
+                        PublishedVideo.clip_candidate_id.is_(None),
+                    ),
+                ),
             )
+        )
+        statement = (
+            sa.select(sa.func.count())
+            .select_from(RenderedClip)
+            .outerjoin(
+                ClipCandidate,
+                RenderedClip.clip_candidate_id == ClipCandidate.id,
+            )
+            .join(SourceVideo, source_video_id == SourceVideo.id)
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
+            .where(
+                SourceChannel.channel_id == channel_id,
+                RenderedClip.status == "rendered",
+                RenderedClip.orientation == orientation,
+            )
+        )
+        if unpublished_only:
+            statement = statement.where(~published_exists)
+        async with self._sessionmaker() as session:
+            return int((await session.execute(statement)).scalar() or 0)
 
     # --- kaynak video etiketi ---
 

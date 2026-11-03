@@ -25,6 +25,7 @@ from app.schemas_publishing import (
     PublishingProfileIn,
     PublishingProfileOut,
 )
+from app.services.auth_service import ensure_channel_access
 from app.services.automation_service import (
     AutomationError,
     AutomationService,
@@ -49,6 +50,7 @@ async def _channel_or_404(request: Request, channel_id: int):
 
     from app.models import Channel
 
+    await ensure_channel_access(request, channel_id)
     sessionmaker = request.app.state.sessionmaker
     async with sessionmaker() as session:
         channel = await session.get(Channel, channel_id)
@@ -385,6 +387,7 @@ def _out(profile) -> PublishingProfileOut:
 async def get_publishing_profile(
     request: Request, channel_id: int
 ) -> PublishingProfileOut:
+    await ensure_channel_access(request, channel_id)
     service = _service(request)
     profile = await service.profile(channel_id)
     return _out(profile)
@@ -396,6 +399,7 @@ async def get_publishing_profile(
 async def update_publishing_profile(
     request: Request, channel_id: int, data: PublishingProfileIn
 ) -> PublishingProfileOut:
+    await ensure_channel_access(request, channel_id)
     service = _service(request)
     profile = await service.profile(channel_id)
     if data.publish_times is not None:
@@ -444,5 +448,6 @@ async def update_publishing_profile(
 @router.get("/channels/{channel_id}/summary")
 async def channel_summary(request: Request, channel_id: int) -> dict:
     """Operational summary (also recorded as an audit event)."""
+    await ensure_channel_access(request, channel_id)
     service = _service(request)
     return await service.operational_summary(channel_id)

@@ -9,7 +9,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings
-from app.services.auth_service import gate_response, user_allows
+from app.services.auth_service import (
+    ensure_render_access,
+    ensure_source_video_access,
+    gate_response,
+    owned_channel_ids,
+    user_allows,
+)
 from app.services.library_view import LibraryViewService
 
 router = APIRouter(tags=["media-library"])
@@ -67,6 +73,7 @@ async def media_library(
         engine_selected_only=engine_selected_only,
         ready_only=ready_only,
         excluded_only=excluded_only,
+        allowed_channel_ids=await owned_channel_ids(request),
     )
 
 
@@ -82,6 +89,7 @@ async def remove_source_video(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Veritabanı yapılandırılmadı.",
         )
+    await ensure_source_video_access(request, source_video_id)
     from app.services.video_removal import (
         VideoRemovalError,
         remove_source_video,
@@ -116,6 +124,7 @@ async def resume_source_video(
     from app.models import Job, MediaAsset, SourceVideo
     from app.services.job_service import JobService
 
+    await ensure_source_video_access(request, source_video_id)
     async with sessionmaker() as session:
         video = await session.get(SourceVideo, source_video_id)
         if video is None:
@@ -206,6 +215,7 @@ async def remove_clip(request: Request, render_id: int) -> dict:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Veritabanı yapılandırılmadı.",
         )
+    await ensure_render_access(request, render_id)
     from app.services.video_removal import (
         VideoRemovalError,
         remove_rendered_clip,
@@ -241,6 +251,8 @@ async def bulk_clips(request: Request, payload: BulkClipActionIn) -> dict:
     )
     from app.services.settings_service import SettingsService
 
+    for render_id in payload.render_ids:
+        await ensure_render_access(request, render_id)
     effective = await SettingsService(
         sessionmaker, request.app.state.settings
     ).effective_settings()
@@ -259,6 +271,7 @@ async def bulk_clips(request: Request, payload: BulkClipActionIn) -> dict:
 
 @router.get("/media/clips/{render_id}")
 async def clip_detail(request: Request, render_id: int) -> dict:
+    await ensure_render_access(request, render_id)
     detail = await _service(request).clip_detail(render_id)
     if detail is None:
         raise HTTPException(
@@ -285,6 +298,7 @@ async def clip_stream(
         )
     from app.models import RenderedClip
 
+    await ensure_render_access(request, render_id)
     async with sessionmaker() as session:
         render = await session.get(RenderedClip, render_id)
     if render is None or render.status != "rendered":
@@ -318,6 +332,7 @@ async def clip_thumbnail(request: Request, render_id: int) -> FileResponse:
         )
     from app.models import RenderedClip
 
+    await ensure_render_access(request, render_id)
     async with sessionmaker() as session:
         render = await session.get(RenderedClip, render_id)
     if render is None or not render.thumbnail_path:

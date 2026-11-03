@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from app.services.auth_service import gate_response, user_allows
+from app.services.auth_service import (
+    ensure_published_video_access,
+    gate_response,
+    ensure_render_access,
+    user_allows,
+)
 from app.services.calendar_view import CalendarViewService
 from app.services.publishing_service import (
     PublishingError,
@@ -73,6 +78,10 @@ async def reschedule(request: Request, data: CalendarRescheduleIn) -> dict:
     # Free plan kapısı (madde 6): manuel yayın planlama Pro ile açılır.
     if not user_allows(getattr(request.state, "auth_user", None), "manual_schedule"):
         return gate_response("manual_schedule")
+    if data.published_video_id is not None:
+        await ensure_published_video_access(request, data.published_video_id)
+    if data.clip_render_id is not None:
+        await ensure_render_access(request, data.clip_render_id)
     service = _publishing(request)
     if (data.published_video_id is None) == (data.clip_render_id is None):
         raise HTTPException(

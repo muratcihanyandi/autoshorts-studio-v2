@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app import __version__
@@ -63,12 +64,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     sessionmaker, settings
                 ).get_config()
             except Exception as exc:  # noqa: BLE001 - şema yoksa giriş kapalı değil
-                msg = str(exc).lower()
-                if (
-                    "no such table" in msg
-                    or "undefinedtable" in msg
-                    or "does not exist" in msg
-                ):
+                # Hata metnine bakmak güvenli değil: "database does not
+                # exist" gibi bir bağlantı hatası da eşleşip API'yi
+                # kimlik doğrulamasız açardı (2026-11-03 denetimi).
+                # Gerçek soru şu: tablo var mı? Tablo yoksa ilk kurulum
+                # (göç uygulanmamış) demektir ve API açık kalır; tablo
+                # varsa ama okunamıyorsa API kilitlenir.
+                table_exists = False
+                try:
+                    async with engine.connect() as conn:  # type: ignore[union-attr]
+                        table_exists = await conn.run_sync(
+                            lambda sync_conn: sa_inspect(sync_conn).has_table(
+                                "app_meta"
+                            )
+                        )
+                except Exception:  # noqa: BLE001 - bağlantı yok: kilitli kal
+                    table_exists = True
+                if not table_exists:
                     app.state.auth_config = None
                     app.state.auth_db_error = False
                 else:

@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.services.audit_view import AuditViewService
+from app.services.auth_service import require_admin
 
 router = APIRouter(tags=["logs"])
 
@@ -28,6 +29,7 @@ async def logs(
 ) -> dict:
     """Kategori, event_type'in ilk noktaya kadar kısmıdır ('media' gibi);
     sayfalama en büyük id'den küçüğe before_id imleciyle yapılır."""
+    require_admin(request)
     return await _service(request).page(
         limit=limit,
         before_id=before_id,
@@ -43,4 +45,5 @@ async def log_errors(
 ) -> dict:
     """Birleşik hata akışı: başarısız işler, medya varlıkları ve
     yükleme satırları — tam hata metni ve düzeltme eylemiyle."""
+    require_admin(request)
     return await _service(request).errors(limit=limit)

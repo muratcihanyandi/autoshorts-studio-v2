@@ -3,6 +3,10 @@
 GET returns masked views (secrets never leave the service layer); PUT
 applies patch semantics (None = untouched, "" = fall back to the
 environment, value = database override after validation).
+
+Only administrators may read or change site settings: the screen holds
+OAuth credentials, the token encryption key and engine-wide limits, so
+an operator account must not see or edit them (2026-11-03 audit).
 """
 from __future__ import annotations
 
@@ -10,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from app.config import Settings
 from app.schemas_settings import SettingsOut, SettingsUpdate
+from app.services.auth_service import require_admin
 from app.services.settings_service import SettingsService, SettingsServiceError
 
 router = APIRouter(tags=["settings"])
@@ -41,6 +46,7 @@ async def effective_settings(request: Request) -> Settings:
 
 @router.get("/settings", response_model=SettingsOut)
 async def get_settings(request: Request) -> SettingsOut:
+    require_admin(request)
     return await _service(request).view()
 
 
@@ -48,6 +54,7 @@ async def get_settings(request: Request) -> SettingsOut:
 async def update_settings(
     request: Request, patch: SettingsUpdate
 ) -> SettingsOut:
+    require_admin(request)
     service = _service(request)
     try:
         return await service.update(patch)

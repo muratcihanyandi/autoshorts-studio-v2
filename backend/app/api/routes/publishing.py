@@ -17,6 +17,11 @@ from app.services.publishing_service import (
     PublishingService,
 )
 from app.api.routes.settings import effective_settings
+from app.services.auth_service import (
+    ensure_channel_access,
+    ensure_clip_candidate_access,
+    ensure_source_video_access,
+)
 
 router = APIRouter(tags=["publishing"])
 
@@ -56,6 +61,7 @@ async def _enqueue_private_upload(
 async def publish_clip(request: Request, clip_candidate_id: int) -> PublishResult:
     """Publish one clip now (guards still apply: rights, render,
     approved metadata, not already published)."""
+    await ensure_clip_candidate_access(request, clip_candidate_id)
     service = await _service(request)
     try:
         result = await service.publish_clip(clip_candidate_id)
@@ -72,6 +78,7 @@ async def approve_metadata(
 ) -> ApproveResult:
     """Approve the latest metadata revision: approval is the trigger for
     the private upload (the scheduled slot later makes it public)."""
+    await ensure_clip_candidate_access(request, clip_candidate_id)
     service = await _service(request)
     try:
         metadata = await service.approve_metadata(clip_candidate_id)
@@ -93,6 +100,7 @@ async def approve_full_cut(
 ) -> ApproveResult:
     """Approve the horizontal full-cut metadata of a source video (M13);
     approval triggers the private upload of the full cut."""
+    await ensure_source_video_access(request, source_video_id)
     service = await _service(request)
     try:
         metadata = await service.approve_full_cut(source_video_id)
@@ -115,6 +123,7 @@ async def publish_full_cut(
     """Publish the horizontal full cut of a reaction source video
     (guards still apply: rights, render, approved metadata, once per
     source video)."""
+    await ensure_source_video_access(request, source_video_id)
     service = await _service(request)
     try:
         result = await service.publish_full_cut(source_video_id)
@@ -127,6 +136,7 @@ async def publish_full_cut(
     "/channels/{channel_id}/published", response_model=PublishedVideosOut
 )
 async def list_published(request: Request, channel_id: int) -> PublishedVideosOut:
+    await ensure_channel_access(request, channel_id)
     import sqlalchemy as sa
 
     from app.models import PublishedVideo

@@ -404,16 +404,110 @@ class CalendarViewService:
             "note": item["note"],
         }
 
+    async def schedule_pending_verified(
+        self, channel_id: int | None = None
+    ) -> int:
+        """Gizli yüklenmiş videoları takvim slotlarına yerleştir.
+
+        Worker, bir yükleme tamamlandığında çağırır: plan yalnız takvim
+        ekranı açıldığında değil, yayınla birlikte yazılır. Böylece
+        "yüklendi ama takvimde yok" durumu oluşmaz ve video, sıradaki
+        uygun dilimde yayına açılır (2026-11-03 kullanıcı bildirimi).
+        """
+        async with self._sessionmaker() as session:
+            statement = (
+                sa.select(PublishingProfile, Channel)
+                .join(Channel, PublishingProfile.channel_id == Channel.id)
+                .where(
+                    Channel.status == "connected",
+                    PublishingProfile.automation_state == "running",
+                )
+            )
+            if channel_id is not None:
+                statement = statement.where(
+                    PublishingProfile.channel_id == channel_id
+                )
+            rows = (await session.execute(statement)).all()
+            if not rows:
+                return 0
+            channels_meta: list[dict] = []
+            slot_map: dict[int, dict[str, list]] = {}
+            for profile, channel in rows:
+                try:
+                    v_slots = list(
+                        slots_for_orientation(profile.settings, "vertical")
+                    )
+                    h_slots = list(
+                        slots_for_orientation(profile.settings, "horizontal")
+                    )
+                except Exception:  # noqa: BLE001 - bozuk yapilandirma
+                    v_slots = list(
+                        parse_publish_times(list(DEFAULT_VERTICAL_PUBLISH_TIMES))
+                    )
+                    h_slots = list(parse_publish_times(list(DEFAULT_PUBLISH_TIMES)))
+                orientations = ["vertical"]
+                horizontal_capable = int(
+                    (
+                        await session.execute(
+                            sa.select(sa.func.count())
+                            .select_from(SourceChannel)
+                            .where(
+                                SourceChannel.channel_id == channel.id,
+                                SourceChannel.permission_status == "authorized",
+                                SourceChannel.output_orientation != "vertical",
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+                has_horizontal = int(
+                    (
+                        await session.execute(
+                            sa.select(sa.func.count())
+                            .select_from(PublishedVideo)
+                            .where(
+                                PublishedVideo.channel_id == channel.id,
+                                PublishedVideo.orientation == "horizontal",
+                                PublishedVideo.status == "verified",
+                                PublishedVideo.visibility == "private",
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+                if horizontal_capable or has_horizontal:
+                    orientations.append("horizontal")
+                channels_meta.append(
+                    {
+                        "id": channel.id,
+                        "name": channel.name,
+                        "ribbon_color": channel.ribbon_color,
+                        "timezone": profile.timezone or DEFAULT_TIMEZONE,
+                        "daily_vertical_limit": profile.daily_clip_target,
+                        "daily_horizontal_limit": profile.daily_horizontal_limit,
+                        "orientations": orientations,
+                    }
+                )
+                slot_map[channel.id] = {
+                    "vertical": v_slots,
+                    "horizontal": h_slots,
+                }
+            return await self._ensure_verified_scheduled(
+                session, channels_meta, slot_map
+            )
+
     async def _ensure_verified_scheduled(
         self,
         session: AsyncSession,
         channels_meta: list[dict],
         slot_map: dict[int, dict[str, list]],
-    ) -> None:
+    ) -> int:
         """Kanalın gizli yüklenmiş (verified + private) videolarının
         scheduled_at'i boşsa veya çakışıyorsa, ilk uygun yayın dilimlerine
         kalıcı olarak atanır. Böylece kullanıcı bir videoyu kaydırdığında
-        diğer videolar kaymaz ve boşaltılan dilim (örn. 12:00) boş kalır."""
+        diğer videolar kaymaz ve boşaltılan dilim (örn. 12:00) boş kalır.
+
+        Atanan kayıt sayısını döndürür."""
         now = datetime.now(UTC)
         meta_row = await session.get(AppMeta, "manual_schedules")
         manual_ids = (
@@ -421,7 +515,7 @@ class CalendarViewService:
             if meta_row and meta_row.value
             else set()
         )
-        updated = False
+        updated = 0
 
         for channel in channels_meta:
             channel_id = channel["id"]
@@ -477,11 +571,14 @@ class CalendarViewService:
                         if m_str in seen_moments:
                             row.scheduled_at = None
                             unassigned.append(row)
-                            updated = True
+                            updated += 1
                         else:
                             seen_moments.add(m_str)
                             assigned.append(row)
 
+                # 1b) Kotayı aşan yeni atamalar döngüde engellenir; mevcut
+                # atamalar (kullanıcı taşımaları dahil) geri alınmaz —
+                # boşaltılan dilim boş kalır, komşu videolar kaymaz.
                 if not unassigned:
                     continue
 
@@ -503,6 +600,8 @@ class CalendarViewService:
                         continue
 
                     for s in orient_slots:
+                        if daily_limit and day_count >= daily_limit:
+                            break
                         s_str = s.strftime("%H:%M")
                         s_utc = datetime.combine(day, s, tzinfo=tz).astimezone(UTC)
                         if s_utc <= now:
@@ -513,7 +612,8 @@ class CalendarViewService:
                         video = unassigned.pop(0)
                         video.scheduled_at = s_utc
                         taken_slots.add((day, s_str))
-                        updated = True
+                        day_count += 1
+                        updated += 1
                         if not unassigned:
                             break
 
@@ -521,6 +621,7 @@ class CalendarViewService:
 
         if updated:
             await session.commit()
+        return updated
 
     async def _ready_queue(
         self,

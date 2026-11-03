@@ -80,6 +80,7 @@ class LibraryViewService:
         engine_selected_only: bool = False,
         ready_only: bool = False,
         excluded_only: bool = False,
+        allowed_channel_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         async with self._sessionmaker() as session:
             # Kuralin reddettigi (Hariç) videolar varsayilan listede
@@ -91,6 +92,8 @@ class LibraryViewService:
             # seçtiği videolar ve o an işlenen tek kaynak görünür.
             # excluded_only: hariç paneli (2026-10-21 kalıcı çözüm) —
             # yalnızca dışlanan videolar; toplu geri alma listesi.
+            # allowed_channel_ids: operatör oturumunda yalnız kendi
+            # kanallarının verisi görünür (çok kullanıcılı izolasyon).
             if excluded_only:
                 visible: list[Any] = [SourceVideo.status == "excluded"]
             else:
@@ -98,6 +101,10 @@ class LibraryViewService:
                     []
                     if include_excluded
                     else [SourceVideo.status != "excluded"]
+                )
+            if allowed_channel_ids is not None:
+                visible.append(
+                    SourceChannel.channel_id.in_(allowed_channel_ids)
                 )
             active_video_ids = await self._active_pipeline_video_ids(session)
             if active_only:
@@ -128,6 +135,10 @@ class LibraryViewService:
                     await session.execute(
                         sa.select(sa.func.count())
                         .select_from(SourceVideo)
+                        .join(
+                            SourceChannel,
+                            SourceVideo.source_channel_id == SourceChannel.id,
+                        )
                         .outerjoin(
                             MediaAsset,
                             MediaAsset.source_video_id == SourceVideo.id,
@@ -191,9 +202,16 @@ class LibraryViewService:
                 for video, source, asset in video_rows
             ]
 
-            clips, clips_total = await self._clips(session, ready_only=ready_only)
+            clips, clips_total = await self._clips(
+                session,
+                ready_only=ready_only,
+                allowed_channel_ids=allowed_channel_ids,
+            )
             summary = await self._summary(
-                session, include_excluded, active_video_ids
+                session,
+                include_excluded,
+                active_video_ids,
+                allowed_channel_ids=allowed_channel_ids,
             )
 
         return {
@@ -619,14 +637,41 @@ class LibraryViewService:
 
     @staticmethod
     async def _clips(
-        session: AsyncSession, ready_only: bool = False
+        session: AsyncSession,
+        ready_only: bool = False,
+        allowed_channel_ids: set[int] | None = None,
     ) -> tuple[list[dict], int]:
-        total_query = sa.select(sa.func.count()).select_from(RenderedClip)
+        channel_filter = (
+            [SourceChannel.channel_id.in_(allowed_channel_ids)]
+            if allowed_channel_ids is not None
+            else []
+        )
+        total_query = (
+            sa.select(sa.func.count())
+            .select_from(RenderedClip)
+            .outerjoin(
+                ClipCandidate,
+                RenderedClip.clip_candidate_id == ClipCandidate.id,
+            )
+            .join(
+                SourceVideo,
+                sa.or_(
+                    ClipCandidate.source_video_id == SourceVideo.id,
+                    RenderedClip.source_video_id == SourceVideo.id,
+                ),
+            )
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
+        )
         statement_filter = RenderedClip.status != "removed"
         if ready_only:
             total_query = total_query.where(RenderedClip.status == "rendered")
         else:
             total_query = total_query.where(statement_filter)
+        if channel_filter:
+            total_query = total_query.where(*channel_filter)
         total = int((await session.execute(total_query)).scalar() or 0)
 
         statement = (
@@ -660,6 +705,8 @@ class LibraryViewService:
         else:
             # Kaldirilan klipler (mezartas) listede gorunmez.
             statement = statement.where(statement_filter)
+        if channel_filter:
+            statement = statement.where(*channel_filter)
         rows = (await session.execute(statement)).all()
 
         candidate_ids = [
@@ -1189,57 +1236,128 @@ class LibraryViewService:
         session: AsyncSession,
         include_excluded: bool = False,
         active_video_ids: set[int] | None = None,
+        allowed_channel_ids: set[int] | None = None,
     ) -> dict[str, int]:
         async def _count(statement: Any) -> int:
             return int((await session.execute(statement)).scalar() or 0)
 
+        channel_filter = (
+            [SourceChannel.channel_id.in_(allowed_channel_ids)]
+            if allowed_channel_ids is not None
+            else []
+        )
         processed = await _count(
             sa.select(sa.func.count())
             .select_from(MediaAsset)
-            .where(MediaAsset.status == "processed")
+            .join(
+                SourceVideo, MediaAsset.source_video_id == SourceVideo.id
+            )
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
+            .where(MediaAsset.status == "processed", *channel_filter)
         )
         failed = await _count(
             sa.select(sa.func.count())
             .select_from(MediaAsset)
-            .where(MediaAsset.status == "failed")
-        )
-        shorts = await _count(
-            sa.select(sa.func.count())
-            .select_from(RenderedClip)
-            .where(
-                RenderedClip.status == "rendered",
-                RenderedClip.orientation == "vertical",
+            .join(
+                SourceVideo, MediaAsset.source_video_id == SourceVideo.id
             )
-        )
-        full_cuts = await _count(
-            sa.select(sa.func.count())
-            .select_from(RenderedClip)
-            .where(
-                RenderedClip.status == "rendered",
-                RenderedClip.orientation == "horizontal",
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
             )
+            .where(MediaAsset.status == "failed", *channel_filter)
         )
+        # 'Hazır' = yayına hazır: render edilmiş ve HENÜZ yüklenmemiş.
+        # Yayınlanmış klipler 'hazır' sayılmaz (2026-11-03 kullanıcı
+        # bildirimi: 9 yatay + 34 dikey 'hazır' görünüyordu, hepsi
+        # yayındaydı ve takvimde yer alması bekleniyordu).
+        source_video_id = sa.func.coalesce(
+            ClipCandidate.source_video_id, RenderedClip.source_video_id
+        )
+
+        def _published_exists(orientation: str) -> Any:
+            return sa.exists(
+                sa.select(PublishedVideo.id).where(
+                    PublishedVideo.orientation == orientation,
+                    sa.or_(
+                        sa.and_(
+                            RenderedClip.clip_candidate_id.is_not(None),
+                            PublishedVideo.clip_candidate_id
+                            == RenderedClip.clip_candidate_id,
+                        ),
+                        sa.and_(
+                            RenderedClip.clip_candidate_id.is_(None),
+                            PublishedVideo.source_video_id
+                            == RenderedClip.source_video_id,
+                            PublishedVideo.clip_candidate_id.is_(None),
+                        ),
+                    ),
+                )
+            )
+
+        def _ready_count(orientation: str) -> Any:
+            return (
+                sa.select(sa.func.count())
+                .select_from(RenderedClip)
+                .outerjoin(
+                    ClipCandidate,
+                    RenderedClip.clip_candidate_id == ClipCandidate.id,
+                )
+                .join(SourceVideo, source_video_id == SourceVideo.id)
+                .join(
+                    SourceChannel,
+                    SourceVideo.source_channel_id == SourceChannel.id,
+                )
+                .where(
+                    RenderedClip.status == "rendered",
+                    RenderedClip.orientation == orientation,
+                    ~_published_exists(orientation),
+                    *channel_filter,
+                )
+            )
+
+        shorts = await _count(_ready_count("vertical"))
+        full_cuts = await _count(_ready_count("horizontal"))
         # Kesif havuzu her zaman haric tutulanlar disindaki toplamdir;
         # 'sources_total' ise istenen gorunumun (haric dahil) sayisidir.
         pool_total = await _count(
-            sa.select(sa.func.count()).select_from(SourceVideo).where(
-                SourceVideo.status != "excluded"
+            sa.select(sa.func.count())
+            .select_from(SourceVideo)
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
+            .where(
+                SourceVideo.status != "excluded",
+                *channel_filter,
             )
         )
         sources = await _count(
             sa.select(sa.func.count())
             .select_from(SourceVideo)
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
             .where(
                 *(
                     []
                     if include_excluded
                     else [SourceVideo.status != "excluded"]
-                )
+                ),
+                *channel_filter,
             )
         )
         entered = await _count(
             sa.select(sa.func.count())
             .select_from(SourceVideo)
+            .join(
+                SourceChannel,
+                SourceVideo.source_channel_id == SourceChannel.id,
+            )
             .outerjoin(
                 MediaAsset, MediaAsset.source_video_id == SourceVideo.id
             )
@@ -1250,6 +1368,7 @@ class LibraryViewService:
                     SourceVideo.status == "confirmed",
                     SourceVideo.id.in_(active_video_ids or set()),
                 ),
+                *channel_filter,
             )
         )
         return {
