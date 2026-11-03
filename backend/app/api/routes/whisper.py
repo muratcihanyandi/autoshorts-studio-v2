@@ -11,6 +11,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from app.services.auth_service import require_admin
 from app.services.whisper_install import (
     WhisperInstallError,
     disk_ok_for_install,
@@ -50,7 +51,9 @@ async def whisper_status(request: Request) -> dict:
 async def start_whisper_install(request: Request) -> dict:
     """Whisper'i indir ve kur (arka planda; durum /api/whisper'dan
     izlenir). Platforma göre venv'e ya da kalıcı medya dizinine
-    kurulur."""
+    kurulur. Sunucuya paket kuran bir işlem olduğu için yönetici
+    yetkisi gerekir (2026-11-03 denetimi)."""
+    require_admin(request)
     sessionmaker = _sessionmaker(request)
     settings = request.app.state.settings
 

@@ -153,7 +153,10 @@ class PulseService:
         self,
         since: str | None = None,
         limit: int = EVENT_LIMIT,
+        allowed_channel_ids: set[int] | None = None,
     ) -> dict[str, Any]:
+        """Olay akışı. allowed_channel_ids verilirse yalnız o kanalların
+        olayları döner (operatör izolasyonu, 2026-11-03)."""
         since_moment = _parse_since(since)
         now = datetime.now(UTC)
         window_start = since_moment or (now - LOOKBACK_DEFAULT)
@@ -161,8 +164,14 @@ class PulseService:
 
         async with self._sessionmaker() as session:
             events: list[dict[str, Any]] = []
-            events.extend(await self._job_events(session, window_start, now))
-            events.extend(await self._audit_events(session, window_start))
+            events.extend(
+                await self._job_events(
+                    session, window_start, now, allowed_channel_ids
+                )
+            )
+            events.extend(
+                await self._audit_events(session, window_start, allowed_channel_ids)
+            )
             events.sort(key=lambda item: item["created_at"], reverse=True)
             collapsed = _collapse_duplicates(events)[:limit]
             return {
@@ -171,7 +180,11 @@ class PulseService:
             }
 
     async def _job_events(
-        self, session: AsyncSession, window_start: datetime, now: datetime
+        self,
+        session: AsyncSession,
+        window_start: datetime,
+        now: datetime,
+        allowed_channel_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Son biten işler: başarı ve hata geri bildiriminin kaynağı."""
         jobs = list(
@@ -201,6 +214,12 @@ class PulseService:
             finished = job.finished_at
             if finished is None:  # tip daraltma; sorgu koşulu garantiliyor
                 continue
+            channel_id = ctx.get("channel_id")
+            if (
+                allowed_channel_ids is not None
+                and channel_id not in allowed_channel_ids
+            ):
+                continue
             events.append(
                 {
                     "id": f"job:{job.id}",
@@ -222,7 +241,10 @@ class PulseService:
         return events
 
     async def _audit_events(
-        self, session: AsyncSession, window_start: datetime
+        self,
+        session: AsyncSession,
+        window_start: datetime,
+        allowed_channel_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Yayın/otomasyon denetim izi: kanal adıyla birlikte."""
         rows = (
@@ -239,6 +261,12 @@ class PulseService:
         ).all()
         events = []
         for event, channel_name in rows:
+            if (
+                allowed_channel_ids is not None
+                and event.channel_id is not None
+                and event.channel_id not in allowed_channel_ids
+            ):
+                continue
             detail = event.detail if isinstance(event.detail, dict) else {}
             safe_detail = {
                 key: detail[key] for key in _DETAIL_KEYS if key in detail

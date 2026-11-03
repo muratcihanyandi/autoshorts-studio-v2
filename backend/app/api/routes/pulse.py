@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from app.services.auth_service import owned_channel_ids
 from app.services.pulse_service import EVENT_LIMIT, PulseService
 
 router = APIRouter(tags=["pulse"])
@@ -26,4 +27,8 @@ async def pulse(
             detail="Veritabanı yapılandırılmadı; olay akışı kapalı.",
         )
     service = PulseService(sessionmaker, request.app.state.settings)
-    return await service.recent(since=since, limit=limit)
+    return await service.recent(
+        since=since,
+        limit=limit,
+        allowed_channel_ids=await owned_channel_ids(request),
+    )

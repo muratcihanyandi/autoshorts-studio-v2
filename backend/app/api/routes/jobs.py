@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.schemas_jobs import JobEnqueue, JobOut, JobsOut
+from app.services.auth_service import require_admin
 from app.services.job_service import JobService, JobServiceError
 from app.services.pipeline_view import PipelineViewService
 
@@ -20,9 +21,16 @@ def _service(request: Request) -> JobService:
     return JobService(sessionmaker, request.app.state.settings)
 
 
-async def _enrich(request: Request, jobs: list) -> list[JobOut]:
+async def _enrich(
+    request: Request,
+    jobs: list,
+    allowed_channel_ids: set[int] | None = None,
+) -> list[JobOut]:
     """Her işe video başlığı/kanal/aşama bağlamı ekler; veritabanı yoksa
-    veya eşleşme bulunamazsa alanlar null kalır."""
+    veya eşleşme bulunamazsa alanlar null kalır.
+
+    allowed_channel_ids verilirse yalnız o kanalların işleri döner;
+    operatör hesabı başka kullanıcının işlerini göremez."""
     sessionmaker = getattr(request.app.state, "sessionmaker", None)
     if sessionmaker is None:
         return [JobOut.model_validate(job) for job in jobs]
@@ -31,8 +39,13 @@ async def _enrich(request: Request, jobs: list) -> list[JobOut]:
     ).job_context(jobs)
     out: list[JobOut] = []
     for job in jobs:
-        item = JobOut.model_validate(job)
         ctx = context.get(job.id, {})
+        if (
+            allowed_channel_ids is not None
+            and ctx.get("channel_id") not in allowed_channel_ids
+        ):
+            continue
+        item = JobOut.model_validate(job)
         item.title = ctx.get("title")
         item.youtube_video_id = ctx.get("youtube_video_id")
         item.channel_name = ctx.get("channel_name")
@@ -47,13 +60,21 @@ async def _enrich(request: Request, jobs: list) -> list[JobOut]:
 async def list_jobs(
     request: Request, status: str | None = None, limit: int = 50
 ) -> JobsOut:
+    from app.services.auth_service import owned_channel_ids
+
     service = _service(request)
     jobs = await service.list_jobs(status=status, limit=limit)
-    return JobsOut(jobs=await _enrich(request, jobs), total=len(jobs))
+    enriched = await _enrich(
+        request, jobs, await owned_channel_ids(request)
+    )
+    return JobsOut(jobs=enriched, total=len(enriched))
 
 
 @router.post("/jobs", response_model=JobOut, status_code=status.HTTP_201_CREATED)
 async def enqueue_job(request: Request, data: JobEnqueue) -> JobOut:
+    # Rastgele iş türü kuyruğa yazmak motorun güvenlik kapılarını
+    # atlatmanın yoluydu (2026-11-03 denetimi): yönetici yetkisi ister.
+    require_admin(request)
     service = _service(request)
     try:
         job = await service.enqueue(
